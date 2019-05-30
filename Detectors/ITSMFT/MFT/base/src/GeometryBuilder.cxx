@@ -19,6 +19,7 @@
 #include "MFTBase/HalfSegmentation.h"
 #include "MFTBase/HalfDetector.h"
 #include "MFTBase/HalfCone.h"
+#include "MFTBase/Barrel.h"
 
 #include "TGeoVolume.h"
 #include "TGeoManager.h"
@@ -36,7 +37,10 @@ GeometryBuilder::GeometryBuilder() : TNamed()
 }
 
 //_____________________________________________________________________________
-GeometryBuilder::~GeometryBuilder() = default;
+GeometryBuilder::~GeometryBuilder()
+{
+  // destructor
+}
 
 //_____________________________________________________________________________
 /// \brief Build the MFT Geometry
@@ -73,6 +77,51 @@ void GeometryBuilder::buildGeometry()
   TGeoVolumeAssembly* halfCone2 = halfCone->createHalfCone(1);
   volMFT->AddNode(halfCone1, 1);
   volMFT->AddNode(halfCone2, 1);
+
+
+  /*
+  Double_t t_final_x;
+  Double_t t_final_y;
+  Double_t t_final_z;
+
+  Double_t r_final_x;
+  Double_t r_final_y;
+  Double_t r_final_z;
+  Double_t iHalf = 0;
+  
+  if (iHalf == 0) {
+    t_final_x = 0;
+    t_final_y = 0.7;
+    t_final_z = -81.5;
+
+    r_final_x = 0;
+    r_final_y = 0;
+    r_final_z = 0;
+  }
+  if (iHalf == 1) {
+    t_final_x = 0;
+    t_final_y = 0;
+    t_final_z = -81.5;
+
+    r_final_x = 0;
+    r_final_y = 0;
+    r_final_z = 180;
+  }
+  */
+
+  auto* t_barrel0 = new TGeoTranslation("translation_barrel", 0.0, 0.7, -81.5);
+  auto* r_barrel0 = new TGeoRotation("rotation_barrel", 0.0, 0.0, 0.0);
+  auto* p_barrel0 = new TGeoCombiTrans(*t_barrel0, *r_barrel0);
+  auto* t_barrel1 = new TGeoTranslation("translation_barrel", 0.0, 0.7, -81.5);
+  auto* r_barrel1 = new TGeoRotation("rotation_barrel", 0.0, 0.0, 180.0);
+  auto* p_barrel1 = new TGeoCombiTrans(*t_barrel1, *r_barrel1);
+
+  auto* halfBarrel = new Barrel();
+  TGeoVolumeAssembly* halfBarrel0 = halfBarrel->createBarrel(0);
+  volMFT->AddNode(halfBarrel0, 1, p_barrel0);
+  TGeoVolumeAssembly* halfBarrel1 = halfBarrel->createBarrel(0);
+  volMFT->AddNode(halfBarrel1, 1, p_barrel1);
+  
 
   vALIC->AddNode(volMFT, 0);
 }
