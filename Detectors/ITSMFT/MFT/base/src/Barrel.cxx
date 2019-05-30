@@ -82,7 +82,7 @@ TGeoVolumeAssembly* Barrel::createBarrel(Int_t half)
   TGeoVolume *Joincyl1 = gGeoManager->MakeTubs("Joincyl1", mCarbon, 10.000,10.20, 19.20, 0.0 ,5.1);
   TGeoCompositeShape *com_box0;
   TGeoTranslation *cstr =  new TGeoTranslation(0 ,-2.40 ,0);
-  TGeoTranslation *jcyl0 =  new TGeoTranslation(7 ,-3.25 ,0);
+  TGeoTranslation *jcyl0 =  new TGeoTranslation(0.7 ,-3.25 ,0);
   TGeoTranslation *jcyl1 =  new TGeoTranslation(-10.50 ,-3.25 ,0);
   cstr->SetName("cstr");
   jcyl0->SetName("jcyltr0");
