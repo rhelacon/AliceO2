@@ -78,7 +78,6 @@ void GeometryBuilder::buildGeometry()
   volMFT->AddNode(halfCone1, 1);
   volMFT->AddNode(halfCone2, 1);
 
-
   /*
   Double_t t_final_x;
   Double_t t_final_y;
@@ -109,7 +108,7 @@ void GeometryBuilder::buildGeometry()
   }
   */
 
-  auto* t_barrel0 = new TGeoTranslation("translation_barrel", 0.0, 0.7, -81.5);
+  /*  auto* t_barrel0 = new TGeoTranslation("translation_barrel", 0.0, 0.7, -81.5);
   auto* r_barrel0 = new TGeoRotation("rotation_barrel", 0.0, 0.0, 0.0);
   auto* p_barrel0 = new TGeoCombiTrans(*t_barrel0, *r_barrel0);
   auto* t_barrel1 = new TGeoTranslation("translation_barrel", 0.0, 0.7, -81.5);
@@ -121,7 +120,7 @@ void GeometryBuilder::buildGeometry()
   volMFT->AddNode(halfBarrel0, 1, p_barrel0);
   TGeoVolumeAssembly* halfBarrel1 = halfBarrel->createBarrel(0);
   volMFT->AddNode(halfBarrel1, 1, p_barrel1);
-  
+*/
 
   vALIC->AddNode(volMFT, 0);
 }

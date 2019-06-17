@@ -20,7 +20,7 @@ namespace o2
 namespace MFT
 {
 
-class Barrel: public TNamed
+class Barrel : public TNamed
 {
 
  public:
@@ -36,7 +36,7 @@ class Barrel: public TNamed
  private:
   ClassDefOverride(Barrel, 1)
 };
-}
-}
+} // namespace MFT
+} // namespace o2
 
 #endif
