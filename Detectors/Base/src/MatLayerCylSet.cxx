@@ -19,7 +19,7 @@
 #include "GPUCommonFairLogger.h"
 #include <TFile.h>
 #include "CommonUtils/TreeStreamRedirector.h"
-#define _DBG_LOC_ // for local debugging only
+//#define _DBG_LOC_ // for local debugging only
 
 #endif // !GPUCA_ALIGPUCODE
 
@@ -345,7 +345,9 @@ GPUd() MatBudget MatLayerCylSet::getMatBudget(float x0, float y0, float z0, floa
     rval.meanX2X0 *= norm;
     rval.length *= norm;
   }
+#ifdef _DBG_LOC_
   printf("<rho> = %e, x2X0 = %e  | step = %e\n", rval.meanRho, rval.meanX2X0, rval.length);
+#endif
   return rval;
 }
 
@@ -449,7 +451,7 @@ void MatLayerCylSet::setFutureBufferAddress(char* futureFlatBufferPtr)
 {
   /// Sets the actual location of the external flat buffer before it was created
   ///
-  fixPointers(mFlatBufferPtr, futureFlatBufferPtr);
+  fixPointers(mFlatBufferPtr, futureFlatBufferPtr, false); // flag that futureFlatBufferPtr is not valid yet
   flatObject::setFutureBufferAddress(futureFlatBufferPtr);
 }
 
@@ -484,16 +486,19 @@ void MatLayerCylSet::fixPointers(char* newBasePtr)
 }
 
 //______________________________________________
-void MatLayerCylSet::fixPointers(char* oldPtr, char* newPtr)
+void MatLayerCylSet::fixPointers(char* oldPtr, char* newPtr, bool newPtrValid)
 {
   // fix pointers on the internal structure of the flat buffer after retrieving it from the file
+  auto* layPtr = get()->mLayers;
   get()->mLayers = flatObject::relocatePointer(oldPtr, newPtr, get()->mLayers);
   get()->mR2Intervals = flatObject::relocatePointer(oldPtr, newPtr, get()->mR2Intervals);
   get()->mInterval2LrID = flatObject::relocatePointer(oldPtr, newPtr, get()->mInterval2LrID);
-
+  if (newPtrValid) {
+    layPtr = get()->mLayers;
+  }
   for (int i = 0; i < getNLayers(); i++) {
-    get()->mLayers[i].setFlatPointer(flatObject::relocatePointer(oldPtr, newPtr, get()->mLayers[i].getFlatBufferPtr()));
-    get()->mLayers[i].fixPointers(oldPtr, newPtr);
+    layPtr[i].setFlatPointer(flatObject::relocatePointer(oldPtr, newPtr, layPtr[i].getFlatBufferPtr()));
+    layPtr[i].fixPointers(oldPtr, newPtr);
   }
 }
 #endif // !GPUCA_GPUCODE

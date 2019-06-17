@@ -26,7 +26,7 @@
 
 namespace o2
 {
-namespace ITS
+namespace its
 {
 
 namespace MathUtils
@@ -43,7 +43,7 @@ GPUhdni() float computeTanDipAngle(float x1, float y1, float x2, float y2, float
 
 GPUhdi() float MathUtils::calculatePhiCoordinate(const float xCoordinate, const float yCoordinate)
 {
-  return o2::gpu::CAMath::ATan2(-yCoordinate, -xCoordinate) + Constants::Math::Pi;
+  return o2::gpu::CAMath::ATan2(-yCoordinate, -xCoordinate) + constants::Math::Pi;
 }
 
 GPUhdi() float MathUtils::calculateRCoordinate(const float xCoordinate, const float yCoordinate)
@@ -54,8 +54,8 @@ GPUhdi() float MathUtils::calculateRCoordinate(const float xCoordinate, const fl
 GPUhdi() constexpr float MathUtils::getNormalizedPhiCoordinate(const float phiCoordinate)
 {
   return (phiCoordinate < 0)
-           ? phiCoordinate + Constants::Math::TwoPi
-           : (phiCoordinate > Constants::Math::TwoPi) ? phiCoordinate - Constants::Math::TwoPi : phiCoordinate;
+           ? phiCoordinate + constants::Math::TwoPi
+           : (phiCoordinate > constants::Math::TwoPi) ? phiCoordinate - constants::Math::TwoPi : phiCoordinate;
 }
 
 GPUhdi() constexpr float3 MathUtils::crossProduct(const float3& firstVector, const float3& secondVector)
@@ -88,7 +88,7 @@ GPUhdi() float MathUtils::computeTanDipAngle(float x1, float y1, float x2, float
   return (z1 - z2) / o2::gpu::CAMath::Sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
 }
 
-} // namespace ITS
+} // namespace its
 } // namespace o2
 
 #endif /* TRACKINGITSU_INCLUDE_CAUTILS_H_ */

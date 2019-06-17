@@ -10,8 +10,15 @@
 #ifndef FRAMEWORK_ANALYSIS_TASK_H_
 #define FRAMEWORK_ANALYSIS_TASK_H_
 
-#include "Framework/DataProcessorSpec.h"
+#include "Framework/ASoA.h"
 #include "Framework/AlgorithmSpec.h"
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/DataProcessorSpec.h"
+#include "Framework/Kernels.h"
+#include "Framework/Traits.h"
+
+#include <arrow/compute/context.h>
+#include <arrow/compute/kernel.h>
 #include <arrow/table.h>
 #include <type_traits>
 #include <utility>
@@ -19,6 +26,7 @@
 
 namespace o2
 {
+
 namespace framework
 {
 
@@ -43,9 +51,14 @@ class AnalysisTask
   /// be complete.
   virtual void run(ProcessingContext& context) = 0;
 
-  /// This will be invoked and passed the tracks table for
-  /// each message.
-  virtual void processTracks(std::shared_ptr<arrow::Table> tracks) {}
+  /// Override this to subscribe to each track. No guarantees on the order.
+  virtual void processTrack(aod::Track const& tracks) {}
+  /// Override this to subscribe to all the tracks and including their associated collision.
+  virtual void processCollisionTrack(aod::Collision const& collision, aod::Track const& track) {}
+  /// Override this to subscribe to all the tracks of the given timeframe.
+  virtual void processTimeframeTracks(aod::Timeframe const& timeframe, aod::Tracks const& tracks) {}
+  /// Override this to subscribe to all the tracks associated to a given collision.
+  virtual void processCollisionTracks(aod::Collision const& collision, aod::Tracks const& tracks) {}
 };
 
 /// Adaptor to make an AlgorithmSpec from a o2::framework::Task
@@ -53,21 +66,83 @@ class AnalysisTask
 template <typename T, typename... Args>
 DataProcessorSpec adaptAnalysisTask(std::string name, Args&&... args)
 {
+  constexpr bool hasProcessTrack = is_overriding<decltype(&T::processTrack),
+                                                 decltype(&AnalysisTask::processTrack)>::value;
+  constexpr bool hasProcessCollisionTrack = is_overriding<decltype(&T::processCollisionTrack),
+                                                          decltype(&AnalysisTask::processCollisionTrack)>::value;
+  constexpr bool hasProcessTimeframeTracks = is_overriding<decltype(&T::processTimeframeTracks),
+                                                           decltype(&AnalysisTask::processTimeframeTracks)>::value;
+  constexpr bool hasProcessCollisionTracks = is_overriding<decltype(&T::processCollisionTracks),
+                                                           decltype(&AnalysisTask::processCollisionTracks)>::value;
+
   auto task = std::make_shared<T>(std::forward<Args>(args)...);
   auto algo = AlgorithmSpec::InitCallback{ [task](InitContext& ic) {
     task->init(ic);
     return [task](ProcessingContext& pc) {
       task->run(pc);
-      if constexpr (std::is_member_function_pointer<decltype(&T::processTracks)>::value) {
+      if constexpr (hasProcessTrack) {
         auto tracks = pc.inputs().get<TableConsumer>("tracks");
-        task->processTracks(tracks->asArrowTable());
+        for (auto& track : aod::Tracks(tracks->asArrowTable())) {
+          task->processTrack(track);
+        }
+      }
+      if constexpr (hasProcessCollisionTrack) {
+        auto tracks = pc.inputs().get<TableConsumer>("tracks");
+        auto collisions = pc.inputs().get<TableConsumer>("collisions");
+        size_t currentCollision = 0;
+        aod::Collision collision(collisions->asArrowTable());
+        for (auto& track : aod::Tracks(tracks->asArrowTable())) {
+          auto collisionIndex = track.collisionId();
+          // We find the associated collision, assuming they are sorted.
+          while (collisionIndex > currentCollision) {
+            ++currentCollision;
+            ++collision;
+          }
+          task->processCollisionTrack(collision, track);
+        }
+      }
+      if constexpr (hasProcessTimeframeTracks) {
+        auto tracks = pc.inputs().get<TableConsumer>("tracks");
+        auto timeframes = pc.inputs().get<TableConsumer>("timeframe");
+        // FIXME: For the moment we assume we have a single timeframe...
+        aod::Timeframe timeframe(timeframes->asArrowTable());
+        task->processTimeframeTracks(timeframe, aod::Tracks(tracks->asArrowTable()));
+      }
+      if constexpr (hasProcessCollisionTracks) {
+        auto collisions = pc.inputs().get<TableConsumer>("collisions");
+        auto allTracks = pc.inputs().get<TableConsumer>("tracks");
+        arrow::compute::FunctionContext ctx;
+        std::vector<arrow::compute::Datum> eventTracksCollection;
+        auto result = o2::framework::sliceByColumn(&ctx, "fID4Tracks", allTracks->asArrowTable(), &eventTracksCollection);
+        if (result.ok() == false) {
+          LOG(ERROR) << "Error while splitting the tracks per events";
+          return;
+        }
+        size_t currentCollision = 0;
+        aod::Collision collision(collisions->asArrowTable());
+        for (auto& eventTracks : eventTracksCollection) {
+          // FIXME: We find the associated collision, assuming they are sorted.
+          aod::Tracks tracks(arrow::util::get<std::shared_ptr<arrow::Table>>(eventTracks.value));
+          auto collisionIndex = tracks.begin().collisionId();
+          while (collisionIndex > currentCollision) {
+            ++currentCollision;
+            ++collision;
+          }
+          task->processCollisionTracks(collision, tracks);
+        }
       }
     };
   } };
   std::vector<InputSpec> inputs;
 
-  if constexpr (std::is_member_function_pointer<decltype(&T::processTracks)>::value) {
-    inputs.emplace_back(InputSpec{ "tracks", "AOD", "TRACKPAR" });
+  if constexpr (hasProcessTrack || hasProcessCollisionTrack || hasProcessTimeframeTracks || hasProcessCollisionTracks) {
+    inputs.emplace_back(InputSpec{ "tracks", "RN2", "TRACKPAR" });
+  }
+  if constexpr (hasProcessCollisionTrack || hasProcessCollisionTracks) {
+    inputs.emplace_back(InputSpec{ "collisions", "RN2", "COLLISIONS" });
+  }
+  if constexpr (hasProcessTimeframeTracks) {
+    inputs.emplace_back(InputSpec{ "timeframe", "RN2", "TIMEFRAME" });
   }
 
   DataProcessorSpec spec{

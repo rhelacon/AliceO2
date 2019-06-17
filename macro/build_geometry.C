@@ -87,7 +87,7 @@ void build_geometry(FairRunSim* run = nullptr)
 
   // Create geometry
   // we always need the gave
-  o2::Passive::Cave* cave = new o2::Passive::Cave("CAVE");
+  o2::passive::Cave* cave = new o2::passive::Cave("CAVE");
   // adjust size depending on content
   cave->includeZDC(isActivated("ZDC"));
   // the experiment hall (cave)
@@ -156,19 +156,19 @@ void build_geometry(FairRunSim* run = nullptr)
 
   if (isActivated("TPC")) {
     // tpc
-    auto tpc = new o2::TPC::Detector(true);
+    auto tpc = new o2::tpc::Detector(true);
     run->AddModule(tpc);
   }
 
   if (isActivated("ITS")) {
     // its
-    auto its = new o2::ITS::Detector(true);
+    auto its = new o2::its::Detector(true);
     run->AddModule(its);
   }
 
   if (isActivated("MFT")) {
     // mft
-    auto mft = new o2::MFT::Detector();
+    auto mft = new o2::mft::Detector();
     run->AddModule(mft);
   }
 

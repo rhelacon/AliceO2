@@ -18,7 +18,6 @@
 #include "GPUTPCDef.h"
 #include "GPUTPCGMBorderTrack.h"
 #include "GPUTPCGMMergedTrack.h"
-#include "GPUTPCGMPolynomialField.h"
 #include "GPUTPCGMSliceTrack.h"
 #include "GPUCommonDef.h"
 #include "GPUProcessor.h"
@@ -27,6 +26,14 @@
 #include <cmath>
 #include <iostream>
 #endif // GPUCA_GPUCODE
+
+namespace o2
+{
+namespace base
+{
+class MatLayerCylSet;
+}
+} // namespace o2
 
 namespace GPUCA_NAMESPACE
 {
@@ -37,6 +44,7 @@ class GPUTPCSliceOutput;
 class GPUTPCGMTrackParam;
 class GPUTPCTracker;
 class GPUChainTracking;
+class GPUTPCGMPolynomialField;
 
 /**
  * @class GPUTPCGMMerger
@@ -71,12 +79,14 @@ class GPUTPCGMMerger : public GPUProcessor
   }
 
   GPUhd() const GPUParam& Param() const { return *mCAParam; }
+  GPUhd() void SetMatLUT(const o2::base::MatLayerCylSet* lut) { mMatLUT = lut; }
+  GPUhd() const o2::base::MatLayerCylSet* MatLUT() const { return mMatLUT; }
 
-  GPUd() const GPUTPCGMPolynomialField& Field() const { return mField; }
-  GPUhd() const GPUTPCGMPolynomialField* pField() const { return &mField; }
-  void SetField(GPUTPCGMPolynomialField* field) { mField = *field; }
+  GPUd() const GPUTPCGMPolynomialField& Field() const { return mCAParam->polynomialField; }
+  GPUhd() const GPUTPCGMPolynomialField* pField() const { return &mCAParam->polynomialField; }
 
   GPUhd() int NClusters() const { return (mNClusters); }
+  GPUhd() int NMaxClusters() const { return (mNMaxClusters); }
   GPUhd() int NOutputTrackClusters() const { return (mNOutputTrackClusters); }
   GPUhd() const GPUTPCGMMergedTrackHit* Clusters() const { return (mClusters); }
   GPUhd() GPUTPCGMMergedTrackHit* Clusters()
@@ -132,8 +142,6 @@ class GPUTPCGMMerger : public GPUProcessor
   int mNextSliceInd[NSLICES];
   int mPrevSliceInd[NSLICES];
 
-  GPUTPCGMPolynomialField mField;
-
   const GPUTPCSliceOutput* mkSlices[NSLICES]; //* array of input slice tracks
 
   int* mTrackLinks;
@@ -148,7 +156,7 @@ class GPUTPCGMMerger : public GPUProcessor
   short mMemoryResRefit;
 
   int mMaxID;
-  int mNClusters; // Total number of incoming clusters
+  int mNClusters; // Total number of incoming clusters (from slice tracks)
   int mNOutputTracks;
   int mNOutputTrackClusters;
   GPUTPCGMMergedTrack* mOutputTracks; //* array of output merged tracks
@@ -167,6 +175,7 @@ class GPUTPCGMMerger : public GPUProcessor
   int mBorderCETracks[2][NSLICES];
 
   const GPUTPCTracker* mSliceTrackers;
+  const o2::base::MatLayerCylSet* mMatLUT;
   GPUChainTracking* mChainTracking; // Tracking chain with access to input data / parameters
 };
 } // namespace gpu

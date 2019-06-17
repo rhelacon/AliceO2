@@ -26,7 +26,7 @@
 
 namespace o2
 {
-namespace ITS
+namespace its
 {
 namespace GPU
 {
@@ -70,8 +70,8 @@ class Vector final
  private:
   GPU_HOST_DEVICE Vector(const Vector&, const bool);
 
-  T* mArrayPointer;
-  int* mDeviceSize;
+  T* mArrayPointer = nullptr;
+  int* mDeviceSize = nullptr;
   int mCapacity;
   bool mIsWeak;
 };
@@ -300,7 +300,7 @@ GPU_DEVICE void Vector<T>::emplace(const int index, Args&&... arguments)
   new (mArrayPointer + index) T(std::forward<Args>(arguments)...);
 }
 } // namespace GPU
-} // namespace ITS
+} // namespace its
 } // namespace o2
 
 #endif /* TRAKINGITSU_INCLUDE_GPU_VECTOR_H_ */

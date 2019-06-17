@@ -35,7 +35,7 @@ class Hit;
 
 namespace o2
 {
-namespace MFT
+namespace mft
 {
 class GeometryTGeo;
 }
@@ -43,7 +43,7 @@ class GeometryTGeo;
 
 namespace o2
 {
-namespace MFT
+namespace mft
 {
 class Detector : public o2::base::DetImpl<Detector>
 {
@@ -82,7 +82,6 @@ class Detector : public o2::base::DetImpl<Detector>
   void BeginPrimary() override { ; }
   void PostTrack() override { ; }
   void PreTrack() override { ; }
-  void SetSpecialPhysicsCuts() override { ; }
   void ConstructGeometry() override; // inherited from FairModule
 
   //
@@ -173,7 +172,7 @@ namespace o2
 namespace base
 {
 template <>
-struct UseShm<o2::MFT::Detector> {
+struct UseShm<o2::mft::Detector> {
   static constexpr bool value = true;
 };
 } // namespace base

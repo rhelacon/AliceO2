@@ -50,6 +50,10 @@ void run_match_TPCITS(std::string path = "./", std::string outputfile = "o2match
   itsClusters.AddFile((path + inputClustersITS).c_str());
   matching.setInputTreeITSClusters(&itsClusters);
 
+  TChain itsClusterROF("ITSClustersROF");
+  itsClusterROF.AddFile((path + inputClustersITS).c_str());
+  matching.setInputTreeITSClusterROFRec(&itsClusterROF);
+
   bool canUseFIT = false;
   TChain fitInfo("o2sim");
   if (!inputFITInfo.empty()) {
@@ -62,7 +66,7 @@ void run_match_TPCITS(std::string path = "./", std::string outputfile = "o2match
     }
   }
 
-  o2::TPC::ClusterNativeHelper::Reader tcpClusterReader;
+  o2::tpc::ClusterNativeHelper::Reader tcpClusterReader;
   tcpClusterReader.init(inputClustersTPC.c_str());
   matching.setInputTPCClustersReader(&tcpClusterReader);
   //<<<---------- attach input data ---------------<<<

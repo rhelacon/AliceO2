@@ -26,7 +26,7 @@ using namespace o2::framework;
 
 namespace o2
 {
-namespace ITS
+namespace its
 {
 
 void ClusterWriter::init(InitContext& ic)
@@ -87,7 +87,7 @@ void ClusterWriter::run(ProcessingContext& pc)
   mFile->Close();
 
   mState = 2;
-  //pc.services().get<ControlService>().readyToQuit(true);
+  pc.services().get<ControlService>().readyToQuit(false);
 }
 
 DataProcessorSpec getClusterWriterSpec(bool useMC)
@@ -111,5 +111,5 @@ DataProcessorSpec getClusterWriterSpec(bool useMC)
   };
 }
 
-} // namespace ITS
+} // namespace its
 } // namespace o2

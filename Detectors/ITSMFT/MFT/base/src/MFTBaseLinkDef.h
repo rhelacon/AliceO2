@@ -14,6 +14,7 @@
 #pragma link off all classes;
 #pragma link off all functions;
 
+<<<<<<< HEAD
 #pragma link C++ class o2::MFT::GeometryTGeo + ;
 #pragma link C++ class o2::MFT::Geometry + ;
 #pragma link C++ class o2::MFT::GeometryBuilder + ;
@@ -31,5 +32,23 @@
 #pragma link C++ class o2::MFT::HeatExchanger + ;
 #pragma link C++ class o2::MFT::HalfCone + ;
 #pragma link C++ class o2::MFT::Barrel + ;
+=======
+#pragma link C++ class o2::mft::GeometryTGeo+;
+#pragma link C++ class o2::mft::Geometry+;
+#pragma link C++ class o2::mft::GeometryBuilder+;
+#pragma link C++ class o2::mft::VSegmentation+;
+#pragma link C++ class o2::mft::Segmentation+;
+#pragma link C++ class o2::mft::HalfSegmentation+;
+#pragma link C++ class o2::mft::HalfDiskSegmentation+;
+#pragma link C++ class o2::mft::LadderSegmentation+;
+#pragma link C++ class o2::mft::ChipSegmentation+;
+#pragma link C++ class o2::mft::HalfDetector+;
+#pragma link C++ class o2::mft::HalfDisk+;
+#pragma link C++ class o2::mft::Ladder+;
+#pragma link C++ class o2::mft::Flex+;
+#pragma link C++ class o2::mft::Support+;
+#pragma link C++ class o2::mft::HeatExchanger+;
+#pragma link C++ class o2::mft::HalfCone+;
+>>>>>>> origin/dev
 
 #endif

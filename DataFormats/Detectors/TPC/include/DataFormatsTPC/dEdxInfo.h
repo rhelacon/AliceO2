@@ -11,14 +11,14 @@
 /// \file dEdxInfo.h
 /// \author David Rohr
 
-#ifndef DEDXINFO_H
-#define DEDXINFO_H
+#ifndef ALICEO2_DATAFORMATSTPC_DEDXINFO_H
+#define ALICEO2_DATAFORMATSTPC_DEDXINFO_H
 
 #include "GPUCommonRtypes.h"
 
 namespace o2
 {
-namespace TPC
+namespace tpc
 {
 struct dEdxInfo {
   float dEdxTotIROC;
@@ -41,7 +41,7 @@ struct dEdxInfo {
   unsigned char NHitsSubThresholdOROC3;
   ClassDefNV(dEdxInfo, 1);
 };
-} // namespace TPC
+} // namespace tpc
 } // namespace o2
 
 #endif

@@ -20,11 +20,13 @@ namespace trd
 
 class TRDPadPlane;
 constexpr int kNlayer = 6, kNstack = 5, kNsector = 18, kNdet = 540;
+constexpr int kTimeBins = 30;
 
 class TRDCommonParam
 {
  public:
-  enum { kXenon = 0, kArgon = 1 };
+  enum { kXenon = 0,
+         kArgon = 1 };
 
   TRDCommonParam(const TRDCommonParam& p);
   TRDCommonParam& operator=(const TRDCommonParam& p);
@@ -43,6 +45,9 @@ class TRDCommonParam
   bool IsArgon() const { return (mGasMixture == kArgon); }
   int GetGasMixture() const { return mGasMixture; }
   float GetSamplingFrequency() const { return mSamplingFrequency; }
+
+  // Cached magnetic field, to be called by the user before using GetDiffCoeff or GetOmegaTau
+  bool cacheMagField();
   float GetOmegaTau(float vdrift);
   bool GetDiffCoeff(float& dl, float& dt, float vdrift);
 
@@ -55,12 +60,11 @@ class TRDCommonParam
   static TRDCommonParam* fgInstance; //  Instance of this class (singleton implementation)
   static bool fgTerminated;          //  Defines if this class has already been terminated
 #endif
-
-  int mExBOn; //  Switch for the ExB effects
-
-  float mDiffusionT;     //  Transverse drift coefficient
-  float mDiffusionL;     //  Longitudinal drift coefficient
-  float mDiffLastVdrift; //  The structures are valid for fLastVdrift (caching)
+  int mExBOn;            // Switch for the ExB effects
+  double mField;         // cached magnetic field
+  float mDiffusionT;     // Transverse drift coefficient
+  float mDiffusionL;     // Longitudinal drift coefficient
+  float mDiffLastVdrift; // The structures are valid for fLastVdrift (caching)
 
   float* mTimeStruct1;   //! Time Structure of Drift Cells
   float* mTimeStruct2;   //! Time Structure of Drift Cells
@@ -78,6 +82,6 @@ class TRDCommonParam
 
   ClassDef(TRDCommonParam, 1) // The constant parameters common to simulation and reconstruction
 };
-}
-}
+} // namespace trd
+} // namespace o2
 #endif

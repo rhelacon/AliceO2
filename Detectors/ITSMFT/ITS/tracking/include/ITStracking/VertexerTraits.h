@@ -27,14 +27,14 @@
 namespace o2
 {
 
-namespace ITS
+namespace its
 {
 
 class ROframe;
 
-using Constants::IndexTable::PhiBins;
-using Constants::IndexTable::ZBins;
-using Constants::ITS::LayersNumberVertexer;
+using constants::IndexTable::PhiBins;
+using constants::IndexTable::ZBins;
+using constants::its::LayersNumberVertexer;
 
 struct lightVertex {
   lightVertex(float x, float y, float z, std::array<float, 6> rms2, int cont, float avgdis2, int stamp);
@@ -83,7 +83,7 @@ class VertexerTraits
   std::vector<Line> mTracklets;
   std::vector<Tracklet> mComb01;
   std::vector<Tracklet> mComb12;
-  std::array<std::vector<Cluster>, Constants::ITS::LayersNumberVertexer> mClusters;
+  std::array<std::vector<Cluster>, constants::its::LayersNumberVertexer> mClusters;
   std::vector<std::array<float, 7>> mDeltaTanlambdas;
   std::vector<std::array<float, 6>> mLinesData;
   std::vector<std::array<float, 4>> mCentroids;
@@ -97,7 +97,7 @@ class VertexerTraits
 
   // Frame related quantities
   std::array<std::vector<bool>, 2> mUsedClusters;
-  o2::ITS::ROframe* mEvent;
+  o2::its::ROframe* mEvent;
   uint32_t mROframe;
 
   std::array<float, 3> mAverageClustersRadii;
@@ -135,15 +135,15 @@ inline GPU_DEVICE const int4 VertexerTraits::getBinsRect(const Cluster& currentC
   const float zRangeMax = directionZIntersection + maxdeltaz;
   const float phiRangeMax = currentCluster.phiCoordinate + maxdeltaphi;
 
-  if (zRangeMax < -Constants::ITS::LayersZCoordinate()[layerIndex + 1] ||
-      zRangeMin > Constants::ITS::LayersZCoordinate()[layerIndex + 1] || zRangeMin > zRangeMax) {
+  if (zRangeMax < -constants::its::LayersZCoordinate()[layerIndex + 1] ||
+      zRangeMin > constants::its::LayersZCoordinate()[layerIndex + 1] || zRangeMin > zRangeMax) {
 
     return getEmptyBinsRect();
   }
 
   return int4{ MATH_MAX(0, IndexTableUtils::getZBinIndex(layerIndex + 1, zRangeMin)),
                IndexTableUtils::getPhiBinIndex(MathUtils::getNormalizedPhiCoordinate(phiRangeMin)),
-               MATH_MIN(Constants::IndexTable::ZBins - 1, IndexTableUtils::getZBinIndex(layerIndex + 1, zRangeMax)),
+               MATH_MIN(constants::IndexTable::ZBins - 1, IndexTableUtils::getZBinIndex(layerIndex + 1, zRangeMax)),
                IndexTableUtils::getPhiBinIndex(MathUtils::getNormalizedPhiCoordinate(phiRangeMax)) };
 }
 
@@ -161,19 +161,19 @@ inline GPU_HOST_DEVICE const int4 VertexerTraits::getBinsRect2(const Cluster& cu
   const float zRangeMax = directionZIntersection + 2 * maxdeltaz;
   const float phiRangeMax = currentCluster.phiCoordinate + maxdeltaphi;
 
-  if (zRangeMax < -Constants::ITS::LayersZCoordinate()[layerIndex + 1] ||
-      zRangeMin > Constants::ITS::LayersZCoordinate()[layerIndex + 1] || zRangeMin > zRangeMax) {
+  if (zRangeMax < -constants::its::LayersZCoordinate()[layerIndex + 1] ||
+      zRangeMin > constants::its::LayersZCoordinate()[layerIndex + 1] || zRangeMin > zRangeMax) {
 
     return getEmptyBinsRect();
   }
 
   return int4{ MATH_MAX(0, IndexTableUtils::getZBinIndex(layerIndex + 1, zRangeMin)),
                IndexTableUtils::getPhiBinIndex(MathUtils::getNormalizedPhiCoordinate(phiRangeMin)),
-               MATH_MIN(Constants::IndexTable::ZBins - 1, IndexTableUtils::getZBinIndex(layerIndex + 1, zRangeMax)),
+               MATH_MIN(constants::IndexTable::ZBins - 1, IndexTableUtils::getZBinIndex(layerIndex + 1, zRangeMax)),
                IndexTableUtils::getPhiBinIndex(MathUtils::getNormalizedPhiCoordinate(phiRangeMax)) };
 }
 extern "C" VertexerTraits* createVertexerTraits();
 
-} // namespace ITS
+} // namespace its
 } // namespace o2
 #endif /* O2_ITS_TRACKING_VERTEXER_TRAITS_H_ */

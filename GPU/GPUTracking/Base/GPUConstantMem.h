@@ -17,8 +17,9 @@
 #include "GPUTPCTracker.h"
 #include "GPUParam.h"
 
-#if (!defined(__OPENCL__) || defined(__OPENCLCPP__)) && (!defined(GPUCA_GPULIBRARY) || !defined(GPUCA_ALIROOT_LIB)) && (!defined(__CINT__) && !defined(__ROOTCINT__))
+#if defined(GPUCA_NOCOMPAT_ALLCINT) && (!defined(GPUCA_GPULIBRARY) || !defined(GPUCA_ALIROOT_LIB))
 #include "GPUTPCConvert.h"
+#include "GPUTPCCompression.h"
 #include "GPUTPCGMMerger.h"
 #include "GPUITSFitter.h"
 #include "GPUTRDTracker.h"
@@ -40,6 +41,9 @@ class GPUTRDTracker
 class GPUTPCConvert
 {
 };
+class GPUTPCCompression
+{
+};
 } // namespace gpu
 } // namespace GPUCA_NAMESPACE
 #endif
@@ -55,6 +59,7 @@ struct GPUConstantMem {
   MEM_GLOBAL(GPUTPCTracker)
   tpcTrackers[GPUCA_NSLICES];
   GPUTPCConvert tpcConverter;
+  GPUTPCCompression tpcCompressor;
   GPUTPCGMMerger tpcMerger;
   GPUTRDTracker trdTracker;
   GPUITSFitter itsFitter;

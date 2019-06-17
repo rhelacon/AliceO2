@@ -21,6 +21,7 @@ GPUCA_TRACKER_CXXFILES			= SliceTracker/GPUTPCSliceData.cxx \
 								SliceTracker/GPUTPCHitArea.cxx \
 								SliceTracker/GPUTPCTrackParam.cxx \
 								SliceTracker/GPUTPCClusterData.cxx \
+								Base/GPUDataTypes.cxx \
 								Base/GPUReconstruction.cxx \
 								Base/GPUReconstructionCPU.cxx \
 								Base/GPUReconstructionDeviceBase.cxx \
@@ -35,7 +36,7 @@ GPUCA_TRACKER_CXXFILES			= SliceTracker/GPUTPCSliceData.cxx \
 								TPCConvert/GPUTPCConvertKernel.cxx \
 								Global/GPUChain.cxx \
 								Global/GPUChainTracking.cxx \
-								Global/GPUChainITS.cxx \
+								Global/GPUChainTrackingDebugAndProfiling.cxx \
 								TPCFastTransformation/TPCFastTransform.cxx \
 								TPCFastTransformation/TPCDistortionIRS.cxx \
 								TPCFastTransformation/IrregularSpline1D.cxx \
@@ -56,20 +57,25 @@ GPUCA_TRD_CXXFILES			= TRDTracking/GPUTRDTrack.cxx \
 								TRDTracking/GPUTRDTrackerGPU.cxx
 								
 GPUCA_ITS_CXXFILES			= ITS/GPUITSFitter.cxx \
-								ITS/GPUITSFitterKernels.cxx
+								ITS/GPUITSFitterKernels.cxx \
+								Global/GPUChainITS.cxx
 								
-GPUCA_DEDX_CXXFILES			= dEdx/GPUdEdx.cxx
-
 GPUCA_STANDALONE_CXXFILES	= SliceTracker/GPUTPCTrack.cxx \
 								SliceTracker/GPUTPCTracklet.cxx \
 								SliceTracker/GPUTPCMCPoint.cxx
+								
+GPUCA_COMPRESSION_FILES		= DataCompression/GPUTPCCompression.cxx \
+								DataCompression/GPUTPCCompressionTrackModel.cxx \
+								DataCompression/GPUTPCCompressionKernels.cxx \
+								DataCompression/TPCClusterDecompressor.cxx \
+								DataCompression/GPUTPCClusterStatistics.cxx
+								
+GPUCA_DEDX_CXXFILES			= dEdx/GPUdEdx.cxx
 
 CXXFILES					+= 	$(GPUCA_TRACKER_CXXFILES) \
 								$(GPUCA_STANDALONE_CXXFILES) \
 								$(GPUCA_MERGER_CXXFILES) \
-								$(GPUCA_TRD_CXXFILES) \
-								$(GPUCA_ITS_CXXFILES) \
-								$(GPUCA_DEDX_CXXFILES)
+								$(GPUCA_TRD_CXXFILES)
 
 CPPFILES					+= 	utils/timer.cpp \
 								utils/qsem.cpp \
@@ -110,5 +116,9 @@ CXXFILES					+= ${CONFIG_O2DIR}/DataFormats/simulation/src/MCCompLabel.cxx \
 								${CONFIG_O2DIR}/Detectors/TRD/base/src/TRDGeometryBase.cxx \
 								${CONFIG_O2DIR}/Detectors/Base/src/MatLayerCylSet.cxx \
 								${CONFIG_O2DIR}/Detectors/Base/src/MatLayerCyl.cxx \
-								${CONFIG_O2DIR}/Detectors/Base/src/Ray.cxx
+								${CONFIG_O2DIR}/Detectors/Base/src/Ray.cxx \
+								$(GPUCA_ITS_CXXFILES) \
+								$(GPUCA_DEDX_CXXFILES) \
+								$(GPUCA_COMPRESSION_FILES)
+
 endif

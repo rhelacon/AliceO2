@@ -391,7 +391,12 @@ void GPUTPCTrackerComponent::ConfigureSlices()
   devProc.stuckProtection = fGPUStuckProtection;
   rec.NonConsecutiveIDs = true;
 
-  fRec->SetSettings(&ev, &rec, &devProc);
+  GPURecoStepConfiguration steps;
+  steps.steps.set(GPUDataTypes::RecoStep::TPCSliceTracking);
+  steps.inputs.set(GPUDataTypes::InOutType::TPCClusters);
+  steps.outputs.set(GPUDataTypes::InOutType::TPCSectorTracks);
+
+  fRec->SetSettings(&ev, &rec, &devProc, &steps);
   fChain->LoadClusterErrors();
   fRec->Init();
 }
@@ -617,7 +622,7 @@ void* GPUTPCTrackerComponent::TrackerDoEvent(void* par)
       }
       nClusters[slice] = pCluster - clusterData[slice];
       nClustersTotal += nClusters[slice];
-      HLTDebug("Read %d->%d hits for slice %d", nClustersSliceTotal, clusterData[slice].NumberOfClusters(), slice);
+      HLTDebug("Read %d->%d hits for slice %d", nClustersSliceTotal, nClusters[slice], slice);
     }
   }
 

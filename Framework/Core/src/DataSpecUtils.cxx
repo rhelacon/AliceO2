@@ -12,10 +12,9 @@
 #include <cstring>
 #include <cinttypes>
 
-namespace o2
+namespace o2::framework
 {
-namespace framework
-{
+
 namespace
 {
 std::string join(ConcreteDataMatcher const& matcher, std::string const sep = "_")
@@ -54,10 +53,8 @@ void DataSpecUtils::describe(char* buffer, size_t size, InputSpec const& spec)
     origin[4] = 0;
     char description[17];
     description[16] = 0;
-    snprintf(buffer, size, "%s/%s/%" PRIu64,
-             (strncpy(origin, concrete->origin.str, 4), origin),
-             (strncpy(description, concrete->description.str, 16), description),
-             concrete->subSpec);
+    snprintf(buffer, size, "%s/%s/%" PRIu32, (strncpy(origin, concrete->origin.str, 4), origin),
+             (strncpy(description, concrete->description.str, 16), description), concrete->subSpec);
   } else if (auto matcher = std::get_if<DataDescriptorMatcher>(&spec.matcher)) {
     std::ostringstream ss;
     ss << "<matcher query: " << *matcher << ">";
@@ -99,6 +96,11 @@ void DataSpecUtils::updateMatchingSubspec(InputSpec& spec, header::DataHeader::S
   } else {
     throw std::runtime_error("Unsupported InputSpec kind");
   }
+}
+
+void DataSpecUtils::updateMatchingSubspec(OutputSpec& spec, header::DataHeader::SubSpecificationType subSpec)
+{
+  spec.subSpec = subSpec;
 }
 
 bool DataSpecUtils::validate(InputSpec const& spec)
@@ -144,5 +146,10 @@ ConcreteDataMatcher DataSpecUtils::asConcreteDataMatcher(OutputSpec const& spec)
   return ConcreteDataMatcher{spec.origin, spec.description, spec.subSpec};
 }
 
-} // namespace framework
-} // namespace o2
+std::optional<header::DataHeader::SubSpecificationType> DataSpecUtils::getOptionalSubSpec(OutputSpec const& spec)
+{
+  ConcreteDataMatcher concrete = DataSpecUtils::asConcreteDataMatcher(spec);
+  return concrete.subSpec;
+}
+
+} // namespace o2::framework

@@ -17,7 +17,7 @@
 #include <algorithm>
 
 using namespace GPUCA_NAMESPACE::gpu;
-using namespace o2::ITS;
+using namespace o2::its;
 
 GPUChainITS::~GPUChainITS()
 {
@@ -53,7 +53,7 @@ int GPUChainITS::PrepareEvent() { return 0; }
 
 int GPUChainITS::Finalize() { return 0; }
 
-int GPUChainITS::RunStandalone() { return 0; }
+int GPUChainITS::RunChain() { return 0; }
 
 int GPUChainITS::PrepareAndRunITSTrackFit(std::vector<Road>& roads, std::array<const Cluster*, 7> clusters, std::array<const Cell*, 5> cells, const std::array<std::vector<TrackingFrameInfo>, 7>& tf, std::vector<TrackITS>& tracks)
 {
