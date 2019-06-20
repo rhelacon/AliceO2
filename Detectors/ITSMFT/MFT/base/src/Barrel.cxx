@@ -24,9 +24,9 @@
 
 #include "MFTBase/Barrel.h"
 
-using namespace o2::MFT;
+using namespace o2::mft;
 
-ClassImp(o2::MFT::Barrel);
+ClassImp(o2::mft::Barrel);
 
 //_____________________________________________________________________________
 Barrel::Barrel() : TNamed(), mBarrel(nullptr)
