@@ -15,6 +15,7 @@
 #include "GPUDef.h"
 #include "GPUCommonMath.h"
 #include "GPUTPCGMPolynomialFieldManager.h"
+#include "GPUDataTypes.h"
 
 using namespace GPUCA_NAMESPACE::gpu;
 
@@ -83,6 +84,7 @@ void GPUParam::SetDefaults(float solenoidBz)
   ErrX = PadPitch / CAMath::Sqrt(12.f);
   ErrY = 1.;
   ErrZ = 0.228808;
+  dodEdx = 0;
 
   constexpr float plusZmin = 0.0529937;
   constexpr float plusZmax = 249.778;
@@ -133,9 +135,12 @@ void GPUParam::UpdateEventSettings(const GPUSettingsEvent* e, const GPUSettingsD
   }
 }
 
-void GPUParam::SetDefaults(const GPUSettingsEvent* e, const GPUSettingsRec* r, const GPUSettingsDeviceProcessing* p)
+void GPUParam::SetDefaults(const GPUSettingsEvent* e, const GPUSettingsRec* r, const GPUSettingsDeviceProcessing* p, const GPURecoStepConfiguration* w)
 {
   SetDefaults(e->solenoidBz);
+  if (w) {
+    dodEdx = w->steps.isSet(GPUDataTypes::RecoStep::TPCdEdx);
+  }
   if (r) {
     rec = *r;
   }
@@ -256,7 +261,10 @@ GPUd() float MEM_LG(GPUParam)::GetClusterRMS(int yz, int type, float z, float an
 MEM_CLASS_PRE()
 GPUd() void MEM_LG(GPUParam)::GetClusterRMS2(int iRow, float z, float sinPhi, float DzDs, float& ErrY2, float& ErrZ2) const
 {
-  int rowType = (iRow < 63) ? 0 : ((iRow > 126) ? 1 : 2);
+  int rowType = tpcGeometry.GetROC(iRow);
+  if (rowType > 2) {
+    rowType = 2; // TODO: Add type 3
+  }
   z = CAMath::Abs((250.f - 0.275f) - CAMath::Abs(z));
   float s2 = sinPhi * sinPhi;
   if (s2 > 0.95f * 0.95f) {
@@ -291,7 +299,10 @@ MEM_CLASS_PRE()
 GPUd() void MEM_LG(GPUParam)::GetClusterErrors2(int iRow, float z, float sinPhi, float DzDs, float& ErrY2, float& ErrZ2) const
 {
   // Calibrated cluster error from OCDB for Y and Z
-  int rowType = (iRow < 63) ? 0 : ((iRow > 126) ? 1 : 2);
+  int rowType = tpcGeometry.GetROC(iRow);
+  if (rowType > 2) {
+    rowType = 2; // TODO: Add type 3
+  }
   z = CAMath::Abs((250.f - 0.275f) - CAMath::Abs(z));
   float s2 = sinPhi * sinPhi;
   if (s2 > 0.95f * 0.95f) {

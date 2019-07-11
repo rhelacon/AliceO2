@@ -26,10 +26,6 @@ namespace base
 {
 struct MatBudget;
 class MatLayerCylSet;
-#ifndef HAVE_O2HEADERS
-struct MatBudget {
-};
-#endif
 } // namespace base
 } // namespace o2
 
@@ -51,7 +47,8 @@ class GPUTPCGMPropagator
   /// Enumeration of field regions
   enum FieldRegion {
     TPC = 0, ///< TPC
-    TRD = 1, ///< outer TPC -> outer TRD
+    ITS = 1, ///< ITS
+    TRD = 2  ///< outer TPC -> outer TRD
   };
 
   GPUdDefault() GPUTPCGMPropagator() CON_DEFAULT;
@@ -72,6 +69,7 @@ class GPUTPCGMPropagator
   GPUd() void SetFitInProjections(bool Flag) { mFitInProjections = Flag; }
   GPUd() void SetToyMCEventsFlag(bool Flag) { mToyMCEvents = Flag; }
   GPUd() void SetSpecialErrors(bool Flag) { mSpecialErrors = Flag; }
+  GPUd() void SetMatLUT(const o2::base::MatLayerCylSet* lut) { mMatLUT = lut; }
 
   GPUd() void SetMaxSinPhi(float maxSinPhi) { mMaxSinPhi = maxSinPhi; }
 

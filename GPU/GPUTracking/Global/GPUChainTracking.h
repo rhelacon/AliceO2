@@ -16,10 +16,9 @@
 
 #include "GPUChain.h"
 #include "GPUReconstructionHelpers.h"
+#include "GPUDataTypes.h"
 #include <atomic>
 #include <array>
-class AliHLTTPCClusterMCLabel;
-struct AliHLTTPCRawCluster;
 
 namespace o2
 {
@@ -33,7 +32,7 @@ namespace o2
 {
 namespace tpc
 {
-struct ClusterNativeAccessFullTPC;
+struct ClusterNativeAccess;
 struct ClusterNative;
 } // namespace tpc
 } // namespace o2
@@ -50,18 +49,8 @@ namespace GPUCA_NAMESPACE
 {
 namespace gpu
 {
-class GPUTPCSliceOutput;
-class GPUTPCSliceOutTrack;
-class GPUTPCSliceOutCluster;
-class GPUTPCGMMergedTrack;
-struct GPUTPCGMMergedTrackHit;
-class GPUTRDTrackletWord;
-class GPUTPCMCInfo;
 class GPUTRDTracker;
 class GPUTPCGPUTracker;
-struct GPUTPCClusterData;
-struct ClusterNativeAccessExt;
-struct GPUTRDTrackletLabels;
 class GPUDisplay;
 class GPUQA;
 class GPUTPCClusterStatistics;
@@ -79,39 +68,11 @@ class GPUChainTracking : public GPUChain, GPUReconstructionHelpers::helperDelega
   int Init() override;
   int PrepareEvent() override;
   int Finalize() override;
-  int RunStandalone() override;
+  int RunChain() override;
   void MemorySize(size_t& gpuMem, size_t& pageLockedHostMem) override;
 
   // Structures for input and output data
-  struct InOutPointers {
-    InOutPointers() = default;
-    InOutPointers(const InOutPointers&) = default;
-
-    const GPUTPCClusterData* clusterData[NSLICES] = { nullptr };
-    unsigned int nClusterData[NSLICES] = { 0 };
-    const AliHLTTPCRawCluster* rawClusters[NSLICES] = { nullptr };
-    unsigned int nRawClusters[NSLICES] = { 0 };
-    const o2::tpc::ClusterNativeAccessFullTPC* clustersNative = nullptr;
-    const GPUTPCSliceOutTrack* sliceOutTracks[NSLICES] = { nullptr };
-    unsigned int nSliceOutTracks[NSLICES] = { 0 };
-    const GPUTPCSliceOutCluster* sliceOutClusters[NSLICES] = { nullptr };
-    unsigned int nSliceOutClusters[NSLICES] = { 0 };
-    const AliHLTTPCClusterMCLabel* mcLabelsTPC = nullptr;
-    unsigned int nMCLabelsTPC = 0;
-    const GPUTPCMCInfo* mcInfosTPC = nullptr;
-    unsigned int nMCInfosTPC = 0;
-    const GPUTPCGMMergedTrack* mergedTracks = nullptr;
-    unsigned int nMergedTracks = 0;
-    const GPUTPCGMMergedTrackHit* mergedTrackHits = nullptr;
-    unsigned int nMergedTrackHits = 0;
-    const GPUTRDTrack* trdTracks = nullptr;
-    unsigned int nTRDTracks = 0;
-    const GPUTRDTrackletWord* trdTracklets = nullptr;
-    unsigned int nTRDTracklets = 0;
-    const GPUTRDTrackletLabels* trdTrackletsMC = nullptr;
-    unsigned int nTRDTrackletsMC = 0;
-    friend class GPUReconstruction;
-  } mIOPtrs;
+  GPUTrackingInOutPointers mIOPtrs;
 
   struct InOutMemory {
     InOutMemory();
@@ -121,16 +82,16 @@ class GPUChainTracking : public GPUChain, GPUReconstructionHelpers::helperDelega
 
     std::unique_ptr<GPUTPCClusterData[]> clusterData[NSLICES];
     std::unique_ptr<AliHLTTPCRawCluster[]> rawClusters[NSLICES];
-    std::unique_ptr<o2::tpc::ClusterNative[]> clustersNative[NSLICES * GPUCA_ROW_COUNT];
-    std::unique_ptr<GPUTPCSliceOutTrack[]> sliceOutTracks[NSLICES];
-    std::unique_ptr<GPUTPCSliceOutCluster[]> sliceOutClusters[NSLICES];
+    std::unique_ptr<o2::tpc::ClusterNative[]> clustersNative;
+    std::unique_ptr<GPUTPCTrack[]> sliceOutTracks[NSLICES];
+    std::unique_ptr<GPUTPCHitId[]> sliceOutClusters[NSLICES];
     std::unique_ptr<AliHLTTPCClusterMCLabel[]> mcLabelsTPC;
     std::unique_ptr<GPUTPCMCInfo[]> mcInfosTPC;
     std::unique_ptr<GPUTPCGMMergedTrack[]> mergedTracks;
     std::unique_ptr<GPUTPCGMMergedTrackHit[]> mergedTrackHits;
-    std::unique_ptr<GPUTRDTrack[]> trdTracks;
     std::unique_ptr<GPUTRDTrackletWord[]> trdTracklets;
     std::unique_ptr<GPUTRDTrackletLabels[]> trdTrackletsMC;
+    std::unique_ptr<GPUTRDTrack[]> trdTracks;
   } mIOMem;
 
   // Read / Dump / Clear Data
@@ -146,6 +107,7 @@ class GPUChainTracking : public GPUChain, GPUReconstructionHelpers::helperDelega
   // Converter / loader functions
   int ConvertNativeToClusterData();
   void ConvertNativeToClusterDataLegacy();
+  void ConvertRun2RawToNative();
 
   // Getters for external usage of tracker classes
   GPUTRDTracker* GetTRDTracker() { return &processors()->trdTracker; }
@@ -167,13 +129,14 @@ class GPUChainTracking : public GPUChain, GPUReconstructionHelpers::helperDelega
   // Getters / setters for parameters
   const TPCFastTransform* GetTPCTransform() const { return mTPCFastTransform; }
   const o2::base::MatLayerCylSet* GetMatLUT() const { return mMatLUT; }
-  const GPUTRDGeometry* GetTRDGeometry() const { return (GPUTRDGeometry*)mTRDGeometry.get(); }
-  const ClusterNativeAccessExt* GetClusterNativeAccessExt() const { return mClusterNativeAccess.get(); }
-  void SetTPCFastTransform(std::unique_ptr<TPCFastTransform> tpcFastTransform);
-  void SetMatLUT(std::unique_ptr<o2::base::MatLayerCylSet> lut);
+  const GPUTRDGeometry* GetTRDGeometry() const { return (GPUTRDGeometry*)mTRDGeometry; }
+  const o2::tpc::ClusterNativeAccess* GetClusterNativeAccess() const { return mClusterNativeAccess.get(); }
+  void SetTPCFastTransform(std::unique_ptr<TPCFastTransform>&& tpcFastTransform);
+  void SetMatLUT(std::unique_ptr<o2::base::MatLayerCylSet>&& lut);
+  void SetTRDGeometry(std::unique_ptr<o2::trd::TRDGeometryFlat>&& geo);
   void SetTPCFastTransform(const TPCFastTransform* tpcFastTransform) { mTPCFastTransform = tpcFastTransform; }
   void SetMatLUT(const o2::base::MatLayerCylSet* lut) { mMatLUT = lut; }
-  void SetTRDGeometry(const o2::trd::TRDGeometryFlat& geo);
+  void SetTRDGeometry(const o2::trd::TRDGeometryFlat* geo) { mTRDGeometry = geo; }
   void LoadClusterErrors();
 
   const void* mConfigDisplay = nullptr; // Abstract pointer to Standalone Display Configuration Structure
@@ -208,6 +171,8 @@ class GPUChainTracking : public GPUChain, GPUReconstructionHelpers::helperDelega
   int PrepareProfile();
   int DoProfile();
 
+  bool ValidateSteps();
+
   // Pointers to tracker classes
   GPUTrackingFlatObjects mFlatObjectsShadow; // Host copy of flat objects that will be used on the GPU
   GPUTrackingFlatObjects mFlatObjectsDevice; // flat objects that will be used on the GPU
@@ -219,13 +184,14 @@ class GPUChainTracking : public GPUChain, GPUReconstructionHelpers::helperDelega
   std::unique_ptr<GPUTPCClusterStatistics> mCompressionStatistics;
   bool mQAInitialized = false;
 
-  // Ptr to reconstruction detecto objects
-  std::unique_ptr<ClusterNativeAccessExt> mClusterNativeAccess; // Internal memory for clusterNativeAccess
-  std::unique_ptr<TPCFastTransform> mTPCFastTransformU;         // Global TPC fast transformation object
-  const TPCFastTransform* mTPCFastTransform = nullptr;          //
-  std::unique_ptr<o2::base::MatLayerCylSet> mMatLUTU;           // Material Lookup Table
-  const o2::base::MatLayerCylSet* mMatLUT = nullptr;            //
-  std::unique_ptr<o2::trd::TRDGeometryFlat> mTRDGeometry;       // TRD Geometry
+  // Ptr to reconstruction detector objects
+  std::unique_ptr<o2::tpc::ClusterNativeAccess> mClusterNativeAccess; // Internal memory for clusterNativeAccess
+  std::unique_ptr<TPCFastTransform> mTPCFastTransformU;               // Global TPC fast transformation object
+  const TPCFastTransform* mTPCFastTransform = nullptr;                //
+  std::unique_ptr<o2::base::MatLayerCylSet> mMatLUTU;                 // Material Lookup Table
+  const o2::base::MatLayerCylSet* mMatLUT = nullptr;                  //
+  std::unique_ptr<o2::trd::TRDGeometryFlat> mTRDGeometryU;            // TRD Geometry
+  const o2::trd::TRDGeometryFlat* mTRDGeometry = nullptr;             //
 
   HighResTimer timerTPCtracking[NSLICES][10];
   eventStruct* mEvents = nullptr;

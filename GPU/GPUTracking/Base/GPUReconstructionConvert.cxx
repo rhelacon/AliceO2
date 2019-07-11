@@ -14,24 +14,26 @@
 #include "GPUReconstructionConvert.h"
 #include "TPCFastTransform.h"
 #include "GPUTPCClusterData.h"
-#include "ClusterNativeAccessExt.h"
+#include "GPUO2DataTypes.h"
+#include "AliHLTTPCRawCluster.h"
 
 using namespace GPUCA_NAMESPACE::gpu;
+using namespace o2::tpc;
 
-void GPUReconstructionConvert::ConvertNativeToClusterData(ClusterNativeAccessExt* native, std::unique_ptr<GPUTPCClusterData[]>* clusters, unsigned int* nClusters, const TPCFastTransform* transform, int continuousMaxTimeBin)
+void GPUReconstructionConvert::ConvertNativeToClusterData(o2::tpc::ClusterNativeAccess* native, std::unique_ptr<GPUTPCClusterData[]>* clusters, unsigned int* nClusters, const TPCFastTransform* transform, int continuousMaxTimeBin)
 {
 #ifdef HAVE_O2HEADERS
   memset(nClusters, 0, NSLICES * sizeof(nClusters[0]));
   unsigned int offset = 0;
   for (unsigned int i = 0; i < NSLICES; i++) {
     unsigned int nClSlice = 0;
-    for (int j = 0; j < o2::tpc::Constants::MAXGLOBALPADROW; j++) {
+    for (int j = 0; j < GPUCA_ROW_COUNT; j++) {
       nClSlice += native->nClusters[i][j];
     }
     nClusters[i] = nClSlice;
     clusters[i].reset(new GPUTPCClusterData[nClSlice]);
     nClSlice = 0;
-    for (int j = 0; j < o2::tpc::Constants::MAXGLOBALPADROW; j++) {
+    for (int j = 0; j < GPUCA_ROW_COUNT; j++) {
       for (unsigned int k = 0; k < native->nClusters[i][j]; k++) {
         const auto& cin = native->clusters[i][j][k];
         float x = 0, y = 0, z = 0;
@@ -52,6 +54,38 @@ void GPUReconstructionConvert::ConvertNativeToClusterData(ClusterNativeAccessExt
       }
       native->clusterOffset[i][j] = offset;
       offset += native->nClusters[i][j];
+    }
+  }
+#endif
+}
+
+void GPUReconstructionConvert::ConvertRun2RawToNative(o2::tpc::ClusterNativeAccess& native, std::unique_ptr<ClusterNative[]>& nativeBuffer, const AliHLTTPCRawCluster** rawClusters, unsigned int* nRawClusters)
+{
+#ifdef HAVE_O2HEADERS
+  memset((void*)&native, 0, sizeof(native));
+  for (unsigned int i = 0; i < NSLICES; i++) {
+    for (unsigned int j = 0; j < nRawClusters[i]; j++) {
+      native.nClusters[i][rawClusters[i][j].GetPadRow()]++;
+    }
+    native.nClustersTotal += nRawClusters[i];
+  }
+  nativeBuffer.reset(new ClusterNative[native.nClustersTotal]);
+  native.clustersLinear = nativeBuffer.get();
+  native.setOffsetPtrs();
+  for (unsigned int i = 0; i < NSLICES; i++) {
+    for (unsigned int j = 0; j < GPUCA_ROW_COUNT; j++) {
+      native.nClusters[i][j] = 0;
+    }
+    for (unsigned int j = 0; j < nRawClusters[i]; j++) {
+      const AliHLTTPCRawCluster& org = rawClusters[i][j];
+      int row = org.GetPadRow();
+      ClusterNative& c = nativeBuffer[native.clusterOffset[i][row] + native.nClusters[i][row]++];
+      c.setTimeFlags(org.GetTime(), org.GetFlags());
+      c.setPad(org.GetPad());
+      c.setSigmaTime(std::sqrt(org.GetSigmaTime2()));
+      c.setSigmaPad(std::sqrt(org.GetSigmaPad2()));
+      c.qMax = org.GetQMax();
+      c.qTot = org.GetCharge();
     }
   }
 #endif

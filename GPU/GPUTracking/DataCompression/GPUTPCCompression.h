@@ -26,8 +26,12 @@ namespace o2
 {
 namespace tpc
 {
-struct CompressedClusters {
+template <class T>
+struct CompressedClustersPtrs_helper {
 };
+struct CompressedClustersCounters {
+};
+using CompressedClusters = CompressedClustersPtrs_helper<CompressedClustersCounters>;
 struct CompressedClustersPtrsOnly {
 };
 } // namespace tpc
@@ -38,7 +42,6 @@ namespace GPUCA_NAMESPACE
 {
 namespace gpu
 {
-struct ClusterNativeAccessExt;
 class GPUTPCGMMerger;
 
 class GPUTPCCompression : public GPUProcessor
@@ -114,11 +117,10 @@ GPUdi() void GPUTPCCompression::truncateSignificantBits(T& v, unsigned int nBits
       ldz = sizeof(unsigned int) * 8 - CAMath::Clz(val);
     }
     val &= ((1 << ldz) - 1) ^ ((1 << (ldz - nBits)) - 1);
-    //printf("CHANGING X %x --> %x\n", (unsigned int) v, val);
+    // printf("CHANGING X %x --> %x\n", (unsigned int) v, val);
     v = val;
   }
 }
-
 } // namespace gpu
 } // namespace GPUCA_NAMESPACE
 

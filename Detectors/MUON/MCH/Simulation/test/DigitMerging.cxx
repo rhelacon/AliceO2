@@ -59,8 +59,8 @@ std::vector<Digit> mergeDigits_sortnosizeadjust(const std::vector<Digit>& inputD
     for (int k = i; k < j; k++) {
       adc += sortedDigits(k).getADC();
     }
-    digits.emplace_back(sortedDigits(i).getTimeStamp(), sortedDigits(i).getPadID(), adc);
-    labels.emplace_back(sortedLabels(i).getTrackID(), sortedLabels(i).getEventID(), sortedLabels(i).getSourceID());
+    digits.emplace_back(sortedDigits(i).getTimeStamp(), sortedDigits(i).getDetID(), sortedDigits(i).getPadID(), adc);
+    labels.emplace_back(sortedLabels(i).getTrackID(), sortedLabels(i).getEventID(), sortedLabels(i).getSourceID(), false);
     i = j;
   }
   return digits;
@@ -99,8 +99,8 @@ std::vector<Digit> mergeDigits_sortsizeadjust(const std::vector<Digit>& inputDig
     for (int k = i; k < j; k++) {
       adc += sortedDigits(k).getADC();
     }
-    digits.emplace_back(sortedDigits(i).getTimeStamp(), sortedDigits(i).getPadID(), adc);
-    labels.emplace_back(sortedLabels(i).getTrackID(), sortedLabels(i).getEventID(), sortedLabels(i).getSourceID());
+    digits.emplace_back(sortedDigits(i).getTimeStamp(), sortedDigits(i).getDetID(), sortedDigits(i).getPadID(), adc);
+    labels.emplace_back(sortedLabels(i).getTrackID(), sortedLabels(i).getEventID(), sortedLabels(i).getSourceID(), false);
     i = j;
   }
   digits.resize(digits.size());

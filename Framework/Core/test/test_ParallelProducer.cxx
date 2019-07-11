@@ -11,9 +11,9 @@
 #include "Framework/ControlService.h"
 #include "Framework/DataProcessorSpec.h"
 #include "Framework/DataSpecUtils.h"
+#include "Framework/Logger.h"
 #include "Framework/ParallelContext.h"
 
-#include "FairMQLogger.h"
 
 #include <chrono>
 #include <vector>
@@ -56,10 +56,9 @@ WorkflowSpec defineDataProcessing(ConfigContext const&context) {
   // instances in order to modify it. Parallel will also make sure the name of
   // the instance is amended from "some-producer" to "some-producer-<index>".
   auto jobs = context.options().get<int>("jobs");
-  WorkflowSpec workflow = parallel(templateProducer(), jobs, [](DataProcessorSpec &spec, size_t index) {
-      spec.outputs[0].subSpec = index;
-    }
-  );
+  WorkflowSpec workflow = parallel(templateProducer(), jobs, [](DataProcessorSpec& spec, size_t index) {
+    DataSpecUtils::updateMatchingSubspec(spec.outputs[0], index);
+  });
   workflow.push_back(DataProcessorSpec{
     "merger",
     mergeInputs(InputSpec{ "x", "TST", "A", 0, Lifetime::Timeframe },

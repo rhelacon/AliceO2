@@ -15,6 +15,7 @@
 #define GPURECONSTRUCTIONTIMEFRAME_H
 
 #include "GPUChainTracking.h"
+#include "GPUDataTypes.h"
 #include <vector>
 #include <random>
 #include <tuple>
@@ -31,7 +32,7 @@ namespace GPUCA_NAMESPACE
 {
 namespace gpu
 {
-struct ClusterNativeAccessFullTPC;
+struct ClusterNativeAccess;
 
 class GPUReconstructionTimeframe
 {
@@ -39,8 +40,13 @@ class GPUReconstructionTimeframe
   GPUReconstructionTimeframe(GPUChainTracking* rec, int (*read)(int), int nEvents);
   int LoadCreateTimeFrame(int iEvent);
   int LoadMergedEvents(int iEvent);
-  int ReadEventShifted(int i, float shift, float minZ = -1e6, float maxZ = -1e6, bool silent = false);
+  int ReadEventShifted(int i, float shiftZ, float minZ = -1e6, float maxZ = -1e6, bool silent = false);
   void MergeShiftedEvents();
+
+  static constexpr int ORBIT_RATE = 11245;
+  static constexpr int DRIFT_TIME = 93000;
+  static constexpr int TPCZ = 250;
+  static constexpr int TIME_ORBIT = 1000000000 / ORBIT_RATE;
 
  private:
   constexpr static unsigned int NSLICES = GPUReconstruction::NSLICES;
@@ -58,10 +64,6 @@ class GPUReconstructionTimeframe
 
   int mTrainDist = 0;
   float mCollisionProbability = 0.;
-  const int mOrbitRate = 11245;
-  const int mDriftTime = 93000;
-  const int mTPCZ = 250;
-  const int mTimeOrbit = 1000000000 / mOrbitRate;
   int mMaxBunchesFull;
   int mMaxBunches;
 
@@ -70,7 +72,7 @@ class GPUReconstructionTimeframe
   long long int mEventStride;
   int mSimBunchNoRepeatEvent;
   std::vector<char> mEventUsed;
-  std::vector<std::tuple<GPUChainTracking::InOutPointers, GPUChainTracking::InOutMemory, o2::tpc::ClusterNativeAccessFullTPC>> mShiftedEvents;
+  std::vector<std::tuple<GPUTrackingInOutPointers, GPUChainTracking::InOutMemory, o2::tpc::ClusterNativeAccess>> mShiftedEvents;
 };
 } // namespace gpu
 } // namespace GPUCA_NAMESPACE

@@ -18,6 +18,7 @@
 #include "Framework/ExternalFairMQDeviceProxy.h"
 #include "Framework/DataSamplingReadoutAdapter.h"
 #include "Framework/DataSpecUtils.h"
+
 #include "Headers/DataHeader.h"
 
 #include <Configuration/ConfigurationFactory.h>
@@ -65,19 +66,13 @@ BOOST_AUTO_TEST_CASE(DataSamplingSimpleFlow)
 
   auto output = std::find_if(disp->outputs.begin(), disp->outputs.end(),
                              [](const OutputSpec& out) {
-                               return out.origin == DataOrigin("DS") &&
-                                      out.description == DataDescription("tpcclusters-0") &&
-                                      out.subSpec == 0 &&
-                                      out.lifetime == Lifetime::Timeframe;
+                               return DataSpecUtils::match(out, ConcreteDataMatcher{ "DS", "tpcclusters-0", 0 }) && out.lifetime == Lifetime::Timeframe;
                              });
   BOOST_CHECK(output != disp->outputs.end());
 
   output = std::find_if(disp->outputs.begin(), disp->outputs.end(),
                         [](const OutputSpec& out) {
-                          return out.origin == DataOrigin("DS") &&
-                                 out.description == DataDescription("tpcclusters-1") &&
-                                 out.subSpec == 0 &&
-                                 out.lifetime == Lifetime::Timeframe;
+                          return DataSpecUtils::match(out, ConcreteDataMatcher{ "DS", "tpcclusters-1", 0 }) && out.lifetime == Lifetime::Timeframe;
                         });
   BOOST_CHECK(output != disp->outputs.end());
 
@@ -102,7 +97,7 @@ BOOST_AUTO_TEST_CASE(DataSamplingParallelFlow)
     3,
     [](DataProcessorSpec& spec, size_t index) {
       DataSpecUtils::updateMatchingSubspec(spec.inputs[0], index);
-      spec.outputs[0].subSpec = index;
+      DataSpecUtils::updateMatchingSubspec(spec.outputs[0], index);
     });
 
   workflow.insert(std::end(workflow), std::begin(processingStages), std::end(processingStages));
@@ -131,19 +126,13 @@ BOOST_AUTO_TEST_CASE(DataSamplingParallelFlow)
 
     auto output = std::find_if(disp->outputs.begin(), disp->outputs.end(),
                                [](const OutputSpec& out) {
-                                 return out.origin == DataOrigin("DS") &&
-                                        out.description == DataDescription("tpcclusters-0") &&
-                                        out.subSpec == 0 &&
-                                        out.lifetime == Lifetime::Timeframe;
+                                 return DataSpecUtils::match(out, ConcreteDataMatcher{ "DS", "tpcclusters-0", 0 }) && out.lifetime == Lifetime::Timeframe;
                                });
     BOOST_CHECK(output != disp->outputs.end());
 
     output = std::find_if(disp->outputs.begin(), disp->outputs.end(),
                           [](const OutputSpec& out) {
-                            return out.origin == DataOrigin("DS") &&
-                                   out.description == DataDescription("tpcclusters-1") &&
-                                   out.subSpec == 0 &&
-                                   out.lifetime == Lifetime::Timeframe;
+                            return DataSpecUtils::match(out, ConcreteDataMatcher{ "DS", "tpcclusters-1", 0 }) && out.lifetime == Lifetime::Timeframe;
                           });
     BOOST_CHECK(output != disp->outputs.end());
 

@@ -24,10 +24,11 @@ std::vector<Digit> createDigits(int N)
   float dummyadc{ 42.0 };
   std::srand(std::time(nullptr)); // use current time as seed for random generator
   float dummytime{ 0.0 };
+  int dummydetID = 100; //to be improved, timing depending on that
 
   for (auto i = 0; i < N; i++) {
     int randomPadID = std::rand() * N;
-    digits.emplace_back(dummytime, randomPadID, dummyadc);
+    digits.emplace_back(dummytime, dummydetID, randomPadID, dummyadc);
   }
 
   return digits;
@@ -42,7 +43,7 @@ std::vector<o2::MCCompLabel> createLabels(int N)
 
   for (auto i = 0; i < N; i++) {
     int randomTrackID = std::rand() * N;
-    labels.emplace_back(randomTrackID, dummyEventID, dummysrcID);
+    labels.emplace_back(randomTrackID, dummyEventID, dummysrcID, false);
   }
 
   return labels;

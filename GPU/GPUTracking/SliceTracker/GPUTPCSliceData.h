@@ -18,7 +18,6 @@
 #include "GPUTPCRow.h"
 #include "GPUCommonMath.h"
 #include "GPUParam.h"
-#include "GPUProcessor.h"
 #include "GPUMemoryResource.h"
 
 namespace GPUCA_NAMESPACE
@@ -29,20 +28,15 @@ struct GPUTPCClusterData;
 class GPUTPCHit;
 
 MEM_CLASS_PRE()
-class GPUTPCSliceData : public GPUProcessor
+class GPUTPCSliceData
 {
  public:
-  GPUTPCSliceData()
-    : GPUProcessor(), mMemoryResInput(-1), mMemoryResScratch(-1), mMemoryResScratchHost(-1), mMemoryResRows(-1), mFirstRow(0), mLastRow(GPUCA_ROW_COUNT - 1), mNumberOfHits(0), mNumberOfHitsPlusAlign(0), mClusterIdOffset(0), mMaxZ(0.f), mGPUTextureBase(nullptr), mRows(nullptr), mLinkUpData(nullptr), mLinkDownData(nullptr), mClusterData(nullptr)
-  {
-  }
+  GPUTPCSliceData() : mFirstRow(0), mLastRow(GPUCA_ROW_COUNT - 1), mNumberOfHits(0), mNumberOfHitsPlusAlign(0), mClusterIdOffset(0), mMaxZ(0.f), mGPUTextureBase(nullptr), mRows(nullptr), mLinkUpData(nullptr), mLinkDownData(nullptr), mClusterData(nullptr) {}
 
 #ifndef GPUCA_GPUCODE
   ~GPUTPCSliceData() CON_DEFAULT;
 #endif //! GPUCA_GPUCODE
 
-  MEM_CLASS_PRE2()
-  void InitializeProcessor();
   MEM_CLASS_PRE2()
   void InitializeRows(const MEM_LG2(GPUParam) & parameters);
 
@@ -53,15 +47,10 @@ class GPUTPCSliceData : public GPUProcessor
 
   void SetMaxData();
   void SetClusterData(const GPUTPCClusterData* data, int nClusters, int clusterIdOffset);
-  void* SetPointersInput(void* mem);
+  void* SetPointersInput(void* mem, bool idsOnGPU);
   void* SetPointersScratch(void* mem);
-  void* SetPointersScratchHost(void* mem);
+  void* SetPointersScratchHost(void* mem, bool idsOnGPU);
   void* SetPointersRows(void* mem);
-  void RegisterMemoryAllocation();
-
-  short MemoryResInput() { return mMemoryResInput; }
-  short MemoryResScratch() { return mMemoryResScratch; }
-  short MemoryResRows() { return mMemoryResRows; }
 
   int InitFromClusterData();
 
@@ -167,11 +156,6 @@ class GPUTPCSliceData : public GPUProcessor
   void CreateGrid(GPUTPCRow* row, const float2* data, int ClusterDataHitNumberOffset);
   int PackHitData(GPUTPCRow* row, const GPUTPCHit* binSortedHits);
 #endif
-
-  short mMemoryResInput;
-  short mMemoryResScratch;
-  short mMemoryResScratchHost;
-  short mMemoryResRows;
 
   int mFirstRow; // First non-empty row
   int mLastRow;  // Last non-empty row

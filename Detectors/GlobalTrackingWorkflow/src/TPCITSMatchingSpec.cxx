@@ -71,10 +71,16 @@ void TPCITSMatchingDPL::run(ProcessingContext& pc)
   }
 
   auto tracksITS = pc.inputs().get<const std::vector<o2::its::TrackITS>>("trackITS");
+  auto trackClIdxITS = pc.inputs().get<gsl::span<int>>("trackClIdx");
   auto tracksITSROF = pc.inputs().get<const std::vector<o2::itsmft::ROFRecord>>("trackITSROF");
   auto clusITS = pc.inputs().get<const std::vector<o2::itsmft::Cluster>>("clusITS");
   auto clusITSROF = pc.inputs().get<const std::vector<o2::itsmft::ROFRecord>>("clusITSROF");
   auto tracksTPC = pc.inputs().get<const std::vector<o2::tpc::TrackTPC>>("trackTPC");
+
+  // TODO: this is very ugly way to transfer the vector to the matcher, we should pass a span
+  std::vector<int> clIdx;
+  clIdx.reserve(trackClIdxITS.size());
+  std::copy(trackClIdxITS.begin(), trackClIdxITS.end(), std::inserter(clIdx, clIdx.end()));
 
   //---------------------------->> TPC Clusters loading >>------------------------------------------
   int operation = 0;
@@ -210,9 +216,11 @@ void TPCITSMatchingDPL::run(ProcessingContext& pc)
     LOG(INFO) << "running matching for sector(s) " << bitInfo;
   }
 
-  o2::tpc::ClusterNativeAccessFullTPC clusterIndex;
+  o2::tpc::ClusterNativeAccess clusterIndex;
+  std::unique_ptr<o2::tpc::ClusterNative[]> clusterBuffer;
+  o2::tpc::MCLabelContainer clusterMCBuffer;
   memset(&clusterIndex, 0, sizeof(clusterIndex));
-  o2::tpc::ClusterNativeHelper::Reader::fillIndex(clusterIndex, clustersTPC, mcInputs, [&validSectors](auto& index) { return validSectors.test(index); });
+  o2::tpc::ClusterNativeHelper::Reader::fillIndex(clusterIndex, clusterBuffer, clusterMCBuffer, clustersTPC, mcInputs, [&validSectors](auto& index) { return validSectors.test(index); });
 
   //----------------------------<< TPC Clusters loading <<------------------------------------------
 
@@ -230,6 +238,7 @@ void TPCITSMatchingDPL::run(ProcessingContext& pc)
   //
   // pass input data to MatchTPCITS object
   mMatching.setITSTracksInp(&tracksITS);
+  mMatching.setITSTrackClusIdxInp(&clIdx);
   mMatching.setITSTrackROFRecInp(&tracksITSROF);
   mMatching.setITSClustersInp(&clusITS);
   mMatching.setITSClusterROFRecInp(&clusITSROF);
@@ -271,6 +280,7 @@ DataProcessorSpec getTPCITSMatchingSpec(bool useMC, bool useFIT, const std::vect
   std::vector<InputSpec> inputs;
   std::vector<OutputSpec> outputs;
   inputs.emplace_back("trackITS", "ITS", "TRACKS", 0, Lifetime::Timeframe);
+  inputs.emplace_back("trackClIdx", "ITS", "TRACKCLSID", 0, Lifetime::Timeframe);
   inputs.emplace_back("trackITSROF", "ITS", "ITSTrackROF", 0, Lifetime::Timeframe);
   inputs.emplace_back("clusITS", "ITS", "CLUSTERS", 0, Lifetime::Timeframe);
   inputs.emplace_back("clusITSROF", "ITS", "ITSClusterROF", 0, Lifetime::Timeframe);

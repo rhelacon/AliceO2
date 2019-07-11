@@ -28,69 +28,69 @@ BOOST_AUTO_TEST_SUITE(o2_mch_simulation)
 std::vector<Digit> createNonOverlappingDigits()
 {
   return std::vector<Digit>{
-    { 0, 2, 5 },
-    { 0, 3, 6 },
-    { 0, 1, 2 },
-    { 0, 0, 1 }
+    { 0, 100, 2, 5 },
+    { 0, 100, 3, 6 },
+    { 0, 100, 1, 2 },
+    { 0, 100, 0, 1 }
   };
 }
 
 std::vector<o2::MCCompLabel> createLabelsNonOverlappingDigits()
 {
   return std::vector<o2::MCCompLabel>{
-    { 0, 0, 10 },
-    { 0, 0, 10 },
-    { 10, 0, 10 },
-    { 11, 0, 10 },
+    { 0, 0, 10, false },
+    { 0, 0, 10, false },
+    { 10, 0, 10, false },
+    { 11, 0, 10, false }
   };
 }
 
 std::vector<Digit> createOverlappingDigits()
 {
   return std::vector<Digit>{
-    { 0, 2, 5 },
-    { 0, 3, 6 },
-    { 0, 1, 2 },
-    { 0, 0, 0 },
-    { 0, 0, 1 },
-    { 0, 1, 3 },
-    { 0, 3, 7 },
-    { 0, 1, 4 }
+    { 0, 100, 2, 5 },
+    { 0, 100, 3, 6 },
+    { 0, 100, 1, 2 },
+    { 0, 100, 0, 0 },
+    { 0, 100, 0, 1 },
+    { 0, 100, 1, 3 },
+    { 0, 100, 3, 7 },
+    { 0, 100, 1, 4 }
   };
 }
 
 std::vector<o2::MCCompLabel> createLabelsOverlappingDigits()
 {
   return std::vector<o2::MCCompLabel>{
-    { 0, 0, 10 },
-    { 0, 0, 10 },
-    { 10, 0, 10 },
-    { 11, 0, 10 },
-    { 10, 0, 10 },
-    { 2, 0, 10 },
-    { 4, 0, 10 },
-    { 5, 0, 10 },
-    { 6, 0, 10 }
+    { 0, 0, 10, false },
+    { 0, 0, 10, false },
+    { 10, 0, 10, false },
+    { 11, 0, 10, false },
+    { 10, 0, 10, false },
+    { 2, 0, 10, false },
+    { 4, 0, 10, false },
+    { 5, 0, 10, false },
+    { 6, 0, 10, false }
   };
 }
 
 std::vector<Digit> expected()
 {
   return std::vector<Digit>{
-    { 0, 0, 1 },
-    { 0, 1, 9 },
-    { 0, 2, 5 },
-    { 0, 3, 13 }
+    { 0, 100, 0, 1 },
+    { 0, 100, 1, 9 },
+    { 0, 100, 2, 5 },
+    { 0, 100, 3, 13 }
   };
 }
 
 std::vector<o2::MCCompLabel> labelexpected()
 {
   return std::vector<o2::MCCompLabel>{
-    { 0, 0, 10 },
-    { 0, 0, 10 },
-    { 10, 0, 10 },
-    { 11, 0, 10 }
+    { 0, 0, 10, false },
+    { 0, 0, 10, false },
+    { 10, 0, 10, false },
+    { 11, 0, 10, false }
   };
 }
 

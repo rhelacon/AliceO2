@@ -28,13 +28,9 @@
 #include "GPUTRDTrack.h"
 #include "GPUTRDTracker.h"
 #include "AliHLTTPCRawCluster.h"
-#include "ClusterNativeAccessExt.h"
 #include "GPUTRDTrackletLabels.h"
 #include "GPUMemoryResource.h"
 #include "GPUConstantMem.h"
-
-#include "GPUQA.h"
-#include "GPUDisplay.h"
 
 #define GPUCA_LOGGING_PRINTF
 #include "GPULogging.h"
@@ -44,6 +40,9 @@
 #endif
 
 using namespace GPUCA_NAMESPACE::gpu;
+
+constexpr GPUReconstructionCPU::krnlRunRange GPUReconstructionCPU::krnlRunRangeNone;
+constexpr GPUReconstructionCPU::krnlEvent GPUReconstructionCPU::krnlEventNone;
 
 GPUReconstruction* GPUReconstruction::GPUReconstruction_Create_CPU(const GPUSettingsProcessing& cfg) { return new GPUReconstructionCPU(cfg); }
 
@@ -70,7 +69,7 @@ int GPUReconstructionCPUBackend::runKernelBackend(const krnlExec& x, const krnlR
 
 void GPUReconstructionCPU::TransferMemoryInternal(GPUMemoryResource* res, int stream, deviceEvent* ev, deviceEvent* evList, int nEvents, bool toGPU, const void* src, void* dst) {}
 void GPUReconstructionCPU::GPUMemCpy(void* dst, const void* src, size_t size, int stream, bool toGPU, deviceEvent* ev, deviceEvent* evList, int nEvents) {}
-void GPUReconstructionCPU::GPUMemCpyAlways(void* dst, const void* src, size_t size, int stream, bool toGPU, deviceEvent* ev, deviceEvent* evList, int nEvents) { memcpy(dst, src, size); }
+void GPUReconstructionCPU::GPUMemCpyAlways(bool onGpu, void* dst, const void* src, size_t size, int stream, bool toGPU, deviceEvent* ev, deviceEvent* evList, int nEvents) { memcpy(dst, src, size); }
 void GPUReconstructionCPU::WriteToConstantMemory(size_t offset, const void* src, size_t size, int stream, deviceEvent* ev) {}
 int GPUReconstructionCPU::GPUDebug(const char* state, int stream) { return 0; }
 void GPUReconstructionCPU::TransferMemoryResourcesHelper(GPUProcessor* proc, int stream, bool all, bool toGPU)
@@ -146,7 +145,7 @@ void GPUReconstructionCPU::SetThreadCounts(RecoStep step)
   }
 }
 
-int GPUReconstructionCPU::RunStandalone()
+int GPUReconstructionCPU::RunChains()
 {
   mStatNEvents++;
 
@@ -158,8 +157,9 @@ int GPUReconstructionCPU::RunStandalone()
   }
 
   for (unsigned int i = 0; i < mChains.size(); i++) {
-    if (mChains[i]->RunStandalone()) {
-      return 1;
+    int retVal = mChains[i]->RunChain();
+    if (retVal) {
+      return retVal;
     }
   }
 

@@ -85,6 +85,9 @@ int GPUReconstruction::Init()
 #ifndef HAVE_O2HEADERS
   mRecoSteps.setBits(RecoStep::ITSTracking, false);
   mRecoSteps.setBits(RecoStep::TRDTracking, false);
+  mRecoSteps.setBits(RecoStep::TPCConversion, false);
+  mRecoSteps.setBits(RecoStep::TPCCompression, false);
+  mRecoSteps.setBits(RecoStep::TPCdEdx, false);
 #endif
   mRecoStepsGPU &= mRecoSteps;
   mRecoStepsGPU &= AvailableRecoSteps();
@@ -314,10 +317,10 @@ void GPUReconstruction::ResetRegisteredMemoryPointers(short ires)
   }
 }
 
-void GPUReconstruction::FreeRegisteredMemory(GPUProcessor* proc, bool freeCustom)
+void GPUReconstruction::FreeRegisteredMemory(GPUProcessor* proc, bool freeCustom, bool freePermanent)
 {
   for (unsigned int i = 0; i < mMemoryResources.size(); i++) {
-    if ((proc == nullptr || mMemoryResources[i].mProcessor == proc) && (freeCustom || !(mMemoryResources[i].mType & GPUMemoryResource::MEMORY_CUSTOM))) {
+    if ((proc == nullptr || mMemoryResources[i].mProcessor == proc) && (freeCustom || !(mMemoryResources[i].mType & GPUMemoryResource::MEMORY_CUSTOM)) && (freePermanent || !(mMemoryResources[i].mType & GPUMemoryResource::MEMORY_PERMANENT))) {
       FreeRegisteredMemory(i);
     }
   }
@@ -333,10 +336,10 @@ void GPUReconstruction::FreeRegisteredMemory(short ires)
   res->mPtrDevice = nullptr;
 }
 
-void GPUReconstruction::ClearAllocatedMemory()
+void GPUReconstruction::ClearAllocatedMemory(bool clearOutputs)
 {
   for (unsigned int i = 0; i < mMemoryResources.size(); i++) {
-    if (!(mMemoryResources[i].mType & GPUMemoryResource::MEMORY_PERMANENT)) {
+    if (!(mMemoryResources[i].mType & GPUMemoryResource::MEMORY_PERMANENT) && (clearOutputs || !(mMemoryResources[i].mType & GPUMemoryResource::MEMORY_OUTPUT))) {
       FreeRegisteredMemory(i);
     }
   }
@@ -395,13 +398,18 @@ void GPUReconstruction::SetSettings(float solenoidBz)
   SetSettings(&ev, nullptr, nullptr);
 }
 
-void GPUReconstruction::SetSettings(const GPUSettingsEvent* settings, const GPUSettingsRec* rec, const GPUSettingsDeviceProcessing* proc)
+void GPUReconstruction::SetSettings(const GPUSettingsEvent* settings, const GPUSettingsRec* rec, const GPUSettingsDeviceProcessing* proc, const GPURecoStepConfiguration* workflow)
 {
   mEventSettings = *settings;
   if (proc) {
     mDeviceProcessingSettings = *proc;
   }
-  param().SetDefaults(&mEventSettings, rec, proc);
+  if (workflow) {
+    mRecoSteps = workflow->steps;
+    mRecoStepsInputs = workflow->inputs;
+    mRecoStepsOutputs = workflow->outputs;
+  }
+  param().SetDefaults(&mEventSettings, rec, proc, workflow);
 }
 
 void GPUReconstruction::SetOutputControl(void* ptr, size_t size)

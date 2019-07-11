@@ -21,6 +21,7 @@ GPUCA_TRACKER_CXXFILES			= SliceTracker/GPUTPCSliceData.cxx \
 								SliceTracker/GPUTPCHitArea.cxx \
 								SliceTracker/GPUTPCTrackParam.cxx \
 								SliceTracker/GPUTPCClusterData.cxx \
+								Base/GPUDataTypes.cxx \
 								Base/GPUReconstruction.cxx \
 								Base/GPUReconstructionCPU.cxx \
 								Base/GPUReconstructionDeviceBase.cxx \
@@ -35,8 +36,10 @@ GPUCA_TRACKER_CXXFILES			= SliceTracker/GPUTPCSliceData.cxx \
 								TPCConvert/GPUTPCConvertKernel.cxx \
 								Global/GPUChain.cxx \
 								Global/GPUChainTracking.cxx \
+								Global/GPUChainTrackingDebugAndProfiling.cxx \
 								TPCFastTransformation/TPCFastTransform.cxx \
 								TPCFastTransformation/TPCDistortionIRS.cxx \
+								TPCFastTransformation/TPCFastTransformGeo.cxx \
 								TPCFastTransformation/IrregularSpline1D.cxx \
 								TPCFastTransformation/IrregularSpline2D3D.cxx
 

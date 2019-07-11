@@ -12,10 +12,10 @@
 
 #include <fstream>
 #include "DPLBroadcasterMerger.h"
-#include "../include/Utils/Utils.h"
+#include "DPLUtils/Utils.h"
 #include "Framework/DataProcessorSpec.h"
 #include "random"
-#include "FairMQLogger.h"
+#include "Framework/Logger.h"
 #include <thread>
 
 namespace o2f = o2::framework;

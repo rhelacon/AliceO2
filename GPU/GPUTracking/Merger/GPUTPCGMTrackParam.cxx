@@ -64,6 +64,7 @@ GPUd() bool GPUTPCGMTrackParam::Fit(const GPUTPCGMMerger* merger, int iTrk, GPUT
   prop.SetPolynomialField(merger->pField());
   prop.SetMaxSinPhi(maxSinPhi);
   prop.SetToyMCEventsFlag(param.ToyMCEventsFlag);
+  prop.SetMatLUT(merger->MatLUT());
   ShiftZ(merger->pField(), clusters, param, N);
 
   int nWays = param.rec.NWays;
@@ -612,6 +613,9 @@ GPUd() void GPUTPCGMTrackParam::AttachClustersMirror(const GPUTPCGMMerger* Merge
   float b = prop.GetBz(prop.GetAlpha(), mX, mP[0], mP[1]);
 
   int count = CAMath::Abs((toX - X) / 0.5f) + 0.5f;
+  if (count == 0) {
+    return;
+  }
   float dx = (toX - X) / count;
   const float myRowX = Merger->Param().tpcGeometry.Row2X(iRow);
   // printf("AttachMirror\n");
@@ -811,7 +815,7 @@ GPUd() void GPUTPCGMTrackParam::RefitTrack(GPUTPCGMMergedTrack& track, int iTrk,
     GPUTPCGMTrackParam t = track.Param();
     float Alpha = track.Alpha();
     CADEBUG(int nTrackHitsOld = nTrackHits; float ptOld = t.QPt());
-    bool ok = t.Fit(merger, iTrk, clusters + track.FirstClusterRef(), nTrackHits, NTolerated, Alpha, attempt, GPUCA_MAX_SIN_PHI, &track.OuterParam(), merger->Param().rec.DodEdx ? &track.dEdxInfo() : nullptr);
+    bool ok = t.Fit(merger, iTrk, clusters + track.FirstClusterRef(), nTrackHits, NTolerated, Alpha, attempt, GPUCA_MAX_SIN_PHI, &track.OuterParam(), merger->Param().dodEdx ? &track.dEdxInfo() : nullptr);
     CADEBUG(printf("Finished Fit Track %d\n", cadebug_nTracks));
 
     if (CAMath::Abs(t.QPt()) < 1.e-4f) {
