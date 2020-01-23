@@ -7,7 +7,7 @@
 #include <iostream>
 #include "FairLogger.h"
 #include "DataFormatsITSMFT/ROFRecord.h"
-#include "ITSMFTBase/Digit.h"
+#include "DataFormatsITSMFT/Digit.h"
 #include "SimulationDataFormat/RunContext.h"
 #include "SimulationDataFormat/MCTruthContainer.h"
 #include "SimulationDataFormat/MCCompLabel.h"
@@ -25,28 +25,18 @@ void readITSDigits(std::string path = "./",
 
   std::unique_ptr<TFile> digiFile(TFile::Open((path + digiFName).c_str()));
   if (!digiFile || digiFile->IsZombie()) {
-    LOG(ERROR) << "Failed to open input digits file " << (path + digiFName) << FairLogger::endl;
+    LOG(ERROR) << "Failed to open input digits file " << (path + digiFName);
     return;
   }
   std::unique_ptr<TFile> rcFile(TFile::Open((path + runContextFName).c_str()));
   if (!rcFile || rcFile->IsZombie()) {
-    LOG(ERROR) << "Failed to open runContext file " << (path + runContextFName) << FairLogger::endl;
+    LOG(ERROR) << "Failed to open runContext file " << (path + runContextFName);
     return;
   }
 
   TTree* digiTree = (TTree*)digiFile->Get("o2sim");
   if (!digiTree) {
-    LOG(ERROR) << "Failed to get digits tree" << FairLogger::endl;
-    return;
-  }
-  TTree* rofTree = (TTree*)digiFile->Get("ROF");
-  if (!rofTree) {
-    LOG(ERROR) << "Failed to get ROF tree" << FairLogger::endl;
-    return;
-  }
-  TTree* mc2rofTree = (TTree*)digiFile->Get("MC2ROF");
-  if (!mc2rofTree) {
-    LOG(ERROR) << "Failed to get MC->ROF tree" << FairLogger::endl;
+    LOG(ERROR) << "Failed to get digits tree";
     return;
   }
 
@@ -57,18 +47,18 @@ void readITSDigits(std::string path = "./",
 
   // ROF record entries in the digit tree
   std::vector<o2::itsmft::ROFRecord>* rofRecVec = nullptr;
-  rofTree->SetBranchAddress("ITSDigitROF", &rofRecVec);
-  rofTree->GetEntry(0);
+  digiTree->SetBranchAddress("ITSDigitROF", &rofRecVec);
 
   // MCEvID -> ROFrecord references
   std::vector<o2::itsmft::MC2ROFRecord>* mc2rofVec = nullptr;
-  mc2rofTree->SetBranchAddress("ITSDigitMC2ROF", &mc2rofVec);
-  mc2rofTree->GetEntry(0);
+  digiTree->SetBranchAddress("ITSDigitMC2ROF", &mc2rofVec);
+
+  digiTree->GetEntry(0);
 
   // MC collisions record
   auto runContext = reinterpret_cast<o2::steer::RunContext*>(rcFile->GetObjectChecked("RunContext", "o2::steer::RunContext"));
   if (!runContext) {
-    LOG(WARNING) << "Did not find RunContext" << FairLogger::endl;
+    LOG(WARNING) << "Did not find RunContext";
     return;
   }
 
@@ -88,7 +78,7 @@ void readITSDigits(std::string path = "./",
     printf("\n");
 
     if (int(mc2rofVec->size()) <= iev || (*mc2rofVec)[iev].eventRecordID < 0) {
-      LOG(WARNING) << "Event was not digitized" << FairLogger::endl;
+      LOG(WARNING) << "Event was not digitized";
       continue;
     }
     const auto& m2r = (*mc2rofVec)[iev];
@@ -98,9 +88,7 @@ void readITSDigits(std::string path = "./",
       const auto& rofrec = (*rofRecVec)[rofEntry];
       rofrec.print();
 
-      // read 1st and last digit of concerned rof
-      digiTree->GetEntry(rofrec.getROFEntry().getEvent());
-      int dgid = rofrec.getROFEntry().getIndex();
+      int dgid = rofrec.getFirstEntry();
       const auto& digit0 = (*dv)[dgid];
       const auto& labs0 = labels->getLabels(dgid);
       printf("1st digit of this ROF (Entry: %6d) :", dgid);
@@ -108,7 +96,7 @@ void readITSDigits(std::string path = "./",
       printf(" MCinfo: ");
       labs0[0].print();
 
-      dgid = rofrec.getROFEntry().getIndex() + rofrec.getNROFEntries() - 1;
+      dgid = rofrec.getFirstEntry() + rofrec.getNEntries() - 1;
       const auto& digit1 = (*dv)[dgid];
       const auto& labs1 = labels->getLabels(dgid);
       printf("1st digit of this ROF (Entry: %6d) :", dgid);

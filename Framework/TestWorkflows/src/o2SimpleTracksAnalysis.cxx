@@ -50,18 +50,18 @@ WorkflowSpec defineDataProcessing(ConfigContext const& specs)
       // The name of my analysis
       "tracks-analysis",
       Inputs{
-        // Dangling inputs of type RN2 will be automatically picked up by DPL
-        // and an extra reader device will be instanciated to convert them from
-        // RUN2 ESDs. In this particular case the signature RN2/TRACKPAR is
+        // Dangling inputs of type AOD will be automatically picked up by DPL
+        // and an extra reader device will be instanciated to read them from
+        // file. In this particular case the signature AOD/TRACKPAR is
         // associated to the basic trajectory parameters for a track described
         // in Ruben's table. The first string is just a label so that the
         // algorithm can be in principle be reused for different kind of
         // tracks.
-        InputSpec{ "tracks", "RN2", "TRACKPAR" },
+        InputSpec{"tracks", "AOD", "TRACKPAR"},
       },
       // No outputs for the time being.
       Outputs{
-        OutputSpec{ { "derived" }, "AOD", "TRACKDERIVED" } },
+        OutputSpec{{"derived"}, "AOD", "TRACKDERIVED"}},
       AlgorithmSpec{
         // This is the actual per "message" loop, where a message could
         // be the contents of a file or part of it.
@@ -70,7 +70,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& specs)
           /// Get the input from the converter.
           auto input = inputs.get<TableConsumer>("tracks");
           /// Get a table builder to build the results
-          auto& etaPhiBuilder = outputs.make<TableBuilder>(Output{ "AOD", "TRACKDERIVED" });
+          auto& etaPhiBuilder = outputs.make<TableBuilder>(Output{"AOD", "TRACKDERIVED"});
           auto etaPhiWriter = etaPhiBuilder.cursor<o2::aod::TracksDerived>();
 
           /// Documentation for arrow at:
@@ -83,11 +83,11 @@ WorkflowSpec defineDataProcessing(ConfigContext const& specs)
             auto eta = log(tan(0.25 * M_PI - 0.5 * atan(track.tgl())));
             etaPhiWriter(0, eta, phi);
           }
-        }) } },
+        })}},
     DataProcessorSpec{
       "phi-consumer",
       Inputs{
-        InputSpec{ "etaphi", "AOD", "TRACKDERIVED" } },
+        InputSpec{"etaphi", "AOD", "TRACKDERIVED"}},
       Outputs{},
       AlgorithmSpec{
         adaptStateless([](InputRecord& inputs) {
@@ -99,11 +99,11 @@ WorkflowSpec defineDataProcessing(ConfigContext const& specs)
           TFile f("result1.root", "RECREATE");
           h->SetName("Phi");
           h->Write();
-        }) } },
+        })}},
     DataProcessorSpec{
       "eta-consumer",
       Inputs{
-        InputSpec{ "etaphi", "AOD", "TRACKDERIVED" } },
+        InputSpec{"etaphi", "AOD", "TRACKDERIVED"}},
       Outputs{},
       AlgorithmSpec{
         adaptStateless([](InputRecord& inputs) {
@@ -115,7 +115,6 @@ WorkflowSpec defineDataProcessing(ConfigContext const& specs)
           TFile f("result2.root", "RECREATE");
           h2->SetName("Eta");
           h2->Write();
-        }) } }
-  };
+        })}}};
   return workflow;
 }

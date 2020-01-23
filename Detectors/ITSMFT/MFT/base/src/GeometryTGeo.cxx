@@ -189,6 +189,7 @@ void GeometryTGeo::Build(Int_t loadTrans)
 ;
   }
   */
+  LOG(INFO) << "MFT GeometryTGeo::Build total number of sensors " << mTotalNumberOfSensors;
   setSize(mTotalNumberOfSensors);
 
   fillMatrixCache(loadTrans);
@@ -396,8 +397,7 @@ TGeoHMatrix* GeometryTGeo::extractMatrixSensor(Int_t index) const
   gGeoManager->PopPath();
 
   // account for the difference between sensitive layer and physical sensor ticknesses
-  static TGeoTranslation tra(0., 0.5 * (AlpideSegmentation::SensorThickness - AlpideSegmentation::SensLayerThickness),
-                             0.);
+  static TGeoTranslation tra(0., 0.5 * (AlpideSegmentation::SensorLayerThickness - AlpideSegmentation::SensorLayerThicknessEff), 0.);
 
   matTmp *= tra;
 

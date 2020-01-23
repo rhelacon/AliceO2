@@ -17,7 +17,6 @@
 
 #include "ReconstructionDataFormats/Track.h"
 #include "ReconstructionDataFormats/TrackLTIntegral.h"
-#include "CommonDataFormat/EvIndex.h"
 #include "CommonDataFormat/TimeStamp.h"
 
 namespace o2
@@ -28,7 +27,6 @@ namespace dataformats
 class TrackTPCITS : public o2::track::TrackParCov
 {
   using timeEst = o2::dataformats::TimeStampWithError<float, float>;
-  using evIdx = o2::dataformats::EvIndex<int, int>;
 
  public:
   TrackTPCITS() = default;
@@ -37,12 +35,10 @@ class TrackTPCITS : public o2::track::TrackParCov
   TrackTPCITS(const o2::track::TrackParCov& src) : o2::track::TrackParCov(src) {}
   TrackTPCITS(const o2::track::TrackParCov& srcIn, const o2::track::TrackParCov& srcOut) : o2::track::TrackParCov(srcIn), mParamOut(srcOut) {}
 
-  const evIdx& getRefTPC() const { return mRefTPC; }
-  const evIdx& getRefITS() const { return mRefITS; }
-  evIdx& getRefTPC() { return mRefTPC; }
-  evIdx& getRefITS() { return mRefITS; }
-  void setRefTPC(const evIdx& id) { mRefTPC = id; }
-  void setRefITS(const evIdx& id) { mRefITS = id; }
+  int getRefTPC() const { return mRefTPC; }
+  int getRefITS() const { return mRefITS; }
+  void setRefTPC(int id) { mRefTPC = id; }
+  void setRefITS(int id) { mRefITS = id; }
 
   const timeEst& getTimeMUS() const { return mTimeMUS; }
   timeEst& getTimeMUS() { return mTimeMUS; }
@@ -68,16 +64,16 @@ class TrackTPCITS : public o2::track::TrackParCov
   void print() const;
 
  private:
-  evIdx mRefTPC;          ///< reference on ITS track entry
-  evIdx mRefITS;          ///< reference on TPC track entry
-  float mChi2Refit = 0.f; ///< chi2 of the refit
-  float mChi2Match = 0.f; ///< chi2 of the match
-  timeEst mTimeMUS;       ///< time estimate in ns
-  o2::track::TrackParCov mParamOut; ///< refitted outer parameter
+  int mRefTPC = -1;                  ///< reference on ITS track entry in its original container
+  int mRefITS = -1;                  ///< reference on TPC track entry in its original container
+  float mChi2Refit = 0.f;            ///< chi2 of the refit
+  float mChi2Match = 0.f;            ///< chi2 of the match
+  timeEst mTimeMUS;                  ///< time estimate in ns
+  o2::track::TrackParCov mParamOut;  ///< refitted outer parameter
   o2::track::TrackLTIntegral mLTOut; ///< L,TOF integral calculated during the outward refit
   ClassDefNV(TrackTPCITS, 2);
 };
-}
-}
+} // namespace dataformats
+} // namespace o2
 
 #endif

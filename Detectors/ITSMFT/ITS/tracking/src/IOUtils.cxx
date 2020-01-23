@@ -31,9 +31,12 @@
 
 namespace
 {
-constexpr int PrimaryVertexLayerId{ -1 };
-constexpr int EventLabelsSeparator{ -1 };
+constexpr int PrimaryVertexLayerId{-1};
+constexpr int EventLabelsSeparator{-1};
 } // namespace
+
+using o2::its::constants::its::LayersRCoordinate;
+using o2::its::constants::its::LayersZCoordinate;
 
 namespace o2
 {
@@ -48,7 +51,7 @@ void ioutils::loadConfigurations(const std::string& fileName)
     nlohmann::json j;
     inputStream >> j;
     static_cast<TrackingParameters&>(Configuration<TrackingParameters>::getInstance()) = j.at("TrackingParameters").get<TrackingParameters>();
-    static_cast<IndexTableParameters&>(Configuration<IndexTableParameters>::getInstance()) = j.at("IndexTableParameters").get<IndexTableParameters>();
+    //static_cast<IndexTableParameters&>(Configuration<IndexTableParameters>::getInstance()) = j.at("IndexTableParameters").get<IndexTableParameters>();
   }
 }
 
@@ -58,9 +61,9 @@ std::vector<ROframe> ioutils::loadEventData(const std::string& fileName)
   std::ifstream inputStream{};
   std::string line{}, unusedVariable{};
   int layerId{}, monteCarlo{};
-  int clusterId{ EventLabelsSeparator };
+  int clusterId{EventLabelsSeparator};
   float xCoordinate{}, yCoordinate{}, zCoordinate{}, alphaAngle{};
-  float varZ{ -1.f }, varY{ -1.f };
+  float varZ{-1.f}, varY{-1.f};
 
   inputStream.open(fileName);
 
@@ -90,7 +93,7 @@ std::vector<ROframe> ioutils::loadEventData(const std::string& fileName)
           const float xTF = xCoordinate * cosAlpha - yCoordinate * sinAlpha;
           const float yTF = xCoordinate * sinAlpha + yCoordinate * cosAlpha;
           events.back().addTrackingFrameInfoToLayer(layerId, xCoordinate, yCoordinate, zCoordinate, xTF, alphaAngle,
-                                                    std::array<float, 2>{ yTF, zCoordinate }, std::array<float, 3>{ varY, 0.f, varZ });
+                                                    std::array<float, 2>{yTF, zCoordinate}, std::array<float, 3>{varY, 0.f, varZ});
           events.back().addClusterLabelToLayer(layerId, MCCompLabel(monteCarlo));
 
           ++clusterId;
@@ -102,60 +105,55 @@ std::vector<ROframe> ioutils::loadEventData(const std::string& fileName)
   return events;
 }
 
-void ioutils::loadEventData(ROframe& event, const std::vector<itsmft::Cluster>* clusters,
-                            const dataformats::MCTruthContainer<MCCompLabel>* mcLabels)
+void ioutils::loadEventData(ROframe& event, gsl::span<const itsmft::Cluster> clusters,
+                            const dataformats::MCTruthContainer<MCCompLabel>* clsLabels)
 {
-  if (!clusters) {
+  if (clusters.empty()) {
     std::cerr << "Missing clusters." << std::endl;
     return;
   }
   event.clear();
   GeometryTGeo* geom = GeometryTGeo::Instance();
   geom->fillMatrixCache(utils::bit2Mask(TransformType::T2GRot));
-  int clusterId{ 0 };
+  int clusterId{0};
 
-  for (auto& c : *clusters) {
+  for (auto& c : clusters) {
     int layer = geom->getLayer(c.getSensorID());
 
     /// Clusters are stored in the tracking frame
     auto xyz = c.getXYZGloRot(*geom);
     event.addTrackingFrameInfoToLayer(layer, xyz.x(), xyz.y(), xyz.z(), c.getX(), geom->getSensorRefAlpha(c.getSensorID()),
-                                      std::array<float, 2>{ c.getY(), c.getZ() },
-                                      std::array<float, 3>{ c.getSigmaY2(), c.getSigmaYZ(), c.getSigmaZ2() });
+                                      std::array<float, 2>{c.getY(), c.getZ()},
+                                      std::array<float, 3>{c.getSigmaY2(), c.getSigmaYZ(), c.getSigmaZ2()});
 
     /// Rotate to the global frame
     event.addClusterToLayer(layer, xyz.x(), xyz.y(), xyz.z(), event.getClustersOnLayer(layer).size());
-    if (mcLabels) {
-      event.addClusterLabelToLayer(layer, *(mcLabels->getLabels(clusterId).begin()));
+    if (clsLabels) {
+      event.addClusterLabelToLayer(layer, *(clsLabels->getLabels(clusterId).begin()));
     }
     event.addClusterExternalIndexToLayer(layer, clusterId);
     clusterId++;
   }
 }
 
-int ioutils::loadROFrameData(const o2::itsmft::ROFRecord& rof, ROframe& event, const std::vector<itsmft::Cluster>* clusters,
+int ioutils::loadROFrameData(const o2::itsmft::ROFRecord& rof, ROframe& event, gsl::span<const itsmft::Cluster> clusters,
                              const dataformats::MCTruthContainer<MCCompLabel>* mcLabels)
 {
-  if (!clusters) {
-    std::cerr << "Missing clusters." << std::endl;
-    return -1;
-  }
   event.clear();
   GeometryTGeo* geom = GeometryTGeo::Instance();
   geom->fillMatrixCache(utils::bit2Mask(TransformType::T2GRot));
-  int clusterId{ 0 };
+  int clusterId{0};
 
-  auto first = rof.getROFEntry().getIndex();
-  auto number = rof.getNROFEntries();
-  auto clusters_in_frame = gsl::make_span(&(*clusters)[first], number);
+  auto first = rof.getFirstEntry();
+  auto clusters_in_frame = rof.getROFData(clusters);
   for (auto& c : clusters_in_frame) {
     int layer = geom->getLayer(c.getSensorID());
 
     /// Clusters are stored in the tracking frame
     auto xyz = c.getXYZGloRot(*geom);
     event.addTrackingFrameInfoToLayer(layer, xyz.x(), xyz.y(), xyz.z(), c.getX(), geom->getSensorRefAlpha(c.getSensorID()),
-                                      std::array<float, 2>{ c.getY(), c.getZ() },
-                                      std::array<float, 3>{ c.getSigmaY2(), c.getSigmaYZ(), c.getSigmaZ2() });
+                                      std::array<float, 2>{c.getY(), c.getZ()},
+                                      std::array<float, 3>{c.getSigmaY2(), c.getSigmaYZ(), c.getSigmaZ2()});
 
     /// Rotate to the global frame
     event.addClusterToLayer(layer, xyz.x(), xyz.y(), xyz.z(), event.getClustersOnLayer(layer).size());
@@ -165,7 +163,35 @@ int ioutils::loadROFrameData(const o2::itsmft::ROFRecord& rof, ROframe& event, c
     event.addClusterExternalIndexToLayer(layer, first + clusterId);
     clusterId++;
   }
-  return number;
+  return clusters_in_frame.size();
+}
+
+void ioutils::generateSimpleData(ROframe& event, const int phiDivs, const int zDivs = 1)
+{
+  const float angleOffset = constants::math::TwoPi / static_cast<float>(phiDivs);
+  // Maximum z allowed on innermost layer should be: ~9,75
+  const float zOffsetFirstLayer = (zDivs == 1) ? 0 : 1.5 * (LayersZCoordinate()[6] * LayersRCoordinate()[0]) / (LayersRCoordinate()[6] * (static_cast<float>(zDivs) - 1));
+  std::vector<float> x, y;
+  std::array<std::vector<float>, 7> z;
+  for (size_t j{0}; j < zDivs; ++j) {
+    for (size_t i{0}; i < phiDivs; ++i) {
+      x.emplace_back(cos(i * angleOffset + 0.001)); // put an epsilon to move from periods (e.g. 20 clusters vs 20 cells)
+      y.emplace_back(sin(i * angleOffset + 0.001));
+      const float zFirstLayer{-static_cast<float>((zDivs - 1.) / 2.) * zOffsetFirstLayer + zOffsetFirstLayer * static_cast<float>(j)};
+      z[0].emplace_back(zFirstLayer);
+      for (size_t iLayer{1}; iLayer < constants::its::LayersNumber; ++iLayer) {
+        z[iLayer].emplace_back(zFirstLayer * LayersRCoordinate()[iLayer] / LayersRCoordinate()[0]);
+      }
+    }
+  }
+
+  for (int iLayer{0}; iLayer < constants::its::LayersNumber; ++iLayer) {
+    for (int i = 0; i < phiDivs * zDivs; i++) {
+      o2::MCCompLabel label{i, 0, 0, false};
+      event.addClusterLabelToLayer(iLayer, label);                                                                              //last argument : label, goes into mClustersLabel
+      event.addClusterToLayer(iLayer, LayersRCoordinate()[iLayer] * x[i], LayersRCoordinate()[iLayer] * y[i], z[iLayer][i], i); //uses 1st constructor for clusters
+    }
+  }
 }
 
 std::vector<std::unordered_map<int, Label>> ioutils::loadLabels(const int eventsNum, const std::string& fileName)
@@ -217,28 +243,28 @@ void ioutils::writeRoadsReport(std::ofstream& correctRoadsOutputStream, std::ofs
                                std::ofstream& fakeRoadsOutputStream, const std::vector<std::vector<Road>>& roads,
                                const std::unordered_map<int, Label>& labelsMap)
 {
-  const int numVertices{ static_cast<int>(roads.size()) };
+  const int numVertices{static_cast<int>(roads.size())};
   std::unordered_set<int> foundMonteCarloIds{};
 
   correctRoadsOutputStream << EventLabelsSeparator << std::endl;
   fakeRoadsOutputStream << EventLabelsSeparator << std::endl;
 
-  for (int iVertex{ 0 }; iVertex < numVertices; ++iVertex) {
+  for (int iVertex{0}; iVertex < numVertices; ++iVertex) {
 
-    const std::vector<Road>& currentVertexRoads{ roads[iVertex] };
-    const int numRoads{ static_cast<int>(currentVertexRoads.size()) };
+    const std::vector<Road>& currentVertexRoads{roads[iVertex]};
+    const int numRoads{static_cast<int>(currentVertexRoads.size())};
 
-    for (int iRoad{ 0 }; iRoad < numRoads; ++iRoad) {
+    for (int iRoad{0}; iRoad < numRoads; ++iRoad) {
 
-      const Road& currentRoad{ currentVertexRoads[iRoad] };
-      const int currentRoadLabel{ currentRoad.getLabel() };
+      const Road& currentRoad{currentVertexRoads[iRoad]};
+      const int currentRoadLabel{currentRoad.getLabel()};
 
       if (!labelsMap.count(currentRoadLabel)) {
 
         continue;
       }
 
-      const Label& currentLabel{ labelsMap.at(currentRoadLabel) };
+      const Label& currentLabel{labelsMap.at(currentRoadLabel)};
 
       if (currentRoad.isFakeRoad()) {
 
@@ -273,17 +299,16 @@ void to_json(nlohmann::json& j, const TrackingParameters& par)
   std::array<float, constants::its::CellsPerRoad - 1> tmpNeighbourMaxDeltaN;
   std::copy(par.NeighbourMaxDeltaN, par.NeighbourMaxDeltaN + tmpNeighbourMaxDeltaN.size(), tmpNeighbourMaxDeltaN.begin());
   j = nlohmann::json{
-    { "ClusterSharing", par.ClusterSharing },
-    { "MinTrackLength", par.MinTrackLength },
-    { "TrackletMaxDeltaPhi", par.TrackletMaxDeltaPhi },
-    { "TrackletMaxDeltaZ", tmpTrackletMaxDeltaZ },
-    { "CellMaxDeltaTanLambda", par.CellMaxDeltaTanLambda },
-    { "CellMaxDCA", tmpCellMaxDCA },
-    { "CellMaxDeltaPhi", par.CellMaxDeltaPhi },
-    { "CellMaxDeltaZ", tmpCellMaxDeltaZ },
-    { "NeighbourMaxDeltaCurvature", tmpNeighbourMaxDeltaCurvature },
-    { "NeighbourMaxDeltaN", tmpNeighbourMaxDeltaN }
-  };
+    {"ClusterSharing", par.ClusterSharing},
+    {"MinTrackLength", par.MinTrackLength},
+    {"TrackletMaxDeltaPhi", par.TrackletMaxDeltaPhi},
+    {"TrackletMaxDeltaZ", tmpTrackletMaxDeltaZ},
+    {"CellMaxDeltaTanLambda", par.CellMaxDeltaTanLambda},
+    {"CellMaxDCA", tmpCellMaxDCA},
+    {"CellMaxDeltaPhi", par.CellMaxDeltaPhi},
+    {"CellMaxDeltaZ", tmpCellMaxDeltaZ},
+    {"NeighbourMaxDeltaCurvature", tmpNeighbourMaxDeltaCurvature},
+    {"NeighbourMaxDeltaN", tmpNeighbourMaxDeltaN}};
 }
 
 void from_json(const nlohmann::json& j, TrackingParameters& par)
@@ -312,10 +337,9 @@ void to_json(nlohmann::json& j, const MemoryParameters& par)
   std::array<float, constants::its::TrackletsPerRoad> tmpTrackletsMemoryCoefficients;
   std::copy(par.TrackletsMemoryCoefficients, par.TrackletsMemoryCoefficients + tmpTrackletsMemoryCoefficients.size(), tmpTrackletsMemoryCoefficients.begin());
   j = nlohmann::json{
-    { "MemoryOffset", par.MemoryOffset },
-    { "CellsMemoryCoefficients", tmpCellsMemoryCoefficients },
-    { "TrackletsMemoryCoefficients", tmpTrackletsMemoryCoefficients }
-  };
+    {"MemoryOffset", par.MemoryOffset},
+    {"CellsMemoryCoefficients", tmpCellsMemoryCoefficients},
+    {"TrackletsMemoryCoefficients", tmpTrackletsMemoryCoefficients}};
 }
 
 void from_json(const nlohmann::json& j, MemoryParameters& par)
@@ -325,21 +349,6 @@ void from_json(const nlohmann::json& j, MemoryParameters& par)
   std::copy(tmpCellsMemoryCoefficients.begin(), tmpCellsMemoryCoefficients.end(), par.CellsMemoryCoefficients);
   auto tmpTrackletsMemoryCoefficients = j.at("TrackletsMemoryCoefficients").get<std::array<float, constants::its::TrackletsPerRoad>>();
   std::copy(tmpTrackletsMemoryCoefficients.begin(), tmpTrackletsMemoryCoefficients.end(), par.TrackletsMemoryCoefficients);
-}
-
-void to_json(nlohmann::json& j, const IndexTableParameters& par)
-{
-  j = nlohmann::json{
-    { "ZBins", par.ZBins },
-    { "PhiBins", par.PhiBins }
-  };
-}
-
-void from_json(const nlohmann::json& j, IndexTableParameters& par)
-{
-  par.ZBins = j.at("ZBins").get<int>();
-  par.PhiBins = j.at("PhiBins").get<int>();
-  par.ComputeInverseBinSizes();
 }
 
 } // namespace its

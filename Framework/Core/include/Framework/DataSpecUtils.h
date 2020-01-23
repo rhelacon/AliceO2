@@ -29,7 +29,12 @@ struct DataSpecUtils {
   /// @return true if a given InputSpec @a spec matches with a @a target ConcreteDataTypeMatcher
   static bool match(InputSpec const& spec, ConcreteDataTypeMatcher const& target);
 
-  /// @return true if a given InputSpec @a spec matches with a @a target ConcreteDataMatcher
+  /// @return true if matchers of the two specs match on all three levels if both
+  /// matchers are of type ConcreteDataMatcher, on the level of origin and description
+  /// otherwise
+  static bool match(OutputSpec const& left, OutputSpec const& right);
+
+  /// @return true if a given OutputSpec @a spec matches with a @a target ConcreteDataMatcher
   static bool match(OutputSpec const& spec, ConcreteDataMatcher const& target);
 
   /// @return true if a given InputSpec @a input  matches the @a output outputspec
@@ -45,8 +50,31 @@ struct DataSpecUtils {
                     const o2::header::DataDescription& description,
                     const o2::header::DataHeader::SubSpecificationType& subSpec);
 
+  /// find a matching spec in the container
+  /// @return std::optional with found spec or std::nullopt
+  template <typename ContainerT>
+  static std::optional<typename ContainerT::value_type> find(ContainerT const& container,
+                                                             const o2::header::DataOrigin& origin,
+                                                             const o2::header::DataDescription& description,
+                                                             const o2::header::DataHeader::SubSpecificationType& subSpec)
+  {
+    for (auto const& spec : container) {
+      if (match(spec, origin, description, subSpec)) {
+        return std::make_optional<typename ContainerT::value_type>(spec);
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// @return true if the InputSpec will match at least the provided @a origin.
+  static bool partialMatch(InputSpec const& spec, o2::header::DataOrigin const& origin);
+
+  /// @return true if the OutputSpec will match at least the provided @a origin.
+  static bool partialMatch(OutputSpec const& spec, o2::header::DataOrigin const& origin);
+
   template <typename T>
-  static bool match(const T&spec, const o2::header::DataHeader &header) {
+  static bool match(const T& spec, const o2::header::DataHeader& header)
+  {
     return DataSpecUtils::match(spec,
                                 header.dataOrigin,
                                 header.dataDescription,
@@ -99,7 +127,7 @@ struct DataSpecUtils {
   /// or if the query can be uniquely assigned to a ConcreteDataMatcher.
   static ConcreteDataMatcher asConcreteDataMatcher(InputSpec const& input);
 
-  /// If possible extract the ConcreteDataMatcher from an OutputSpec. 
+  /// If possible extract the ConcreteDataMatcher from an OutputSpec.
   /// For the moment this is trivial as the OutputSpec does not allow
   /// for wildcards.
   static ConcreteDataMatcher asConcreteDataMatcher(OutputSpec const& spec);
@@ -110,12 +138,41 @@ struct DataSpecUtils {
   /// the subSpec.
   static ConcreteDataTypeMatcher asConcreteDataTypeMatcher(OutputSpec const& spec);
 
+  /// If possible extract the ConcreteTypeDataMatcher from an InputSpec.
+  /// This will not always be possible, depending on how complex of
+  /// a query the InputSpec does, however in most cases it should be ok
+  /// and we can add corner cases as we go.
+  static ConcreteDataTypeMatcher asConcreteDataTypeMatcher(InputSpec const& spec);
+
+  /// If possible extract the DataOrigin from an InputSpec.
+  /// This will not always be possible, depending on how complex of
+  /// a query the InputSpec does, however in most cases it should be ok
+  /// and we can add corner cases as we go.
+  static header::DataOrigin asConcreteOrigin(InputSpec const& spec);
+
+  /// If possible extract either ConcreteTypeDataMatcher or ConcreteDataMatcher
+  /// from an InputSpec and assign it to the matcher of the OutputSpec together
+  /// with binding and lifetime
+  /// If InputSpec holds a ConcreteDataMatcher, this will be used directly, if it
+  /// is a DataDescriptorMatcher, depending on its complexity the ConcreteDataMatcher
+  /// or ConcreteTypeDataMatcher will be created
+  static OutputSpec asOutputSpec(InputSpec const& spec);
+
   /// Create an InputSpec which is able to match all the outputs of the given
   /// OutputSpec
   static InputSpec matchingInput(OutputSpec const& spec);
 
-  /// Get the subspec, if available.
+  /// Get the subspec, if available
   static std::optional<header::DataHeader::SubSpecificationType> getOptionalSubSpec(OutputSpec const& spec);
+
+  /// Get the subspec, if available
+  static std::optional<header::DataHeader::SubSpecificationType> getOptionalSubSpec(InputSpec const& spec);
+
+  /// Build a DataDescriptMatcher which does not care about the subSpec.
+  static data_matcher::DataDescriptorMatcher dataDescriptorMatcherFrom(ConcreteDataTypeMatcher const& dataType);
+
+  /// Build a DataDescriptMatcher which does not care about the subSpec and description.
+  static data_matcher::DataDescriptorMatcher dataDescriptorMatcherFrom(header::DataOrigin const& origin);
 };
 
 } // namespace framework

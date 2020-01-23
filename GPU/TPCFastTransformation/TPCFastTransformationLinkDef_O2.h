@@ -17,13 +17,19 @@
 #pragma link off all classes;
 #pragma link off all functions;
 
-#pragma link C++ class o2::gpu::RegularSpline1D+;
-#pragma link C++ class o2::gpu::IrregularSpline1D+;
-#pragma link C++ class o2::gpu::IrregularSpline2D3D+;
-#pragma link C++ class o2::gpu::SemiregularSpline2D3D+;
-#pragma link C++ class o2::gpu::IrregularSpline2D3DCalibrator+;
-#pragma link C++ class o2::gpu::TPCFastTransformGeo+;
-#pragma link C++ class o2::gpu::TPCFastTransform+;
-#pragma link C++ class o2::gpu::TPCDistortionIRS+;
+#pragma link C++ class o2::gpu::Spline1D + ;
+#pragma link C++ class o2::gpu::Spline2D + ;
+#pragma link C++ class o2::gpu::SplineHelper1D + ;
+#pragma link C++ class o2::gpu::SplineHelper2D + ;
+#pragma link C++ class o2::gpu::RegularSpline1D + ;
+#pragma link C++ class o2::gpu::IrregularSpline1D + ;
+#pragma link C++ class o2::gpu::IrregularSpline2D3D + ;
+#pragma link C++ class o2::gpu::SemiregularSpline2D3D + ;
+#pragma link C++ class o2::gpu::IrregularSpline2D3DCalibrator + ;
+#pragma link C++ class o2::gpu::TPCFastTransformGeo + ;
+#pragma link C++ class o2::gpu::TPCFastTransformGeo::SliceInfo + ;
+#pragma link C++ class o2::gpu::TPCFastTransformGeo::RowInfo + ;
+#pragma link C++ class o2::gpu::TPCFastTransform + ;
+#pragma link C++ class o2::gpu::TPCDistortionIRS + ;
 
 #endif

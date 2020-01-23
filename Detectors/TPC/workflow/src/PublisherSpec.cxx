@@ -13,6 +13,7 @@
 /// @since  2018-12-06
 /// @brief  Processor spec for a reader of TPC data from ROOT file
 
+#include "Framework/ConfigParamRegistry.h"
 #include "Framework/ControlService.h"
 #include "Framework/DataSpecUtils.h"
 #include "TPCWorkflow/PublisherSpec.h"
@@ -94,28 +95,34 @@ DataProcessorSpec getPublisherSpec(PublisherConf const& config, bool propagateMC
           continue;
         }
         o2::header::DataHeader::SubSpecificationType subSpec = *outputId;
+        std::string sectorfile = filename;
+        if (filename.find('%') != std::string::npos) {
+          vector<char> formattedname(filename.length() + 10, 0);
+          snprintf(formattedname.data(), formattedname.size() - 1, filename.c_str(), sector);
+          sectorfile = formattedname.data();
+        }
         std::string clusterbranchname = clbrName + "_" + std::to_string(sector);
         std::string mcbranchname = mcbrName + "_" + std::to_string(sector);
         auto dto = DataSpecUtils::asConcreteDataTypeMatcher(config.dataoutput);
         auto mco = DataSpecUtils::asConcreteDataTypeMatcher(config.mcoutput);
         if (propagateMC) {
-          readers[sector] = std::make_shared<RootTreeReader>(treename.c_str(), // tree name
-                                                             filename.c_str(), // input file name
-                                                             nofEvents,        // number of entries to publish
+          readers[sector] = std::make_shared<RootTreeReader>(treename.c_str(),   // tree name
+                                                             sectorfile.c_str(), // input file name
+                                                             nofEvents,          // number of entries to publish
                                                              publishingMode,
-                                                             Output{ dto.origin, dto.description, subSpec, persistency },
+                                                             Output{dto.origin, dto.description, subSpec, persistency},
                                                              clusterbranchname.c_str(), // name of cluster branch
-                                                             Output{ mco.origin, mco.description, subSpec, persistency },
+                                                             Output{mco.origin, mco.description, subSpec, persistency},
                                                              mcbranchname.c_str() // name of mc label branch
-                                                             );
+          );
         } else {
-          readers[sector] = std::make_shared<RootTreeReader>(treename.c_str(), // tree name
-                                                             filename.c_str(), // input file name
-                                                             nofEvents,        // number of entries to publish
+          readers[sector] = std::make_shared<RootTreeReader>(treename.c_str(),   // tree name
+                                                             sectorfile.c_str(), // input file name
+                                                             nofEvents,          // number of entries to publish
                                                              publishingMode,
-                                                             Output{ dto.origin, dto.description, subSpec, persistency },
+                                                             Output{dto.origin, dto.description, subSpec, persistency},
                                                              clusterbranchname.c_str() // name of cluster branch
-                                                             );
+          );
         }
         if (++outputId == outputIds.end()) {
           outputId = outputIds.begin();
@@ -129,8 +136,7 @@ DataProcessorSpec getPublisherSpec(PublisherConf const& config, bool propagateMC
     // function gets out of scope
     // FIXME: wanted to use it = sectors.begin() in the variable capture but the iterator
     // is const and can not be incremented
-    auto processingFct = [processAttributes, index = std::make_shared<int>(0), propagateMC](ProcessingContext& pc)
-    {
+    auto processingFct = [processAttributes, index = std::make_shared<int>(0), propagateMC](ProcessingContext& pc) {
       if (processAttributes->finished) {
         return;
       }
@@ -149,7 +155,7 @@ DataProcessorSpec getPublisherSpec(PublisherConf const& config, bool propagateMC
           return false;
         }
         auto sector = sectors[*index];
-        o2::tpc::TPCSectorHeader header{ sector };
+        o2::tpc::TPCSectorHeader header{sector};
         header.activeSectors = activeSectors;
         auto& r = *(readers[sector].get());
 
@@ -179,16 +185,17 @@ DataProcessorSpec getPublisherSpec(PublisherConf const& config, bool propagateMC
             operation = -1;
           }
           o2::header::DataHeader::SubSpecificationType subSpec = processAttributes->outputIds[lane];
-          o2::tpc::TPCSectorHeader header{ operation };
-          pc.outputs().snapshot(OutputRef{ "output", subSpec, { header } }, subSpec);
+          o2::tpc::TPCSectorHeader header{operation};
+          pc.outputs().snapshot(OutputRef{"output", subSpec, {header}}, subSpec);
           if (propagateMC) {
-            pc.outputs().snapshot(OutputRef{ "outputMC", subSpec, { header } }, subSpec);
+            pc.outputs().snapshot(OutputRef{"outputMC", subSpec, {header}}, subSpec);
           }
         }
       }
 
       if ((processAttributes->finished = (operation == -1)) && processAttributes->terminateOnEod) {
-        pc.services().get<ControlService>().readyToQuit(false);
+        pc.services().get<ControlService>().endOfStream();
+        pc.services().get<ControlService>().readyToQuit(QuitRequest::Me);
       }
     };
 
@@ -203,9 +210,9 @@ DataProcessorSpec getPublisherSpec(PublisherConf const& config, bool propagateMC
       o2::header::DataHeader::SubSpecificationType subSpec = config.outputIds[n];
       auto dto = DataSpecUtils::asConcreteDataTypeMatcher(config.dataoutput);
       auto mco = DataSpecUtils::asConcreteDataTypeMatcher(config.mcoutput);
-      outputSpecs.emplace_back(OutputSpec{ { "output" }, dto.origin, dto.description, subSpec, Lifetime::Timeframe });
+      outputSpecs.emplace_back(OutputSpec{{"output"}, dto.origin, dto.description, subSpec, Lifetime::Timeframe});
       if (propagateMC) {
-        outputSpecs.emplace_back(OutputSpec{ { "outputMC" }, mco.origin, mco.description, subSpec, Lifetime::Timeframe });
+        outputSpecs.emplace_back(OutputSpec{{"outputMC"}, mco.origin, mco.description, subSpec, Lifetime::Timeframe});
       }
     }
     return std::move(outputSpecs);
@@ -213,18 +220,18 @@ DataProcessorSpec getPublisherSpec(PublisherConf const& config, bool propagateMC
 
   auto& dtb = config.databranch;
   auto& mcb = config.mcbranch;
-  return DataProcessorSpec{ config.processName.c_str(),
-                            Inputs{}, // no inputs
-                            { createOutputSpecs() },
-                            AlgorithmSpec(initFunction),
-                            Options{
-                              { "infile", VariantType::String, "", { "Name of the input file" } },
-                              { "treename", VariantType::String, config.defaultTreeName.c_str(), { "Name of input tree" } },
-                              { dtb.option.c_str(), VariantType::String, dtb.defval.c_str(), { dtb.help.c_str() } },
-                              { mcb.option.c_str(), VariantType::String, mcb.defval.c_str(), { mcb.help.c_str() } },
-                              { "nevents", VariantType::Int, -1, { "number of events to run" } },
-                              { "terminate-on-eod", VariantType::Bool, true, { "terminate on end-of-data" } },
-                            } };
+  return DataProcessorSpec{config.processName.c_str(),
+                           Inputs{}, // no inputs
+                           {createOutputSpecs()},
+                           AlgorithmSpec(initFunction),
+                           Options{
+                             {"infile", VariantType::String, "", {"Name of the input file"}},
+                             {"treename", VariantType::String, config.defaultTreeName.c_str(), {"Name of input tree"}},
+                             {dtb.option.c_str(), VariantType::String, dtb.defval.c_str(), {dtb.help.c_str()}},
+                             {mcb.option.c_str(), VariantType::String, mcb.defval.c_str(), {mcb.help.c_str()}},
+                             {"nevents", VariantType::Int, -1, {"number of events to run"}},
+                             {"terminate-on-eod", VariantType::Bool, true, {"terminate on end-of-data"}},
+                           }};
 }
 } // end namespace tpc
 } // end namespace o2

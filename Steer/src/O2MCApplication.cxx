@@ -13,7 +13,6 @@
 #include <FairMQMessage.h>
 #include <FairMQDevice.h>
 #include <FairMQParts.h>
-#include <ITSMFTSimulation/Hit.h>
 #include <TPCSimulation/Point.h>
 #include <SimulationDataFormat/PrimaryChunk.h>
 #include <TMessage.h>
@@ -40,8 +39,9 @@ void TypedVectorAttach(const char* name, FairMQChannel& channel, FairMQParts& pa
   if (vector) {
     auto buffer = (char*)&(*vector)[0];
     auto buffersize = vector->size() * sizeof(T);
-    FairMQMessagePtr message(channel.NewMessage(buffer, buffersize,
-                                                [](void* data, void* hint) {}, buffer));
+    FairMQMessagePtr message(channel.NewMessage(
+      buffer, buffersize,
+      [](void* data, void* hint) {}, buffer));
     parts.AddPart(std::move(message));
   }
 }
@@ -112,6 +112,26 @@ void O2MCApplicationBase::InitGeometry()
   for (auto e : mSensitiveVolumes) {
     sensvolfile << e.first << ":" << e.second << "\n";
   }
+}
+
+bool O2MCApplicationBase::MisalignGeometry()
+{
+  for (auto det : listActiveDetectors) {
+    if (dynamic_cast<o2::base::Detector*>(det)) {
+      ((o2::base::Detector*)det)->addAlignableVolumes();
+    }
+  }
+
+  auto b = FairMCApplication::MisalignGeometry();
+  // we use this moment to stream our geometry (before other
+  // VMC engine dependent modifications are done)
+
+  std::stringstream geomss;
+  geomss << "O2geometry.root";
+  gGeoManager->Export(geomss.str().c_str());
+
+  // return original return value of misalignment procedure
+  return b;
 }
 
 void O2MCApplicationBase::finishEventCommon()
@@ -214,5 +234,5 @@ void O2MCApplication::SendData()
   LOG(INFO) << "sending message with " << simdataparts.Size() << " parts";
   mSimDataChannel->Send(simdataparts);
 }
-}
-}
+} // namespace steer
+} // namespace o2

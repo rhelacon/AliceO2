@@ -12,6 +12,7 @@
 
 #include "TOFDigitWriterSpec.h"
 #include "Framework/CallbackService.h"
+#include "Framework/ConfigParamRegistry.h"
 #include "Framework/ControlService.h"
 #include <SimulationDataFormat/MCCompLabel.h>
 #include <SimulationDataFormat/MCTruthContainer.h>
@@ -95,7 +96,7 @@ DataProcessorSpec getTOFDigitWriterSpec()
       labelbr->Fill();
 
       finished = true;
-      pc.services().get<ControlService>().readyToQuit(false);
+      pc.services().get<ControlService>().readyToQuit(QuitRequest::Me);
     };
 
     // return the actual processing function as a lambda function using variables
@@ -105,15 +106,14 @@ DataProcessorSpec getTOFDigitWriterSpec()
 
   return DataProcessorSpec{
     "TOFDigitWriter",
-    Inputs{ InputSpec{ "tofdigits", "TOF", "DIGITS", 0, Lifetime::Timeframe },
-            InputSpec{ "tofdigitlabels", "TOF", "DIGITSMCTR", 0, Lifetime::Timeframe } },
+    Inputs{InputSpec{"tofdigits", "TOF", "DIGITS", 0, Lifetime::Timeframe},
+           InputSpec{"tofdigitlabels", "TOF", "DIGITSMCTR", 0, Lifetime::Timeframe}},
     {}, // no output
     AlgorithmSpec(initFunction),
     Options{
-      { "tof-digit-outfile", VariantType::String, "tofdigits.root", { "Name of the input file" } },
-      { "treename", VariantType::String, "o2sim", { "Name of top-level TTree" } },
-    }
-  };
+      {"tof-digit-outfile", VariantType::String, "tofdigits.root", {"Name of the input file"}},
+      {"treename", VariantType::String, "o2sim", {"Name of top-level TTree"}},
+    }};
 }
 } // end namespace tof
 } // end namespace o2

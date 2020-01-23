@@ -23,7 +23,7 @@ namespace gpu
 class GPUChainTracking;
 struct GPUParam;
 class GPUTPCGMPhysicalTrackModel;
-#if !defined(BUILD_QA) || defined(_WIN32)
+#if !defined(GPUCA_BUILD_QA) || defined(_WIN32)
 class genEvents
 {
  public:
@@ -54,7 +54,7 @@ class genEvents
   int RecalculateSlice(GPUTPCGMPhysicalTrackModel& t, int& iSlice);
   double GetGaus(double sigma);
 
-  TH1F* mClusterError[3][2] = { { 0, 0 }, { 0, 0 }, { 0, 0 } };
+  TH1F* mClusterError[3][2] = {{0, 0}, {0, 0}, {0, 0}};
 
   struct GenCluster {
     int sector;

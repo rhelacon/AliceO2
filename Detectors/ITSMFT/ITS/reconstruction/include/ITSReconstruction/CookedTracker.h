@@ -74,7 +74,7 @@ class CookedTracker
   Int_t getNumberOfThreads() const { return mNumOfThreads; }
 
   // These functions must be implemented
-  void process(const std::vector<Cluster>& clusters, std::vector<TrackITS>& tracks, std::vector<int>& clusIdx, o2::itsmft::ROFRecord& rof);
+  void process(gsl::span<const Cluster> clusters, std::vector<TrackITS>& tracks, std::vector<int>& clusIdx, o2::itsmft::ROFRecord& rof);
   const Cluster* getCluster(Int_t index) const;
 
   void setGeometry(o2::its::GeometryTGeo* geom);
@@ -88,6 +88,9 @@ class CookedTracker
   void setContinuousMode(bool mode) { mContinuousMode = mode; }
   bool getContinuousMode() { return mContinuousMode; }
 
+  static void setMostProbalePt(float pt) { mMostProbablePt = pt; }
+  static auto getMostProbablePt() { return mMostProbablePt; }
+
   // internal helper classes
   class ThreadData;
   class Layer;
@@ -95,7 +98,7 @@ class CookedTracker
  protected:
   static constexpr int kNLayers = 7;
   void addOutputTrack(const TrackITSExt& t, std::vector<TrackITS>& tracks, std::vector<int>& clusIdx);
-  int loadClusters(const std::vector<Cluster>& clusters, const o2::itsmft::ROFRecord& rof);
+  int loadClusters(gsl::span<const Cluster> clusters, const o2::itsmft::ROFRecord& rof);
   void unloadClusters();
   void processLoadedClusters(std::vector<TrackITS>& tracks, std::vector<int>& clusIdx);
 
@@ -113,7 +116,7 @@ class CookedTracker
   const o2::its::GeometryTGeo* mGeom = nullptr;                                   /// interface to geometry
   const o2::dataformats::MCTruthContainer<o2::MCCompLabel>* mClsLabels = nullptr; /// Cluster MC labels
   o2::dataformats::MCTruthContainer<o2::MCCompLabel>* mTrkLabels = nullptr;       /// Track MC labels
-  std::uint32_t mFirstInFrame = 0; ///< Index of the 1st cluster of a frame (within the loaded vector of clusters)
+  std::uint32_t mFirstInFrame = 0;                                                ///< Index of the 1st cluster of a frame (within the loaded vector of clusters)
 
   Int_t mNumOfThreads; ///< Number of tracking threads
 
@@ -128,10 +131,12 @@ class CookedTracker
   Double_t mSigmaY = 2.; ///< error of the primary vertex position in Y
   Double_t mSigmaZ = 2.; ///< error of the primary vertex position in Z
 
-  static Layer sLayers[kNLayers]; ///< Layers filled with clusters
+  static Layer sLayers[kNLayers];  ///< Layers filled with clusters
   std::vector<TrackITSExt> mSeeds; ///< Track seeds
 
   const Cluster* mFirstCluster = nullptr; ///< Pointer to the 1st cluster in event
+
+  static float mMostProbablePt; ///< settable most probable pt
 
   ClassDefNV(CookedTracker, 1);
 };
@@ -159,11 +164,11 @@ class CookedTracker::Layer
  protected:
   enum { kNSectors = 21 };
 
-  Float_t mR;                                   ///< mean radius of this layer
-  const o2::its::GeometryTGeo* mGeom = nullptr; /// interface to geometry
-  std::vector<const Cluster*> mClusters;        ///< All clusters
-  std::vector<Float_t> mAlphaRef;               ///< alpha of the reference plane
-  std::vector<Float_t> mPhi;                    ///< cluster phi
+  Float_t mR;                                             ///< mean radius of this layer
+  const o2::its::GeometryTGeo* mGeom = nullptr;           ///< interface to geometry
+  std::vector<const Cluster*> mClusters;                  ///< All clusters
+  std::vector<Float_t> mAlphaRef;                         ///< alpha of the reference plane
+  std::vector<Float_t> mPhi;                              ///< cluster phi
   std::vector<std::pair<int, float>> mSectors[kNSectors]; ///< Cluster indices sector-by-sector
 };
 } // namespace its

@@ -27,9 +27,9 @@ Clusterer::Clusterer() : mPattIdConverter(), mCurr(mColumn2 + 1), mPrev(mColumn1
   std::fill(std::begin(mColumn2), std::end(mColumn2), -1);
   mROFRef.clear();
 #ifdef _ClusterTopology_
-  LOG(INFO) << "*********************************************************************" << FairLogger::endl;
-  LOG(INFO) << "ATTENTION: YOU ARE RUNNING IN SPECIAL MODE OF STORING CLUSTER PATTERN" << FairLogger::endl;
-  LOG(INFO) << "*********************************************************************" << FairLogger::endl;
+  LOG(INFO) << "*********************************************************************";
+  LOG(INFO) << "ATTENTION: YOU ARE RUNNING IN SPECIAL MODE OF STORING CLUSTER PATTERN";
+  LOG(INFO) << "*********************************************************************";
 #endif //_ClusterTopology_
 
 #ifdef _PERFORM_TIMING_
@@ -50,34 +50,34 @@ void Clusterer::process(PixelReader& reader, std::vector<Cluster>* fullClus,
   mClustersCount = compClus ? compClus->size() : (fullClus ? fullClus->size() : 0);
 
   auto& currROFIR = mROFRef.getBCData();
-  auto& currROFEntry = mROFRef.getROFEntry();
+  auto& currROFEntry = mROFRef.getEntry();
 
   while ((mChipData = reader.getNextChipData(mChips))) { // read next chip data to corresponding
     // vector in the mChips and return the pointer on it
 
     if (!(mChipData->getInteractionRecord() == currROFIR)) { // new ROF starts
 
-      mROFRef.setNROFEntries(mClustersCount - currROFEntry.getIndex()); // number of entries in this ROF
+      mROFRef.setNEntries(mClustersCount - currROFEntry.getFirstEntry()); // number of entries in this ROF
 
       if (!currROFIR.isDummy()) {
         if (mClusTree) { // if necessary, flush existing data
           LOG(INFO) << "ITS: clusterizing new ROFrame, Orbit :" << mChipData->getInteractionRecord().orbit
                     << " BC: " << mChipData->getInteractionRecord().bc;
-          mROFRef.getROFEntry().setEvent(mClusTree->GetEntries());
+          mROFRef.setFirstEntry(mClusTree->GetEntries());
           flushClusters(fullClus, compClus, labelsCl);
         }
         if (vecROFRec) {
           vecROFRec->emplace_back(mROFRef);
         }
       }
-      currROFEntry.setIndex(mClustersCount);
+      currROFEntry.setFirstEntry(mClustersCount);
       currROFIR = mChipData->getInteractionRecord();
       mROFRef.setROFrame(mChipData->getROFrame()); // TODO: outphase this
     }
 
     auto chipID = mChipData->getChipID();
     // LOG(DEBUG) << "ITSClusterer got Chip " << chipID << " ROFrame " << mChipData->getROFrame()
-    //            << " Nhits " << mChipData->getData().size() << FairLogger::endl;
+    //            << " Nhits " << mChipData->getData().size();
 
     if (mMaxBCSeparationToMask > 0) { // mask pixels fired from the previous ROF
       if (mChipsOld.size() < mChips.size()) {
@@ -102,12 +102,12 @@ void Clusterer::process(PixelReader& reader, std::vector<Cluster>* fullClus,
       mChipsOld[chipID].swap(*mChipData);
     }
   }
-  mROFRef.setNROFEntries(mClustersCount - currROFEntry.getIndex()); // number of entries in this ROF
+  mROFRef.setNEntries(mClustersCount - currROFEntry.getFirstEntry()); // number of entries in this ROF
 
   // flush last ROF
   if (!currROFIR.isDummy()) {
     if (mClusTree) { // if necessary, flush existing data
-      mROFRef.getROFEntry().setEvent(mClusTree->GetEntries());
+      mROFRef.setFirstEntry(mClusTree->GetEntries());
       flushClusters(fullClus, compClus, labelsCl);
     }
     if (vecROFRec) {
@@ -172,7 +172,7 @@ void Clusterer::updateChip(UInt_t ip)
       return;
     }
   } else {
-    int neighbours[]{ mCurr[row - 1], mPrev[row], mPrev[row + 1], mPrev[row - 1] };
+    int neighbours[]{mCurr[row - 1], mPrev[row], mPrev[row + 1], mPrev[row - 1]};
     for (auto pci : neighbours) {
       if (pci < 0) {
         continue;
@@ -224,7 +224,7 @@ void Clusterer::finishChip(std::vector<Cluster>* fullClus, std::vector<CompClust
         }
         next = pixEntry.first;
       } else {
-        LOG(ERROR) << "Cluster size " << npix + 1 << " exceeds the buffer size" << FairLogger::endl;
+        LOG(ERROR) << "Cluster size " << npix + 1 << " exceeds the buffer size";
       }
     }
     mPreClusterIndices[i1] = -1;
@@ -244,14 +244,13 @@ void Clusterer::finishChip(std::vector<Cluster>* fullClus, std::vector<CompClust
           }
           next = pixEntry.first;
         } else {
-          LOG(ERROR) << "Cluster size " << npix + 1 << " exceeds the buffer size" << FairLogger::endl;
+          LOG(ERROR) << "Cluster size " << npix + 1 << " exceeds the buffer size";
         }
       }
       mPreClusterIndices[i2] = -1;
     }
     UShort_t rowSpan = rowMax - rowMin + 1, colSpan = colMax - colMin + 1;
     Cluster clus;
-    clus.setROFrame(mChipData->getROFrame());
     clus.setSensorID(mChipData->getChipID());
     clus.setNxNzN(rowSpan, colSpan, npix);
 #ifdef _ClusterTopology_
@@ -301,7 +300,13 @@ void Clusterer::finishChip(std::vector<Cluster>* fullClus, std::vector<CompClust
       unsigned char patt[Cluster::kMaxPatternBytes];
       clus.getPattern(&patt[0], Cluster::kMaxPatternBytes);
       UShort_t pattID = mPattIdConverter.findGroupID(clus.getPatternRowSpan(), clus.getPatternColSpan(), patt);
-      compClus->emplace_back(rowMin, colMin, pattID, mChipData->getChipID(), mChipData->getROFrame());
+      if (mPattIdConverter.IsGroup(pattID)) {
+        int rowShift = 0, colShift = 0;
+        ClusterTopology::getCOGshift(clus.getPatternRowSpan(), clus.getPatternColSpan(), patt, rowShift, colShift);
+        rowMin += rowShift;
+        colMin += colShift;
+      }
+      compClus->emplace_back(rowMin, colMin, pattID, mChipData->getChipID());
     }
 
     if (labelsClus) { // MC labels were requested

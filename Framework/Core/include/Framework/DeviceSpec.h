@@ -11,8 +11,10 @@
 #define FRAMEWORK_DEVICESPEC_H
 
 #include "Framework/WorkflowSpec.h"
+#include "Framework/ComputingResource.h"
 #include "Framework/DataProcessorSpec.h"
 #include "Framework/ChannelSpec.h"
+#include "Framework/ChannelInfo.h"
 #include "Framework/DeviceControl.h"
 #include "Framework/AlgorithmSpec.h"
 #include "Framework/ConfigParamSpec.h"
@@ -20,6 +22,7 @@
 #include "Framework/InputRoute.h"
 #include "Framework/OutputRoute.h"
 #include "Framework/CompletionPolicy.h"
+#include "Framework/DispatchPolicy.h"
 
 #include <vector>
 #include <string>
@@ -31,7 +34,7 @@ namespace o2
 namespace framework
 {
 
-/// Concrete description of the device which will actually run 
+/// Concrete description of the device which will actually run
 /// a DataProcessor.
 struct DeviceSpec {
   std::string name;
@@ -46,11 +49,13 @@ struct DeviceSpec {
   std::vector<InputRoute> inputs;
   std::vector<OutputRoute> outputs;
   std::vector<ForwardRoute> forwards;
-  size_t rank; // Id of a parallel processing I am part of
+  size_t rank;   // Id of a parallel processing I am part of
   size_t nSlots; // Total number of parallel units I am part of
   size_t inputTimesliceId;
   /// The completion policy to use for this device.
   CompletionPolicy completionPolicy;
+  DispatchPolicy dispatchPolicy;
+  ComputingResource resource;
 };
 
 } // namespace framework

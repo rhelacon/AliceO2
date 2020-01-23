@@ -47,7 +47,7 @@ include_guard()
 # give us, _transitively_, all the libraries directories. And computing them
 # ourselves (recursively) is quite time consuming...
 #
-function(o2_add_test_root_macro)
+function(o2_add_test_root_macro macro)
 
   if(NOT BUILD_TESTING)
     return()
@@ -70,7 +70,7 @@ function(o2_add_test_root_macro)
       FATAL_ERROR "Unexpected unparsed arguments: ${A_UNPARSED_ARGUMENTS}")
   endif()
 
-  get_filename_component(macroFileName ${ARGV0} ABSOLUTE)
+  get_filename_component(macroFileName ${macro} ABSOLUTE)
 
   if(NOT EXISTS ${macroFileName})
     message(
@@ -90,10 +90,11 @@ function(o2_add_test_root_macro)
 
   # Get all the include dir dependencies
   foreach(t IN LISTS A_PUBLIC_LINK_LIBRARIES)
-    if(NOT TARGET ${t})
+    string(FIND ${t} "::" NS)
+    if(${NS} EQUAL -1)
       message(
         WARNING
-          "Trying to use non-existing target ${t} for ${testName} test so I won't be able to generate that test."
+          "Trying to use a non-namespaced target ${t} for ${testName} test so I won't be able to generate that test."
         )
       return()
     endif()

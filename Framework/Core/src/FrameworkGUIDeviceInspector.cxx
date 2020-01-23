@@ -54,6 +54,11 @@ void deviceInfoTable(DeviceInfo const& info, DeviceMetricsInfo const& metrics)
     for (size_t i = 0; i < info.queriesViewIndex.indexes.size(); ++i) {
       auto& metric = metrics.metrics[info.queriesViewIndex.indexes[i]];
       ImGui::Text("%zu: %s", i, metrics.stringMetrics[metric.storeIdx][0].data);
+      if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::Text("%zu: %s", i, metrics.stringMetrics[metric.storeIdx][0].data);
+        ImGui::EndTooltip();
+      }
     }
   }
 }
@@ -65,7 +70,7 @@ void optionsTable(const char* label, std::vector<ConfigParamSpec> const& options
   }
   if (ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
     ImGui::Columns(2);
-    auto labels = { "Name", "Value" };
+    auto labels = {"Name", "Value"};
     for (auto& label : labels) {
       ImGui::TextUnformatted(label);
       ImGui::NextColumn();

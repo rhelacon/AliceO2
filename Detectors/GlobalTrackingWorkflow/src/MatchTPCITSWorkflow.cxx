@@ -14,19 +14,20 @@
 #include "ITSWorkflow/TrackReaderSpec.h"
 #include "TPCWorkflow/TrackReaderSpec.h"
 #include "TPCWorkflow/PublisherSpec.h"
-#include "FITWorkflow/T0RecPointReaderSpec.h"
+#include "FITWorkflow/FT0RecPointReaderSpec.h"
 #include "GlobalTrackingWorkflow/TPCITSMatchingSpec.h"
 #include "GlobalTrackingWorkflow/MatchTPCITSWorkflow.h"
 #include "GlobalTrackingWorkflow/TrackWriterTPCITSSpec.h"
 #include "Algorithm/RangeTokenizer.h"
 #include "DataFormatsTPC/Constants.h"
+#include "GlobalTracking/MatchTPCITSParams.h"
 
 namespace o2
 {
 namespace globaltracking
 {
 
-framework::WorkflowSpec getMatchTPCITSWorkflow(bool useMC, bool useFIT)
+framework::WorkflowSpec getMatchTPCITSWorkflow(bool useMC)
 {
   framework::WorkflowSpec specs;
 
@@ -43,19 +44,19 @@ framework::WorkflowSpec getMatchTPCITSWorkflow(bool useMC, bool useFIT)
   specs.emplace_back(o2::tpc::getPublisherSpec(o2::tpc::PublisherConf{
                                                  "tpc-native-cluster-reader",
                                                  "tpcrec",
-                                                 { "clusterbranch", "TPCClusterNative", "Branch with TPC native clusters" },
-                                                 { "clustermcbranch", "TPCClusterNativeMCTruth", "MC label branch" },
-                                                 OutputSpec{ "TPC", "CLUSTERNATIVE" },
-                                                 OutputSpec{ "TPC", "CLNATIVEMCLBL" },
+                                                 {"clusterbranch", "TPCClusterNative", "Branch with TPC native clusters"},
+                                                 {"clustermcbranch", "TPCClusterNativeMCTruth", "MC label branch"},
+                                                 OutputSpec{"TPC", "CLUSTERNATIVE"},
+                                                 OutputSpec{"TPC", "CLNATIVEMCLBL"},
                                                  tpcClusSectors,
-                                                 tpcClusLanes },
+                                                 tpcClusLanes},
                                                useMC));
 
-  specs.emplace_back(o2::globaltracking::getTPCITSMatchingSpec(useMC, useFIT, tpcClusLanes));
+  specs.emplace_back(o2::globaltracking::getTPCITSMatchingSpec(useMC, tpcClusLanes));
   specs.emplace_back(o2::globaltracking::getTrackWriterTPCITSSpec(useMC));
 
-  if (useFIT) {
-    specs.emplace_back(o2::t0::getT0RecPointReaderSpec(useMC));
+  if (o2::globaltracking::MatchITSTPCParams::Instance().runAfterBurner) {
+    specs.emplace_back(o2::ft0::getFT0RecPointReaderSpec(useMC));
   }
 
   return specs;

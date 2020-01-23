@@ -162,6 +162,13 @@ class BadChannelMap
 /// on the stream. Printing also the channel status (BAD_CELL/WARM_CELL)
 std::ostream& operator<<(std::ostream& in, const BadChannelMap& bcm);
 
+/// \brief Streaming operator for mask type
+/// \param in Stream where the bad channel map is printed on
+/// \param masktype Mask type to be printed
+/// \return Stream after printing the bad channel map
+///
+/// Converting the the Mask type into a string representation
+/// and put it on the stream
 std::ostream& operator<<(std::ostream& in, const BadChannelMap::MaskType_t& masktype);
 
 } // namespace emcal

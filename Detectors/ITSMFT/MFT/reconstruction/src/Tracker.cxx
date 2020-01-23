@@ -13,11 +13,12 @@
 /// \author bogdan.vulpescu@cern.ch
 /// \date Feb. 8, 2018
 
-#include "MFTReconstruction/Tracker.h"
-#include "DataFormatsITSMFT/Cluster.h"
-
 #include <future>
 #include <chrono>
+#include <gsl/gsl>
+
+#include "MFTReconstruction/Tracker.h"
+#include "DataFormatsITSMFT/Cluster.h"
 
 using namespace o2::mft;
 using namespace o2::itsmft;
@@ -28,18 +29,18 @@ Tracker::Layer Tracker::sLayers[constants::LayersNumber];
 Tracker::Tracker(Int_t n) : mNumOfThreads(n) {}
 
 //_____________________________________________________________________________
-void Tracker::process(const std::vector<Cluster>& clusters, std::vector<TrackMFT>& tracks)
+void Tracker::process(const std::vector<Cluster>& clusters, std::vector<TrackMFT>& tracks, const std::vector<o2::itsmft::ROFRecord>& rofs)
 {
 
   static int entry = 0;
 
-  LOG(INFO) << FairLogger::endl;
-  LOG(INFO) << "Tracker::process() entry " << entry++ << ", number of threads: " << mNumOfThreads << FairLogger::endl;
+  LOG(INFO);
+  LOG(INFO) << "Tracker::process() entry " << entry++ << ", number of threads: " << mNumOfThreads;
 
   Int_t nClFrame = 0;
   Int_t numOfClustersLeft = clusters.size(); // total number of clusters
   if (numOfClustersLeft == 0) {
-    LOG(WARNING) << "No clusters to process !" << FairLogger::endl;
+    LOG(WARNING) << "No clusters to process !";
     return;
   }
 
@@ -47,30 +48,30 @@ void Tracker::process(const std::vector<Cluster>& clusters, std::vector<TrackMFT
 
   while (numOfClustersLeft > 0) {
 
-    nClFrame = loadClusters(clusters);
-    if (!nClFrame) {
-      LOG(FATAL) << "Failed to select any cluster out of " << numOfClustersLeft << " check if cont/trig mode is correct"
-                 << FairLogger::endl;
-    }
-    numOfClustersLeft -= nClFrame;
-    auto end = std::chrono::system_clock::now();
-    std::chrono::duration<double> diff = end - start;
-    LOG(INFO) << "Loading clusters: " << nClFrame << " in single frame " << mROFrame << " : " << diff.count() << " s"
-              << FairLogger::endl;
+    for (const auto& rof : rofs) {
+      nClFrame = loadClusters(clusters, rof);
+      if (!nClFrame) {
+        LOG(FATAL) << "Failed to select any cluster out of " << numOfClustersLeft << " check if cont/trig mode is correct";
+      }
+      numOfClustersLeft -= nClFrame;
+      auto end = std::chrono::system_clock::now();
+      std::chrono::duration<double> diff = end - start;
+      LOG(INFO) << "Loading clusters: " << nClFrame << " in single frame " << mROFrame << " : " << diff.count() << " s";
 
-    start = end;
+      start = end;
 
-    processFrame(tracks);
+      processFrame(tracks);
 
-    unloadClusters();
-    end = std::chrono::system_clock::now();
-    diff = end - start;
-    LOG(INFO) << "Processing time for single frame " << mROFrame << " : " << diff.count() << " s" << FairLogger::endl;
+      unloadClusters();
+      end = std::chrono::system_clock::now();
+      diff = end - start;
+      LOG(INFO) << "Processing time for single frame " << mROFrame << " : " << diff.count() << " s";
 
-    start = end;
-    if (mContinuousMode) {
-      mROFrame++; // expect incremented frame in following clusters
-    }
+      start = end;
+      if (mContinuousMode) {
+        mROFrame++; // expect incremented frame in following clusters
+      }
+    } // end ROFs
   }
 }
 
@@ -78,7 +79,7 @@ void Tracker::process(const std::vector<Cluster>& clusters, std::vector<TrackMFT
 void Tracker::processFrame(std::vector<TrackMFT>& tracks)
 {
 
-  LOG(INFO) << "Tracker::process(), number of threads: " << mNumOfThreads << FairLogger::endl;
+  LOG(INFO) << "Tracker::processFrame(), number of threads: " << mNumOfThreads;
 
   std::vector<std::future<std::vector<TrackMFT>>> futures(mNumOfThreads);
   Int_t numOfClusters = sLayers[0].getNumberOfClusters();
@@ -105,8 +106,8 @@ std::vector<TrackMFT> Tracker::trackInThread(Int_t first, Int_t last)
   Layer& layer2 = sLayers[1];
   Int_t nClusters1 = layer1.getNumberOfClusters();
   Int_t nClusters2 = layer2.getNumberOfClusters();
-  LOG(INFO) << "trackInThread first: " << first << " last: " << last << FairLogger::endl;
-  LOG(INFO) << "nCusters 1: " << nClusters1 << " 2: " << nClusters2 << FairLogger::endl;
+  LOG(INFO) << "trackInThread first: " << first << " last: " << last;
+  LOG(INFO) << "nCusters 1: " << nClusters1 << " 2: " << nClusters2;
   // std::this_thread::sleep_for(std::chrono::seconds(10));
 
   return tracks;
@@ -124,38 +125,22 @@ void Tracker::setGeometry(o2::mft::GeometryTGeo* geom)
 }
 
 //_____________________________________________________________________________
-Int_t Tracker::loadClusters(const std::vector<Cluster>& clusters)
+Int_t Tracker::loadClusters(const std::vector<Cluster>& clusters, const o2::itsmft::ROFRecord& rof)
 {
+  auto first = rof.getFirstEntry();
+  auto number = rof.getNEntries();
 
-  Int_t numOfClusters = clusters.size();
-  int nLoaded = 0;
-
-  if (mContinuousMode) { // check the ROFrame in cont. mode
-    for (auto& c : clusters) {
-      if (c.getROFrame() != mROFrame) {
-        continue;
-      }
-      nLoaded++;
-      Int_t layer = mGeom->getLayer(c.getSensorID());
-      if (!sLayers[layer].insertCluster(&c)) {
-        continue;
-      }
-    }
-  } else { // do not check the ROFrame in triggered mode
-    for (auto& c : clusters) {
-      nLoaded++;
-      Int_t layer = mGeom->getLayer((Int_t)(c.getSensorID()));
-      if (!sLayers[layer].insertCluster(&c)) {
-        continue;
-      }
-    }
+  auto clusters_in_frame = gsl::make_span(&clusters[first], number);
+  for (const auto& c : clusters_in_frame) {
+    Int_t layer = mGeom->getLayer(c.getSensorID());
+    sLayers[layer].insertCluster(&c);
   }
 
-  if (nLoaded) {
+  if (number) {
     std::vector<std::future<void>> fut;
     for (Int_t l = 0; l < constants::LayersNumber; l += mNumOfThreads) {
       for (Int_t t = 0; t < mNumOfThreads; t++) {
-        if ((l + t) >= constants::LayersNumber)
+        if (l + t >= constants::LayersNumber)
           break;
         auto f = std::async(std::launch::async, &Tracker::Layer::init, sLayers + (l + t));
         fut.push_back(std::move(f));
@@ -165,13 +150,12 @@ Int_t Tracker::loadClusters(const std::vector<Cluster>& clusters)
     }
   }
 
-  return nLoaded;
+  return number;
 }
 
 //_____________________________________________________________________________
 void Tracker::unloadClusters()
 {
-
   for (Int_t i = 0; i < constants::LayersNumber; i++) {
     sLayers[i].unloadClusters();
   }

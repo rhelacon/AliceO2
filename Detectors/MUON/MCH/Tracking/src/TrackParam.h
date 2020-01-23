@@ -132,9 +132,9 @@ class TrackParam
 
   Bool_t isCompatibleTrackParam(const TrackParam& trackParam, Double_t sigma2Cut, Double_t& normChi2) const;
 
-  void print(Option_t* opt = "") const;
+  void print() const;
 
-  void clear(Option_t* opt = "");
+  void clear();
 
  private:
   Double_t mZ = 0.; ///< Z coordinate (cm)
@@ -145,7 +145,7 @@ class TrackParam
   /// Y       = Bending coordinate       (cm)
   /// SlopeY  = Bending slope            (cm ** -1)
   /// InvP_yz = Inverse bending momentum (GeV/c ** -1) times the charge (assumed forward motion)  </pre>
-  TMatrixD mParameters{ 5, 1 }; ///< \brief Track parameters
+  TMatrixD mParameters{5, 1}; ///< \brief Track parameters
 
   /// Covariance matrix of track parameters, ordered as follow:      <pre>
   ///    <X,X>      <X,SlopeX>        <X,Y>      <X,SlopeY>       <X,InvP_yz>

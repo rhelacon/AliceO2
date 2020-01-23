@@ -17,6 +17,12 @@
 #include "FrameworkGUIDeviceInspector.h"
 #include "../src/WorkflowHelpers.h"
 #include "DebugGUI/imgui.h"
+#if __has_include("DebugGUI/icons_font_awesome.h")
+#include "DebugGUI/icons_font_awesome.h"
+#else
+#define ICON_FA_EXCLAMATION_CIRCLE "(Errors!)"
+#define ICON_FA_EXCLAMATION_TRIANGLE "(Warnings!)"
+#endif
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -49,25 +55,20 @@ NodeColor
     result.hovered = PaletteHelpers::SHADED_RED;
     return result;
   }
-  switch (info.maxLogLevel) {
-    case LogParsingHelpers::LogLevel::Error:
-      result.normal = PaletteHelpers::SHADED_RED;
-      result.hovered = PaletteHelpers::RED;
-      result.title = PaletteHelpers::RED;
-      result.title_hovered = PaletteHelpers::DARK_RED;
-      break;
-    case LogLevel::Warning:
+  switch (info.streamingState) {
+    case StreamingState::EndOfStreaming:
       result.normal = PaletteHelpers::SHADED_YELLOW;
       result.hovered = PaletteHelpers::YELLOW;
       result.title = PaletteHelpers::YELLOW;
       result.title_hovered = PaletteHelpers::DARK_YELLOW;
       break;
-    case LogLevel::Info:
+    case StreamingState::Idle:
       result.normal = PaletteHelpers::SHADED_GREEN;
       result.hovered = PaletteHelpers::GREEN;
       result.title = PaletteHelpers::GREEN;
       result.title_hovered = PaletteHelpers::DARK_GREEN;
       break;
+    case StreamingState::Streaming:
     default:
       result.normal = PaletteHelpers::GRAY;
       result.hovered = PaletteHelpers::LIGHT_GRAY;
@@ -202,7 +203,7 @@ void showTopologyNodeGraph(WorkspaceGUIState& state,
     for (int si = 0; si < specs.size(); ++si) {
       int oi = 0;
       for (auto&& output : specs[si].outputChannels) {
-        linkToIndex.insert(std::make_pair(output.name, LinkInfo{ si, oi }));
+        linkToIndex.insert(std::make_pair(output.name, LinkInfo{si, oi}));
         oi += 1;
       }
     }
@@ -258,14 +259,14 @@ void showTopologyNodeGraph(WorkspaceGUIState& state,
           LOG(ERROR) << "Could not find suitable node for " << outName;
           continue;
         }
-        links.push_back(NodeLink{ out->second.specId, out->second.outputId, si, ii });
+        links.push_back(NodeLink{out->second.specId, out->second.outputId, si, ii});
         ii += 1;
       }
     }
 
     // ImVector does boudary checks, so I bypass the case there is no
     // edges.
-    std::vector<TopoIndexInfo> sortedNodes = { { 0, 0 } };
+    std::vector<TopoIndexInfo> sortedNodes = {{0, 0}};
     if (links.size()) {
       sortedNodes = WorkflowHelpers::topologicalSort(specs.size(), &(links[0].InputIdx), &(links[0].OutputIdx), sizeof(links[0]), links.size());
     }
@@ -278,7 +279,7 @@ void showTopologyNodeGraph(WorkspaceGUIState& state,
         return di == info.index;
       });
       if (fn == sortedNodes.end()) {
-        sortedNodes.push_back({ (int)di, 0 });
+        sortedNodes.push_back({(int)di, 0});
       }
     }
     assert(specs.size() == sortedNodes.size());
@@ -298,7 +299,7 @@ void showTopologyNodeGraph(WorkspaceGUIState& state,
       assert(node.index == si);
       int xpos = 40 + 240 * node.layer;
       int ypos = 300 + (600 / (layerMax[node.layer] + 1)) * (layerEntries[node.layer] - layerMax[node.layer] / 2);
-      positions.push_back(NodePos{ ImVec2(xpos, ypos) });
+      positions.push_back(NodePos{ImVec2(xpos, ypos)});
       layerEntries[node.layer] += 1;
     }
   };
@@ -435,7 +436,19 @@ void showTopologyNodeGraph(WorkspaceGUIState& state,
     bool old_any_active = ImGui::IsAnyItemActive();
     ImGui::SetCursorScreenPos(node_rect_min + NODE_WINDOW_PADDING);
     ImGui::BeginGroup(); // Lock horizontal position
-    ImGui::Text("%s", node->Name);
+    ImGui::TextUnformatted(node->Name);
+    switch (info.maxLogLevel) {
+      case LogLevel::Error:
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1, 0, 0, 1), "%s", ICON_FA_EXCLAMATION_CIRCLE);
+        break;
+      case LogLevel::Warning:
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0, 1, 1, 1), "%s", ICON_FA_EXCLAMATION_TRIANGLE);
+        break;
+      default:
+        break;
+    }
     gui::displayDataRelayer(metricsInfos[node->ID], infos[node->ID], ImVec2(140., 90.));
     ImGui::EndGroup();
 

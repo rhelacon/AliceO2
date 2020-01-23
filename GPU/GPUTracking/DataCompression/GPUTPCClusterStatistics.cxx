@@ -12,6 +12,7 @@
 /// \author David Rohr
 
 #include "GPUTPCClusterStatistics.h"
+#include "GPULogging.h"
 #include "GPUO2DataTypes.h"
 #include <algorithm>
 #include <cstring>
@@ -106,13 +107,14 @@ void GPUTPCClusterStatistics::RunStatistics(const o2::tpc::ClusterNativeAccess* 
   bool decodingError = false;
   o2::tpc::ClusterNativeAccess clustersNativeDecoded;
   std::vector<o2::tpc::ClusterNative> clusterBuffer;
+  GPUInfo("Compression statistics, decoding: %d attached (%d tracks), %d unattached", clustersCompressed->nAttachedClusters, clustersCompressed->nTracks, clustersCompressed->nUnattachedClusters);
   mDecoder.decompress(clustersCompressed, clustersNativeDecoded, clusterBuffer, param);
   std::vector<o2::tpc::ClusterNative> tmpClusters;
   if (param.rec.tpcRejectionMode == GPUSettings::RejectionNone) { // verification does not make sense if we reject clusters during compression
     for (unsigned int i = 0; i < NSLICES; i++) {
       for (unsigned int j = 0; j < GPUCA_ROW_COUNT; j++) {
         if (clustersNative->nClusters[i][j] != clustersNativeDecoded.nClusters[i][j]) {
-          printf("Number of clusters mismatch slice %u row %u: expected %d v.s. decoded %d\n", i, j, clustersNative->nClusters[i][j], clustersNativeDecoded.nClusters[i][j]);
+          GPUError("Number of clusters mismatch slice %u row %u: expected %d v.s. decoded %d", i, j, clustersNative->nClusters[i][j], clustersNativeDecoded.nClusters[i][j]);
           decodingError = true;
           continue;
         }
@@ -120,7 +122,7 @@ void GPUTPCClusterStatistics::RunStatistics(const o2::tpc::ClusterNativeAccess* 
         for (unsigned int k = 0; k < clustersNative->nClusters[i][j]; k++) {
           tmpClusters[k] = clustersNative->clusters[i][j][k];
           if (param.rec.tpcCompressionModes & GPUSettings::CompressionTruncate) {
-            GPUTPCCompression::truncateSignificantBitsCharge(tmpClusters[k].qMax, param);
+            GPUTPCCompression::truncateSignificantBitsChargeMax(tmpClusters[k].qMax, param);
             GPUTPCCompression::truncateSignificantBitsCharge(tmpClusters[k].qTot, param);
             GPUTPCCompression::truncateSignificantBitsWidth(tmpClusters[k].sigmaPadPacked, param);
             GPUTPCCompression::truncateSignificantBitsWidth(tmpClusters[k].sigmaTimePacked, param);
@@ -131,8 +133,8 @@ void GPUTPCClusterStatistics::RunStatistics(const o2::tpc::ClusterNativeAccess* 
           const o2::tpc::ClusterNative& c1 = tmpClusters[k];
           const o2::tpc::ClusterNative& c2 = clustersNativeDecoded.clusters[i][j][k];
           if (c1.timeFlagsPacked != c2.timeFlagsPacked || c1.padPacked != c2.padPacked || c1.sigmaTimePacked != c2.sigmaTimePacked || c1.sigmaPadPacked != c2.sigmaPadPacked || c1.qMax != c2.qMax || c1.qTot != c2.qTot) {
-            printf("Cluster mismatch: slice %2u row %3u hit %5u: %6d %3d %4d %3d %3d %4d %4d\n", i, j, k, (int)c1.getTimePacked(), (int)c1.getFlags(), (int)c1.padPacked, (int)c1.sigmaTimePacked, (int)c1.sigmaPadPacked, (int)c1.qMax, (int)c1.qTot);
-            printf("%45s %6d %3d %4d %3d %3d %4d %4d\n", "", (int)c2.getTimePacked(), (int)c2.getFlags(), (int)c2.padPacked, (int)c2.sigmaTimePacked, (int)c2.sigmaPadPacked, (int)c2.qMax, (int)c2.qTot);
+            GPUWarning("Cluster mismatch: slice %2u row %3u hit %5u: %6d %3d %4d %3d %3d %4d %4d", i, j, k, (int)c1.getTimePacked(), (int)c1.getFlags(), (int)c1.padPacked, (int)c1.sigmaTimePacked, (int)c1.sigmaPadPacked, (int)c1.qMax, (int)c1.qTot);
+            GPUWarning("%45s %6d %3d %4d %3d %3d %4d %4d", "", (int)c2.getTimePacked(), (int)c2.getFlags(), (int)c2.padPacked, (int)c2.sigmaTimePacked, (int)c2.sigmaPadPacked, (int)c2.qMax, (int)c2.qTot);
             decodingError = true;
           }
         }
@@ -141,7 +143,7 @@ void GPUTPCClusterStatistics::RunStatistics(const o2::tpc::ClusterNativeAccess* 
     if (decodingError) {
       mDecodingError = true;
     } else {
-      printf("Cluster decoding verification: PASSED\n");
+      GPUInfo("Cluster decoding verification: PASSED");
     }
   }
 
@@ -168,8 +170,10 @@ void GPUTPCClusterStatistics::RunStatistics(const o2::tpc::ClusterNativeAccess* 
   FillStatistic(mPsigmaTimeU, clustersCompressed->sigmaTimeU, clustersCompressed->nUnattachedClusters);
   FillStatistic<short unsigned int, 1>(mPnTrackClusters, clustersCompressed->nTrackClusters, clustersCompressed->nTracks);
   FillStatistic<unsigned int, 1>(mPnSliceRowClusters, clustersCompressed->nSliceRowClusters, clustersCompressed->nSliceRows);
-  FillStatisticCombined(mPsigmaA, clustersCompressed->sigmaPadA, clustersCompressed->sigmaTimeA, clustersCompressed->nAttachedClusters, 1 << 8);
-  FillStatisticCombined(mPsigmaU, clustersCompressed->sigmaPadU, clustersCompressed->sigmaTimeU, clustersCompressed->nUnattachedClusters, 1 << 8);
+  FillStatisticCombined(mPsigmaA, clustersCompressed->sigmaPadA, clustersCompressed->sigmaTimeA, clustersCompressed->nAttachedClusters, P_MAX_SIGMA);
+  FillStatisticCombined(mPsigmaU, clustersCompressed->sigmaPadU, clustersCompressed->sigmaTimeU, clustersCompressed->nUnattachedClusters, P_MAX_SIGMA);
+  FillStatisticCombined(mPQA, clustersCompressed->qMaxA, clustersCompressed->qTotA, clustersCompressed->nAttachedClusters, P_MAX_QMAX);
+  FillStatisticCombined(mPQU, clustersCompressed->qMaxU, clustersCompressed->qTotU, clustersCompressed->nUnattachedClusters, P_MAX_QMAX);
   FillStatisticCombined(mProwSliceA, clustersCompressed->rowDiffA, clustersCompressed->sliceLegDiffA, clustersCompressed->nAttachedClustersReduced, GPUCA_ROW_COUNT);
   mNTotalClusters += clustersCompressed->nAttachedClusters + clustersCompressed->nUnattachedClusters;
 }
@@ -177,15 +181,15 @@ void GPUTPCClusterStatistics::RunStatistics(const o2::tpc::ClusterNativeAccess* 
 void GPUTPCClusterStatistics::Finish()
 {
   if (mDecodingError) {
-    printf("-----------------------------------------\nERROR - INCORRECT CLUSTER DECODING!\n-----------------------------------------\n");
+    GPUError("-----------------------------------------\nERROR - INCORRECT CLUSTER DECODING!\n-----------------------------------------");
   }
   if (mNTotalClusters == 0) {
     return;
   }
 
-  printf("\nRunning cluster compression entropy statistics\n");
-  Analyze(mPqTotA, "qTot Attached");
-  Analyze(mPqMaxA, "qMax Attached");
+  GPUInfo("\nRunning cluster compression entropy statistics");
+  double eQ = Analyze(mPqTotA, "qTot Attached", false);
+  eQ += Analyze(mPqMaxA, "qMax Attached", false);
   Analyze(mPflagsA, "flags Attached");
   double eRowSlice = Analyze(mProwDiffA, "rowDiff Attached", false);
   eRowSlice += Analyze(mPsliceLegDiffA, "sliceDiff Attached", false);
@@ -198,8 +202,8 @@ void GPUTPCClusterStatistics::Finish()
   Analyze(mPsliceA, "slice Attached");
   Analyze(mPtimeA, "time Attached");
   Analyze(mPpadA, "pad Attached");
-  Analyze(mPqTotU, "qTot Unattached");
-  Analyze(mPqMaxU, "qMax Unattached");
+  eQ += Analyze(mPqTotU, "qTot Unattached", false);
+  eQ += Analyze(mPqMaxU, "qMax Unattached", false);
   Analyze(mPflagsU, "flags Unattached");
   Analyze(mPpadDiffU, "padDiff Unattached");
   Analyze(mPtimeDiffU, "timeDiff Unattached");
@@ -209,10 +213,13 @@ void GPUTPCClusterStatistics::Finish()
   Analyze(mPnSliceRowClusters, "nClusters in Row");
   double eSigmaCombined = Analyze(mPsigmaA, "combined sigma Attached");
   eSigmaCombined += Analyze(mPsigmaU, "combined sigma Unattached");
+  double eQCombined = Analyze(mPQA, "combined Q Attached");
+  eQCombined += Analyze(mPQU, "combined Q Unattached");
   double eRowSliceCombined = Analyze(mProwSliceA, "combined row/slice Attached");
 
-  printf("Combined Row/Slice: %6.4f --> %6.4f (%6.4f%%)\n", eRowSlice, eRowSliceCombined, 100. * (eRowSlice - eRowSliceCombined) / eRowSlice);
-  printf("Combined Sigma: %6.4f --> %6.4f (%6.4f%%)\n", eSigma, eSigmaCombined, 100. * (eSigma - eSigmaCombined) / eSigma);
+  GPUInfo("Combined Row/Slice: %6.4f --> %6.4f (%6.4f%%)", eRowSlice, eRowSliceCombined, 100. * (eRowSlice - eRowSliceCombined) / eRowSlice);
+  GPUInfo("Combined Sigma: %6.4f --> %6.4f (%6.4f%%)", eSigma, eSigmaCombined, 100. * (eSigma - eSigmaCombined) / eSigma);
+  GPUInfo("Combined Q: %6.4f --> %6.4f (%6.4f%%)", eQ, eQCombined, 100. * (eQ - eQCombined) / eQ);
 
   printf("\nConbined Entropy: %7.4f   (Size %'13.0f, %'lld cluster)\nCombined Huffman: %7.4f   (Size %'13.0f, %f%%)\n\n", mEntropy / mNTotalClusters, mEntropy, (long long int)mNTotalClusters, mHuffman / mNTotalClusters, mHuffman, 100. * (mHuffman - mEntropy) / mHuffman);
 }
@@ -252,7 +259,7 @@ float GPUTPCClusterStatistics::Analyze(std::vector<int>& p, const char* name, bo
     mEntropy += entropy * total;
     mHuffman += huffmanSize * total;
   }
-  printf("Size: %30s: Entropy %7.4f Huffman %7.4f\n", name, entropy, huffmanSize);
+  GPUInfo("Size: %30s: Entropy %7.4f Huffman %7.4f", name, entropy, huffmanSize);
   return entropy;
 }
 
@@ -261,8 +268,13 @@ void GPUTPCClusterStatistics::FillStatistic(std::vector<int>& p, const T* ptr, s
 {
   for (size_t i = 0; i < n; i++) {
     unsigned int val = ptr[i];
-    if (I && p.size() <= val + 1) {
-      p.resize(val + 1);
+    if (val >= p.size()) {
+      if (I) {
+        p.resize(val + 1);
+      } else {
+        GPUError("Invalid Value: %d >= %d", val, (int)p.size());
+        continue;
+      }
     }
     p[val]++;
   }
@@ -273,8 +285,13 @@ void GPUTPCClusterStatistics::FillStatisticCombined(std::vector<int>& p, const T
 {
   for (size_t i = 0; i < n; i++) {
     unsigned int val = ptr1[i] + ptr2[i] * max1;
-    if (I && p.size() < val + 1) {
-      p.resize(val + 1);
+    if (val >= p.size()) {
+      if (I) {
+        p.resize(val + 1);
+      } else {
+        GPUError("Invalid Value: %d >= %d", val, (int)p.size());
+        continue;
+      }
     }
     p[val]++;
   }

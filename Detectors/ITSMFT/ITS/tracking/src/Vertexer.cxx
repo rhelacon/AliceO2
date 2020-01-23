@@ -32,9 +32,15 @@ Vertexer::Vertexer(VertexerTraits* traits)
 float Vertexer::clustersToVertices(ROframe& event, const bool useMc, std::ostream& timeBenchmarkOutputStream)
 {
   ROframe* eventptr = &event;
-  float total{ 0.f };
+  float total{0.f};
   total += evaluateTask(&Vertexer::initialiseVertexer, "Vertexer initialisation", timeBenchmarkOutputStream, eventptr);
-  total += evaluateTask(&Vertexer::findTracklets, "Tracklet finding", timeBenchmarkOutputStream, useMc);
+  total += evaluateTask(&Vertexer::findTracklets, "Tracklet finding", timeBenchmarkOutputStream);
+#ifdef _ALLOW_DEBUG_TREES_ITS_
+  if (useMc) {
+    total += evaluateTask(&Vertexer::filterMCTracklets, "MC tracklets filtering", timeBenchmarkOutputStream);
+  }
+#endif
+  total += evaluateTask(&Vertexer::validateTracklets, "Adjacent tracklets validation", timeBenchmarkOutputStream);
   total += evaluateTask(&Vertexer::findVertices, "Vertex finding", timeBenchmarkOutputStream);
 
   return total;
@@ -43,6 +49,11 @@ float Vertexer::clustersToVertices(ROframe& event, const bool useMc, std::ostrea
 void Vertexer::findVertices()
 {
   mTraits->computeVertices();
+}
+
+void Vertexer::findHistVertices()
+{
+  mTraits->computeHistVertices();
 }
 
 } // namespace its

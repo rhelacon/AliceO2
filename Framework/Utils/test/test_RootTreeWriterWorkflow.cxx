@@ -10,13 +10,13 @@
 
 #include "Framework/WorkflowSpec.h"
 #include "Framework/DataProcessorSpec.h"
-#include "Framework/runDataProcessing.h"
 #include "Framework/DataAllocator.h"
 #include "Framework/InputRecord.h"
 #include "Framework/InputSpec.h"
 #include "Framework/OutputSpec.h"
 #include "Framework/ControlService.h"
 #include "Framework/CallbackService.h"
+#include "Framework/CustomWorkflowTerminationHook.h"
 #include "DPLUtils/RootTreeWriter.h"
 #include "DPLUtils/MakeRootTreeWriterSpec.h"
 #include "Headers/DataHeader.h"
@@ -43,6 +43,14 @@ class StaticChecker
   // cleanup are expected
   ~StaticChecker() noexcept(false)
   {
+    // the check in the desctructor makes sure that the workflow has been run at all
+    if (mChecks.size() > 0) {
+      throw std::runtime_error("Workflow error: Checks have not been executed");
+    }
+  }
+
+  void runChecks()
+  {
     for (auto const& check : mChecks) {
       TFile* file = TFile::Open(check.first.c_str());
       if (file == nullptr) {
@@ -58,12 +66,9 @@ class StaticChecker
         setError(std::string("can not find tree 'testtree' in file ") + check.first.c_str());
       }
       file->Close();
-      // TODO: keeping this as a note because this is not understood
-      // files should get deleted at this point, but if this line is in, the files are already deleted when entering
-      // the loop. Not clear if there is some out-of-order execution
-      // could not test with std filesystem, because the is first supported in gcc 8
-      //boost::filesystem::remove(check.first.c_str());
+      boost::filesystem::remove(check.first.c_str());
     }
+    mChecks.clear();
     if (mErrorMessage.empty() == false) {
       throw std::runtime_error(mErrorMessage);
     }
@@ -82,11 +87,33 @@ class StaticChecker
     }
   }
 
+  void clear()
+  {
+    mChecks.clear();
+    mErrorMessage.clear();
+  }
+
  private:
   std::vector<std::pair<std::string, int>> mChecks;
   std::string mErrorMessage;
 };
 static StaticChecker sChecker;
+
+void customize(o2::framework::OnWorkflowTerminationHook& hook)
+{
+  hook = [](const char* idstring) {
+    // run the checks in the master driver process, all the individual
+    // processes have the same checker setup, so this needs to be cleared for child
+    // (device) processes.
+    if (idstring == nullptr) {
+      sChecker.runChecks();
+    } else {
+      sChecker.clear();
+    }
+  };
+}
+
+#include "Framework/runDataProcessing.h"
 
 static constexpr int sTreeSize = 10; // elements to send and write
 DataProcessorSpec getSourceSpec()
@@ -101,19 +128,23 @@ DataProcessorSpec getSourceSpec()
         return;
       }
       o2::test::Polymorphic a(*counter);
-      pc.outputs().snapshot(OutputRef{ "output" }, a);
-      int& metadata = pc.outputs().make<int>(Output{ "TST", "METADATA", 0, Lifetime::Timeframe });
+      pc.outputs().snapshot(OutputRef{"output"}, a);
+      int& metadata = pc.outputs().make<int>(Output{"TST", "METADATA", 0, Lifetime::Timeframe});
       metadata = *counter;
       *counter = *counter + 1;
+      if (*counter >= sTreeSize) {
+        pc.services().get<ControlService>().endOfStream();
+        pc.services().get<ControlService>().readyToQuit(QuitRequest::Me);
+      }
     };
 
     return processingFct;
   };
-  return DataProcessorSpec{ "source", // name of the processor
-                            {},
-                            { OutputSpec{ { "output" }, "TST", "SOMEOBJECT", 0, Lifetime::Timeframe },
-                              OutputSpec{ { "meta" }, "TST", "METADATA", 0, Lifetime::Timeframe } },
-                            AlgorithmSpec(initFct) };
+  return DataProcessorSpec{"source", // name of the processor
+                           {},
+                           {OutputSpec{{"output"}, "TST", "SOMEOBJECT", 0, Lifetime::Timeframe},
+                            OutputSpec{{"meta"}, "TST", "METADATA", 0, Lifetime::Timeframe}},
+                           AlgorithmSpec(initFct)};
 }
 
 template <typename T>
@@ -138,24 +169,24 @@ WorkflowSpec defineDataProcessing(ConfigContext const&)
   using Polymorphic = o2::test::Polymorphic;
   return WorkflowSpec{
     getSourceSpec(),
-    MakeRootTreeWriterSpec                                                                      //
-    (                                                                                           //
-      "sink1",                                                                                  // process name
-      fileName.c_str(),                                                                         // default file name
-      "testtree",                                                                               // default tree name
-      1,                                                                                        // default number of events
-      BranchDefinition<Polymorphic>{ InputSpec{ "input", "TST", "SOMEOBJECT" }, "polyobject" }, // branch config
-      BranchDefinition<int>{ InputSpec{ "meta", "TST", "METADATA" }, "counter" }                // branch config
-      )(),                                                                                      // call the generator
-    MakeRootTreeWriterSpec                                                                      //
-    (                                                                                           //
-      "sink2",                                                                                  // process name
-      altFileName.c_str(),                                                                      // default file name
-      "testtree",                                                                               // default tree name
-      MakeRootTreeWriterSpec::TerminationPolicy::Workflow,                                      // terminate the workflow
-      MakeRootTreeWriterSpec::TerminationCondition{ checkReady },                               // custom termination condition
-      BranchDefinition<Polymorphic>{ InputSpec{ "input", "TST", "SOMEOBJECT" }, "polyobject" }, // branch config
-      BranchDefinition<int>{ InputSpec{ "meta", "TST", "METADATA" }, "counter" }                // branch config
-      )()                                                                                       // call the generator
+    MakeRootTreeWriterSpec                                                                  //
+    (                                                                                       //
+      "sink1",                                                                              // process name
+      fileName.c_str(),                                                                     // default file name
+      "testtree",                                                                           // default tree name
+      1,                                                                                    // default number of events
+      BranchDefinition<Polymorphic>{InputSpec{"input", "TST", "SOMEOBJECT"}, "polyobject"}, // branch config
+      BranchDefinition<int>{InputSpec{"meta", "TST", "METADATA"}, "counter"}                // branch config
+      )(),                                                                                  // call the generator
+    MakeRootTreeWriterSpec                                                                  //
+    (                                                                                       //
+      "sink2",                                                                              // process name
+      altFileName.c_str(),                                                                  // default file name
+      "testtree",                                                                           // default tree name
+      MakeRootTreeWriterSpec::TerminationPolicy::Workflow,                                  // terminate the workflow
+      MakeRootTreeWriterSpec::TerminationCondition{checkReady},                             // custom termination condition
+      BranchDefinition<Polymorphic>{InputSpec{"input", "TST", "SOMEOBJECT"}, "polyobject"}, // branch config
+      BranchDefinition<int>{InputSpec{"meta", "TST", "METADATA"}, "counter"}                // branch config
+      )()                                                                                   // call the generator
   };
 }

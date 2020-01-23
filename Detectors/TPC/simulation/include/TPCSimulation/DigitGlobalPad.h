@@ -89,8 +89,8 @@ class DigitGlobalPad
   /// \return true, if trackID, eventID and sourceID are the same
   bool compareMClabels(const MCCompLabel& label1, const MCCompLabel& label2) const;
 
-  float mChargePad = 0.;                             ///< Total accumulated charge on that GlobalPad for a given time bin
-  int mID = -1;                                      ///< ID of this digit to refer into labels (-1 means not initialized)
+  float mChargePad = 0.; ///< Total accumulated charge on that GlobalPad for a given time bin
+  int mID = -1;          ///< ID of this digit to refer into labels (-1 means not initialized)
 };
 
 inline void DigitGlobalPad::addDigit(const MCCompLabel& label, float signal,
@@ -142,11 +142,9 @@ inline void DigitGlobalPad::fillOutputContainer(std::vector<Digit>& output,
 
   /// The charge accumulated on that pad is converted into ADC counts, saturation of the SAMPA is applied and a Digit
   /// is created in written out
-  const float totalADC = mChargePad - commonMode; // common mode is subtracted here in order to properly apply noise,
-                                                  // pedestals and saturation of the SAMPA
 
   float noise, pedestal;
-  const float mADC = sampaProcessing.makeSignal<MODE>(totalADC, cru.sector(), globalPad, pedestal, noise);
+  const float mADC = sampaProcessing.makeSignal<MODE>(mChargePad, cru.sector(), globalPad, commonMode, pedestal, noise);
 
   /// only write out the data if there is actually charge on that pad
   if (mADC > 0 && mChargePad > 0) {

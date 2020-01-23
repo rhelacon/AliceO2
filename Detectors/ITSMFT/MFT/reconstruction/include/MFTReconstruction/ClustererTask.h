@@ -55,11 +55,10 @@ class ClustererTask
 
   void Init();
   Clusterer& getClusterer() { return mClusterer; }
-  void run(const std::string inpName, const std::string outName, bool entryPerROF = true);
+  void run(const std::string inpName, const std::string outName);
   void setSelfManagedMode(bool v) { mSelfManagedMode = v; }
   bool isSelfManagedMode() const { return mSelfManagedMode; }
   o2::itsmft::PixelReader* getReader() const { return (o2::itsmft::PixelReader*)mReader; }
-
   void loadDictionary(std::string fileName) { mClusterer.loadDictionary(fileName); }
 
  private:
@@ -82,12 +81,12 @@ class ClustererTask
   std::vector<o2::itsmft::ROFRecord> mROFRecVec;               //!< vector of ROFRecord references
   std::vector<o2::itsmft::ROFRecord>* mROFRecVecPtr = nullptr; //!< vector of ROFRecord references pointer
 
-  MCTruth mClsLabels;                                        //! MC labels
-  MCTruth* mClsLabelsPtr = nullptr;                          //! MC labels pointer (optional)
+  MCTruth mClsLabels;               //! MC labels
+  MCTruth* mClsLabelsPtr = nullptr; //! MC labels pointer (optional)
 
   ClassDefNV(ClustererTask, 1);
 };
-}
-}
+} // namespace mft
+} // namespace o2
 
 #endif

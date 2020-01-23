@@ -58,7 +58,7 @@ class MCTruthContainer;
 /// integrator for the digittal currents.
 class HardwareClusterDecoder
 {
-public:
+ public:
   HardwareClusterDecoder() = default;
   ~HardwareClusterDecoder() = default;
 
@@ -83,7 +83,7 @@ public:
   /// ClusterNative defines the smaller-than relation used in the sorting, with time being the more significant
   /// condition in the comparison.
   static void sortClustersAndMC(ClusterNative* clusters, size_t nClusters,
-                                o2::dataformats::MCTruthContainer<o2::MCCompLabel> mcTruth);
+                                o2::dataformats::MCTruthContainer<o2::MCCompLabel>& mcTruth);
 
  private:
   std::unique_ptr<DigitalCurrentClusterIntegrator> mIntegrator;

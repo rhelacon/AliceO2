@@ -55,18 +55,16 @@ DataProcessorSpec getCollisionTimePrinter(int channel)
     for (auto& collrecord : view) {
       LOG(INFO) << "TIME " << counter++ << " : " << collrecord.timeNS;
     }
-    pc.services().get<ControlService>().readyToQuit(false);
+    pc.services().get<ControlService>().readyToQuit(QuitRequest::Me);
   };
 
-  return DataProcessorSpec{ /*ID*/ "CollTimePrinter",
-                            /*INPUT CHANNELS*/ Inputs{ InputSpec{ "input", "SIM", "EVENTTIMES",
-                                                                  static_cast<SubSpecificationType>(channel),
-                                                                  Lifetime::Timeframe } },
-                            /*OUTPUT CHANNELS*/ Outputs{},
-                            /* ALGORITHM */
-                            AlgorithmSpec(doIt),
-                            /* OPTIONS */
-                            Options{} };
+  return DataProcessorSpec{/*ID*/ "CollTimePrinter",
+                           /*INPUT CHANNELS*/ Inputs{InputSpec{"input", "SIM", "EVENTTIMES", static_cast<SubSpecificationType>(channel), Lifetime::Timeframe}},
+                           /*OUTPUT CHANNELS*/ Outputs{},
+                           /* ALGORITHM */
+                           AlgorithmSpec(doIt),
+                           /* OPTIONS */
+                           Options{}};
 }
-}
-}
+} // namespace steer
+} // namespace o2

@@ -25,13 +25,15 @@ namespace framework
 
 /// This extracts the specified ConfigParams from (argc, argv) and makes them
 /// available to the ConfigParamRegistry.
-class BoostOptionsRetriever : public ParamRetriever {
-public:
-  BoostOptionsRetriever(std::vector<ConfigParamSpec> const&specs,
+class BoostOptionsRetriever : public ParamRetriever
+{
+ public:
+  BoostOptionsRetriever(std::vector<ConfigParamSpec> const& specs,
                         bool ignoreUnknown,
-                        int &argc, char **&argv);
+                        int& argc, char**& argv);
 
   int getInt(const char* name) const final;
+  int64_t getInt64(const char* name) const final;
   float getFloat(const char* name) const final;
   double getDouble(const char* name) const final;
   bool getBool(const char* name) const final;

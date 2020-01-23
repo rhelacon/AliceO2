@@ -84,7 +84,7 @@ class VariableContext
   void reset();
 
  private:
-  /* We make this class fixed size to avoid memory churning while 
+  /* We make this class fixed size to avoid memory churning while
      matching as much as posible when doing the matching, as that might become
      performance critical. Given we will have only a few of these (one per
      cacheline of the input messages) it should not be critical memory wise.
@@ -111,6 +111,12 @@ class ValueHolder
   template <typename V>
   friend std::ostream& operator<<(std::ostream& os, ValueHolder<V> const& holder);
 
+  template <typename VISITOR>
+  decltype(auto) visit(VISITOR visitor) const
+  {
+    return std::visit(visitor, mValue);
+  }
+
  protected:
   std::variant<T, ContextRef> mValue;
 };
@@ -121,6 +127,8 @@ class OriginValueMatcher : public ValueHolder<std::string>
  public:
   inline OriginValueMatcher(std::string const& s);
   inline OriginValueMatcher(ContextRef variableId);
+  template <std::size_t L>
+  inline constexpr OriginValueMatcher(const char (&s)[L]);
 
   bool match(header::DataHeader const& header, VariableContext& context) const;
 };
@@ -130,8 +138,9 @@ class DescriptionValueMatcher : public ValueHolder<std::string>
 {
  public:
   inline DescriptionValueMatcher(std::string const& s);
-
   inline DescriptionValueMatcher(ContextRef variableId);
+  template <std::size_t L>
+  inline constexpr DescriptionValueMatcher(const char (&s)[L]);
 
   bool match(header::DataHeader const& header, VariableContext& context) const;
 };
@@ -234,7 +243,7 @@ class DataDescriptorMatcher
   //DataDescriptorMatcher &operator=(DataDescriptorMatcher&& other) noexcept = default;
 
   /// Unary operator on a node
-  DataDescriptorMatcher(Op op, Node&& lhs, Node&& rhs = std::move(ConstantValueMatcher{ false }));
+  DataDescriptorMatcher(Op op, Node&& lhs, Node&& rhs = std::move(ConstantValueMatcher{false}));
 
   inline ~DataDescriptorMatcher() = default;
 
@@ -243,6 +252,7 @@ class DataDescriptorMatcher
   /// FIXME: these are not really part of the DataDescriptorMatcher API
   /// and should really be relegated to external helpers...
   bool match(ConcreteDataMatcher const& matcher, VariableContext& context) const;
+  bool match(ConcreteDataTypeMatcher const& matcher, VariableContext& context) const;
   bool match(header::DataHeader const& header, VariableContext& context) const;
   bool match(header::Stack const& stack, VariableContext& context) const;
 

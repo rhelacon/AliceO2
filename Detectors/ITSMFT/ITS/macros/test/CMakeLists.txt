@@ -28,12 +28,26 @@ o2_add_test_root_macro(CheckDigits.C
                                              O2::DetectorsBase
                        LABELS its)
 
+o2_add_test_root_macro(CheckLookUp.C
+                       PUBLIC_LINK_LIBRARIES O2::ITSMFTReconstruction
+                                             O2::DataFormatsITSMFT
+                       LABELS its)
+
 o2_add_test_root_macro(CheckLUtime.C
                        PUBLIC_LINK_LIBRARIES O2::ITSMFTReconstruction
                                              O2::DataFormatsITSMFT
                        LABELS its)
 
 o2_add_test_root_macro(CheckTopologies.C
+                       PUBLIC_LINK_LIBRARIES O2::MathUtils
+                                             O2::ITSBase
+                                             O2::ITSMFTReconstruction
+                                             O2::ITSMFTSimulation
+                                             O2::DataFormatsITSMFT
+                                             O2::SimulationDataFormat
+                       LABELS its)
+
+o2_add_test_root_macro(CheckCOG.C
                        PUBLIC_LINK_LIBRARIES O2::MathUtils
                                              O2::ITSBase
                                              O2::ITSMFTReconstruction
@@ -69,4 +83,11 @@ o2_add_test_root_macro(run_buildTopoDict_its.C
                                              O2::DataFormatsITSMFT
                                              O2::ITSMFTSimulation
                                              O2::SimulationDataFormat
+                       LABELS its)
+
+o2_add_test_root_macro(run_digi2rawVarPage_its.C
+                       PUBLIC_LINK_LIBRARIES O2::ITSMFTReconstruction
+                                             O2::DataFormatsITSMFT
+                                             O2::ITSMFTBase
+                                             O2::ITSMFTSimulation
                        LABELS its)

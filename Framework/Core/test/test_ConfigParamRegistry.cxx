@@ -25,8 +25,8 @@ struct Foo {
   // Providing a class with a constructor which takes a ptree
   // allows for getting the object
   explicit Foo(boost::property_tree::ptree in)
-    : x{ in.get<int>("x") },
-      y{ in.get<float>("y") }
+    : x{in.get<int>("x")},
+      y{in.get<float>("y")}
   {
   }
   int x;
@@ -40,6 +40,7 @@ BOOST_AUTO_TEST_CASE(TestConfigParamRegistry)
     ("aFloat", bpo::value<float>()->default_value(10.f))                  //
     ("aDouble", bpo::value<double>()->default_value(20.))                 //
     ("anInt", bpo::value<int>()->default_value(1))                        //
+    ("anInt64", bpo::value<int64_t>()->default_value(1ll))                //
     ("aBoolean", bpo::value<bool>()->zero_tokens()->default_value(false)) //
     ("aString,s", bpo::value<std::string>()->default_value("something"))  //
     ("aNested.x", bpo::value<int>()->default_value(2))                    //
@@ -47,22 +48,24 @@ BOOST_AUTO_TEST_CASE(TestConfigParamRegistry)
 
   FairMQProgOptions* options = new FairMQProgOptions();
   options->AddToCmdLineOptions(testOptions);
-  options->ParseAll({ "cmd", "--aFloat", "1.0",
-                      "--aDouble", "2.0",
-                      "--anInt", "10",
-                      "--aBoolean",
-                      "-s", "somethingelse",
-                      "--aNested.x", "1",
-                      "--aNested.y", "2" },
+  options->ParseAll({"cmd", "--aFloat", "1.0",
+                     "--aDouble", "2.0",
+                     "--anInt", "10",
+                     "--anInt64", "50000000000000",
+                     "--aBoolean",
+                     "-s", "somethingelse",
+                     "--aNested.x", "1",
+                     "--aNested.y", "2"},
                     false);
   std::vector<ConfigParamSpec> specs{
-    ConfigParamSpec{ "anInt", VariantType::Int, 1, { "an int option" } },
-    ConfigParamSpec{ "aFloat", VariantType::Float, 2.0f, { "a float option" } },
-    ConfigParamSpec{ "aDouble", VariantType::Double, 3., { "a double option" } },
-    ConfigParamSpec{ "aString,s", VariantType::String, "foo", { "a string option" } },
-    ConfigParamSpec{ "aBoolean", VariantType::Bool, true, { "a boolean option" } },
-    ConfigParamSpec{ "aNested.x", VariantType::Int, 2, { "an int option, nested in an object" } },
-    ConfigParamSpec{ "aNested.y", VariantType::Float, 3.f, { "a float option, nested in an object" } },
+    ConfigParamSpec{"anInt", VariantType::Int, 1, {"an int option"}},
+    ConfigParamSpec{"anInt64", VariantType::Int64, 1ll, {"an int64_t option"}},
+    ConfigParamSpec{"aFloat", VariantType::Float, 2.0f, {"a float option"}},
+    ConfigParamSpec{"aDouble", VariantType::Double, 3., {"a double option"}},
+    ConfigParamSpec{"aString,s", VariantType::String, "foo", {"a string option"}},
+    ConfigParamSpec{"aBoolean", VariantType::Bool, true, {"a boolean option"}},
+    ConfigParamSpec{"aNested.x", VariantType::Int, 2, {"an int option, nested in an object"}},
+    ConfigParamSpec{"aNested.y", VariantType::Float, 3.f, {"a float option, nested in an object"}},
   };
 
   auto retriever = std::make_unique<FairOptionsRetriever>(specs, options);
@@ -71,6 +74,7 @@ BOOST_AUTO_TEST_CASE(TestConfigParamRegistry)
   BOOST_CHECK_EQUAL(registry.get<float>("aFloat"), 1.0);
   BOOST_CHECK_EQUAL(registry.get<double>("aDouble"), 2.0);
   BOOST_CHECK_EQUAL(registry.get<int>("anInt"), 10);
+  BOOST_CHECK_EQUAL(registry.get<int64_t>("anInt64"), 50000000000000ll);
   BOOST_CHECK_EQUAL(registry.get<bool>("aBoolean"), true);
   BOOST_CHECK_EQUAL(registry.get<std::string>("aString"), "somethingelse");
   BOOST_CHECK_EQUAL(registry.get<int>("aNested.x"), 1);

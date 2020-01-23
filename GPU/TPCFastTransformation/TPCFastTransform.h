@@ -19,8 +19,15 @@
 #include "FlatObject.h"
 #include "TPCFastTransformGeo.h"
 #include "TPCDistortionIRS.h"
-#include "GPUCommonDef.h"
 #include "GPUCommonMath.h"
+
+#if !defined(GPUCA_GPUCODE)
+#include <string>
+#endif // !GPUCA_GPUCODE
+
+#if !defined(GPUCA_GPUCODE) && !defined(GPUCA_STANDALONE)
+//#include "Rtypes.h"
+#endif
 
 namespace GPUCA_NAMESPACE
 {
@@ -126,15 +133,22 @@ class TPCFastTransform : public FlatObject
   /// taking calibration + alignment into account.
   ///
   GPUd() void Transform(int slice, int row, float pad, float time, float& x, float& y, float& z, float vertexTime = 0) const;
-  GPUd() void TransformInTimeFrame(int slice, int row, float pad, float time, float& x, float& y, float& z, float maxTimeBin) const;
 
+  /// Transformation in the time frame
+  GPUd() void TransformInTimeFrame(int slice, int row, float pad, float time, float& x, float& y, float& z, float maxTimeBin) const;
   GPUd() void InverseTransformInTimeFrame(int slice, int row, float /*x*/, float y, float z, float& pad, float& time, float maxTimeBin) const;
+
+  /// Ideal transformation with Vdrift only - without calibration
+  GPUd() void TransformIdeal(int slice, int row, float pad, float time, float& x, float& y, float& z, float vertexTime) const;
 
   GPUd() void convPadTimeToUV(int slice, int row, float pad, float time, float& u, float& v, float vertexTime) const;
   GPUd() void convPadTimeToUVinTimeFrame(int slice, int row, float pad, float time, float& u, float& v, float maxTimeBin) const;
 
   GPUd() void convUVtoPadTime(int slice, int row, float u, float v, float& pad, float& time, float vertexTime) const;
   GPUd() void convUVtoPadTimeInTimeFrame(int slice, int row, float u, float v, float& pad, float& time, float maxTimeBin) const;
+
+  GPUd() float convTimeToZinTimeFrame(int slice, float time, float maxTimeBin) const;
+  GPUd() float convZtoTimeInTimeFrame(float z, float maxTimeBin) const;
 
   GPUd() void getTOFcorrection(int slice, int row, float x, float y, float z, float& dz) const;
 
@@ -148,10 +162,30 @@ class TPCFastTransform : public FlatObject
   GPUd() const TPCFastTransformGeo& getGeometry() const { return mDistortion.getGeometry(); }
 
   /// Gives the time stamp of the current calibaration parameters
-  long int getTimeStamp() const { return mTimeStamp; }
+  GPUd() long int getTimeStamp() const { return mTimeStamp; }
 
   /// Return mVDrift in cm / time bin
   GPUd() float getVDrift() const { return mVdrift; }
+
+  /// Return T0 in time bin units
+  GPUd() float getT0() const { return mT0; }
+
+  /// Return VdriftCorrY in time_bin / cn
+  GPUd() float getVdriftCorrY() const { return mVdriftCorrY; }
+
+  /// Return LdriftCorr offset in cm
+  GPUd() float getLdriftCorr() const { return mLdriftCorr; }
+
+  /// Return TOF correction (vdrift / C)
+  GPUd() float getTOFCorr() const { return mLdriftCorr; }
+
+#if !defined(GPUCA_GPUCODE)
+
+  int writeToFile(std::string outFName = "", std::string name = "");
+
+  static TPCFastTransform* loadFromFile(std::string inpFName = "", std::string name = "");
+
+#endif // !GPUCA_GPUCODE
 
   /// Print method
   void print() const;
@@ -164,11 +198,7 @@ class TPCFastTransform : public FlatObject
 
   /// _______________  Utilities  _______________________________________________
 
-  void relocateBufferPointers(const char* oldBuffer, char* actualBuffer);
-
   /// _______________  Data members  _______________________________________________
-
-  TPCFastTransformGeo mGeo; ///< TPC geometry information
 
   /// _______________  Calibration data. See Transform() method  ________________________________
 
@@ -203,7 +233,9 @@ class TPCFastTransform : public FlatObject
   ///
   float mTOFcorr;
 
-  float mPrimVtxZ;      ///< Z of the primary vertex, needed for the Time-Of-Flight correction
+  float mPrimVtxZ; ///< Z of the primary vertex, needed for the Time-Of-Flight correction
+
+  ClassDefNV(TPCFastTransform, 1);
 };
 
 // =======================================================================
@@ -228,7 +260,9 @@ GPUdi() void TPCFastTransform::convPadTimeToUV(int slice, int row, float pad, fl
 
 GPUdi() void TPCFastTransform::convPadTimeToUVinTimeFrame(int slice, int row, float pad, float time, float& u, float& v, float maxTimeBin) const
 {
-  convPadTimeToUV(slice, row, pad, time, u, v, maxTimeBin);
+  const TPCFastTransformGeo::RowInfo& rowInfo = getGeometry().getRowInfo(row);
+  u = (pad - 0.5 * rowInfo.maxPad) * rowInfo.padWidth;
+  v = (time - mT0 - maxTimeBin) * mVdrift + mLdriftCorr; // drift length cm
   if (slice < getGeometry().getNumberOfSlicesA()) {
     v += getGeometry().getTPCzLengthA();
   } else {
@@ -258,7 +292,9 @@ GPUdi() void TPCFastTransform::convUVtoPadTimeInTimeFrame(int slice, int row, fl
   } else {
     v -= getGeometry().getTPCzLengthC();
   }
-  convUVtoPadTime(slice, row, u, v, pad, time, maxTimeBin);
+  const TPCFastTransformGeo::RowInfo& rowInfo = getGeometry().getRowInfo(row);
+  pad = u / rowInfo.padWidth + 0.5 * rowInfo.maxPad;
+  time = mT0 + maxTimeBin + (v - mLdriftCorr) / mVdrift;
 }
 
 GPUdi() void TPCFastTransform::getTOFcorrection(int slice, int /*row*/, float x, float y, float z, float& dz) const
@@ -267,7 +303,7 @@ GPUdi() void TPCFastTransform::getTOFcorrection(int slice, int /*row*/, float x,
 
   bool sideC = (slice >= getGeometry().getNumberOfSlicesA());
   float distZ = z - mPrimVtxZ;
-  float dv = -sqrt(x * x + y * y + distZ * distZ) * mTOFcorr;
+  float dv = -GPUCommonMath::Sqrt(x * x + y * y + distZ * distZ) * mTOFcorr;
   dz = sideC ? dv : -dv;
 }
 
@@ -324,6 +360,51 @@ GPUdi() void TPCFastTransform::InverseTransformInTimeFrame(int slice, int row, f
   float u = 0, v = 0;
   getGeometry().convLocalToUV(slice, y, z, u, v);
   convUVtoPadTimeInTimeFrame(slice, row, u, v, pad, time, maxTimeBin);
+}
+
+GPUdi() void TPCFastTransform::TransformIdeal(int slice, int row, float pad, float time, float& x, float& y, float& z, float vertexTime) const
+{
+  /// _______________ The main method: cluster transformation _______________________
+  ///
+  /// Transforms raw TPC coordinates to local XYZ withing a slice
+  /// Ideal transformation: only Vdrift from DCS.
+  /// No space charge distortions, no time of flight correction
+  ///
+
+  const TPCFastTransformGeo::RowInfo& rowInfo = getGeometry().getRowInfo(row);
+
+  x = rowInfo.x;
+  float u = (pad - 0.5 * rowInfo.maxPad) * rowInfo.padWidth;
+  float v = (time - mT0 - vertexTime) * mVdrift; // drift length cm
+
+  getGeometry().convUVtoLocal(slice, u, v, y, z);
+}
+
+GPUdi() float TPCFastTransform::convTimeToZinTimeFrame(int slice, float time, float maxTimeBin) const
+{
+  /// _______________ Special cluster transformation for a time frame _______________________
+  ///
+  /// Same as Transform(), but clusters are shifted in z such, that Z(maxTimeBin)==0
+  /// Distortions and Time-Of-Flight correction are not alpplied.
+  /// Only Z coordinate.
+  ///
+
+  float v = (time - mT0 - maxTimeBin) * mVdrift + mLdriftCorr; // drift length cm
+  float z = getGeometry().getTPCalignmentZ();                  // global TPC alignment
+  if (slice < getGeometry().getNumberOfSlicesA()) {
+    z -= v;
+  } else {
+    z += v;
+  }
+  return z;
+}
+
+GPUdi() float TPCFastTransform::convZtoTimeInTimeFrame(float z, float maxTimeBin) const
+{
+  /// Inverse transformation of convTimeToZinTimeFrame()
+  z = z - getGeometry().getTPCalignmentZ(); // global TPC alignment
+  float v = fabs(z);
+  return mT0 + maxTimeBin + (v - mLdriftCorr) / mVdrift;
 }
 
 } // namespace gpu

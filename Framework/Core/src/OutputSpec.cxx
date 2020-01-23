@@ -15,33 +15,67 @@ namespace o2::framework
 {
 OutputSpec::OutputSpec(OutputLabel const& inBinding, header::DataOrigin inOrigin, header::DataDescription inDescription,
                        header::DataHeader::SubSpecificationType inSubSpec, enum Lifetime inLifetime)
-  : binding{ inBinding },
-    matcher{ ConcreteDataMatcher{ inOrigin, inDescription, inSubSpec } },
-    lifetime{ inLifetime }
+  : binding{inBinding},
+    matcher{ConcreteDataMatcher{inOrigin, inDescription, inSubSpec}},
+    lifetime{inLifetime}
 {
 }
 
 OutputSpec::OutputSpec(header::DataOrigin inOrigin, header::DataDescription inDescription,
                        header::DataHeader::SubSpecificationType inSubSpec, enum Lifetime inLifetime)
-  : binding{ OutputLabel{ "" } },
-    matcher{ ConcreteDataMatcher{ inOrigin, inDescription, inSubSpec } },
-    lifetime{ inLifetime }
+  : binding{OutputLabel{""}},
+    matcher{ConcreteDataMatcher{inOrigin, inDescription, inSubSpec}},
+    lifetime{inLifetime}
 {
 }
 
 OutputSpec::OutputSpec(OutputLabel const& inBinding, header::DataOrigin inOrigin, header::DataDescription inDescription,
                        enum Lifetime inLifetime)
-  : binding{ inBinding },
-    matcher{ ConcreteDataMatcher{ inOrigin, inDescription, 0 } },
-    lifetime{ inLifetime }
+  : binding{inBinding},
+    // Note: using 0 as subspec is specifically intended default behavior, a matcher ignoring
+    // the subspec can be passed using the specific constructor with ConcreteDataTypeMatcher
+    matcher{ConcreteDataMatcher{inOrigin, inDescription, 0}},
+    lifetime{inLifetime}
 {
 }
 
 OutputSpec::OutputSpec(header::DataOrigin inOrigin, header::DataDescription inDescription,
                        enum Lifetime inLifetime)
-  : binding{ OutputLabel{ "" } },
-    matcher{ ConcreteDataMatcher{ inOrigin, inDescription, 0 } },
-    lifetime{ inLifetime }
+  : binding{OutputLabel{""}},
+    // Note: using 0 as subspec is specifically intended default behavior, a matcher ignoring
+    // the subspec can be passed using the specific constructor with ConcreteDataTypeMatcher
+    matcher{ConcreteDataMatcher{inOrigin, inDescription, 0}},
+    lifetime{inLifetime}
+{
+}
+
+OutputSpec::OutputSpec(ConcreteDataMatcher const& concrete, enum Lifetime inLifetime)
+  : binding{""},
+    matcher{concrete},
+    lifetime{inLifetime}
+{
+}
+
+OutputSpec::OutputSpec(OutputLabel const& inBinding, ConcreteDataMatcher const& concrete, enum Lifetime inLifetime)
+  : binding{inBinding},
+    matcher{concrete},
+    lifetime{inLifetime}
+{
+}
+
+OutputSpec::OutputSpec(ConcreteDataTypeMatcher const& dataType,
+                       enum Lifetime inLifetime)
+  : binding{OutputLabel{""}},
+    matcher{dataType},
+    lifetime{inLifetime}
+{
+}
+
+OutputSpec::OutputSpec(OutputLabel const& inBinding, ConcreteDataTypeMatcher const& dataType,
+                       enum Lifetime inLifetime)
+  : binding{inBinding},
+    matcher{dataType},
+    lifetime{inLifetime}
 {
 }
 

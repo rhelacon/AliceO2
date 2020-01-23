@@ -222,9 +222,9 @@ class FlatObject
 
   /// _____________  Methods for moving the class with its external buffer to another location  __________________________
 
-  /// Sets the actual location of the external flat buffer after it has been moved (i.e. to another maschine)
+  /// Sets the actual location of the flat buffer after it has been moved (i.e. to another maschine)
   /// It sets  mFlatBufferPtr to actualFlatBufferPtr.
-  /// A daughter class should later update all the pointers inside the buffer in the new location.
+  /// A daughter class should later update all the pointers inside the buffer to the new location.
   ///
   void setActualBufferAddress(char* actualFlatBufferPtr);
 
@@ -279,23 +279,15 @@ class FlatObject
     return (ptr != nullptr) ? reinterpret_cast<T*>(newBase + (reinterpret_cast<const char*>(ptr) - oldBase)) : nullptr;
   }
 
-#if !defined(GPUCA_GPUCODE) && !defined(GPUCA_STANDALONE) // code invisible on GPU
-  void printC() const
-  {
-    bool lfdone = false;
-    for (int i = 0; i < mFlatBufferSize; i++) {
-      unsigned char v = mFlatBufferPtr[i];
-      lfdone = false;
-      printf("0x%02x ", v);
-      if (i && ((i + 1) % 20) == 0) {
-        printf("\n");
-        lfdone = true;
-      }
-    }
-    if (!lfdone) {
-      printf("\n");
-    }
-  }
+#if !defined(GPUCA_GPUCODE) // code invisible on GPU
+
+  /// Test the flat object functionality for a child class T
+  template <class T>
+  static std::string stressTest(T& obj);
+
+  /// Print the content of the flat buffer
+  void printC() const;
+
 #endif //! GPUCA_GPUCODE
 
  protected:
@@ -427,12 +419,7 @@ inline void FlatObject::setActualBufferAddress(char* actualFlatBufferPtr)
   /// It sets  mFlatBufferPtr to actualFlatBufferPtr.
   /// A daughter class should update all the pointers inside the buffer in the new location.
 
-  assert(!isBufferInternal());
   mFlatBufferPtr = actualFlatBufferPtr;
-#ifndef GPUCA_GPUCODE            // code invisible on GPU
-  delete[] mFlatBufferContainer; // for a case..
-#endif                           // !GPUCA_GPUCODE
-  mFlatBufferContainer = nullptr;
 }
 
 inline void FlatObject::setFutureBufferAddress(char* futureFlatBufferPtr)
@@ -449,6 +436,72 @@ inline void FlatObject::setFutureBufferAddress(char* futureFlatBufferPtr)
 #endif                           // !GPUCA_GPUCODE
   mFlatBufferContainer = nullptr;
 }
+
+#ifndef GPUCA_GPUCODE // code invisible on GPU
+
+template <class T>
+inline std::string FlatObject::stressTest(T& obj)
+{
+  /// Test the flat object functionality for an object of a child class T
+  /// the obj is modified here. Check if it is functional after the test.
+  ///
+  std::string err;
+
+  if (!obj.isConstructed())
+    return "tested object is not constructed!";
+
+  T tst;
+  tst.cloneFromObject(obj, nullptr);
+  if (!tst.isConstructed() || !tst.isBufferInternal())
+    return "error at cloneFromObject()!";
+
+  obj.destroy();
+
+  char* buf0 = tst.releaseInternalBuffer();
+  char* buf1 = new char[tst.getFlatBufferSize()];
+  char* buf2 = new char[tst.getFlatBufferSize()];
+  std::memcpy(buf1, tst.getFlatBufferPtr(), tst.getFlatBufferSize());
+  tst.setActualBufferAddress(buf1);
+  delete[] buf0;
+
+  tst.setFutureBufferAddress(buf2);
+  std::memcpy(buf2, buf1, tst.getFlatBufferSize());
+  delete[] buf1;
+
+  if (tst.isBufferInternal())
+    return err = "error, buffer should be external!";
+
+  tst.adoptInternalBuffer(buf2);
+  if (!tst.isBufferInternal())
+    return err = "error, buffer should be internal!";
+
+  obj.cloneFromObject(tst, nullptr);
+  if (!obj.isBufferInternal())
+    return err = "error, buffer should be internal!";
+
+  return err;
+}
+
+inline void FlatObject::printC() const
+{
+  /// Print the content of the flat buffer
+  bool lfdone = false;
+  for (int i = 0; i < mFlatBufferSize; i++) {
+    unsigned char v = mFlatBufferPtr[i];
+    lfdone = false;
+    printf("0x%02x ", v);
+    if (i && ((i + 1) % 20) == 0) {
+      printf("\n");
+      lfdone = true;
+    }
+  }
+  if (!lfdone) {
+    printf("\n");
+  }
+}
+
+#endif // GPUCA_GPUCODE
+
 } // namespace gpu
 } // namespace GPUCA_NAMESPACE
 

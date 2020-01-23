@@ -21,6 +21,7 @@
 #include <stdexcept>
 
 #include "Framework/CallbackService.h"
+#include "Framework/ConfigParamRegistry.h"
 #include "Framework/ControlService.h"
 #include "Framework/DataProcessorSpec.h"
 #include "Framework/Lifetime.h"
@@ -77,7 +78,7 @@ class TrackSamplerTask
     }
 
     // create the output message
-    auto msgOut = pc.outputs().make<char>(Output{ "MCH", "TRACKS", 0, Lifetime::Timeframe }, SHeaderSize + size);
+    auto msgOut = pc.outputs().make<char>(Output{"MCH", "TRACKS", 0, Lifetime::Timeframe}, SHeaderSize + size);
     if (msgOut.size() != SHeaderSize + size) {
       throw length_error("incorrect message payload");
     }
@@ -107,10 +108,9 @@ o2::framework::DataProcessorSpec getTrackSamplerSpec()
   return DataProcessorSpec{
     "TrackSampler",
     Inputs{},
-    Outputs{ OutputSpec{ "MCH", "TRACKS", 0, Lifetime::Timeframe } },
-    AlgorithmSpec{ adaptFromTask<TrackSamplerTask>() },
-    Options{ { "infile", VariantType::String, "", { "input filename" } } }
-  };
+    Outputs{OutputSpec{"MCH", "TRACKS", 0, Lifetime::Timeframe}},
+    AlgorithmSpec{adaptFromTask<TrackSamplerTask>()},
+    Options{{"infile", VariantType::String, "", {"input filename"}}}};
 }
 
 } // end namespace mch

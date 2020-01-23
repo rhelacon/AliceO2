@@ -23,38 +23,66 @@ namespace o2::aod
 {
 namespace track
 {
-DECLARE_SOA_COLUMN(Eta, eta, float, "fEta");
-DECLARE_SOA_COLUMN(Phi, phi, float, "fPhi");
+DECLARE_SOA_COLUMN(Foo, foo, float, "fBar");
+DECLARE_SOA_COLUMN(Bar, bar, float, "fFoo");
+DECLARE_SOA_DYNAMIC_COLUMN(Sum, sum, [](float x, float y) { return x + y; });
 } // namespace track
-DECLARE_SOA_TABLE(EtaPhis, "AOD", "ETAPHI", track::Eta, track::Phi);
+DECLARE_SOA_TABLE(FooBars, "AOD", "FOOBAR",
+                  track::Foo, track::Bar,
+                  track::Sum<track::Foo, track::Bar>);
 } // namespace o2::aod
 
-struct ATask : AnalysisTask {
-  Produces<aod::EtaPhis> phis;
+// FIXME: for the moment we do not derive from AnalysisTask as
+// we need GCC 7.4+ to fix a bug.
+struct ATask {
+  Produces<aod::FooBars> foobars;
 
-  void init(InitContext& ic) final
+  void process(o2::aod::Track const& track)
   {
-  }
-  void run(ProcessingContext& pc) final
-  {
-  }
-
-  void processTrack(o2::aod::Track const& track) override
-  {
-    phis(0.01102005, 0.27092016); // dummy value for phi for now...
+    foobars(0.01102005, 0.27092016); // dummy value for phi for now...
   }
 };
 
-struct BTask : AnalysisTask {
-  void init(InitContext& ic) final
+// FIXME: for the moment we do not derive from AnalysisTask as
+// we need GCC 7.4+ to fix a bug.
+struct BTask {
+  void process(o2::aod::Collision const&, o2::aod::Track const&)
   {
   }
-  void run(ProcessingContext& pc) final
-  {
-  }
+};
 
-  void processCollisionTrack(o2::aod::Collision const&, o2::aod::Track const&) override
+// FIXME: for the moment we do not derive from AnalysisTask as
+// we need GCC 7.4+ to fix a bug.
+struct CTask {
+  void process(o2::aod::Collision const&, o2::aod::Tracks const&)
   {
+  }
+};
+
+// FIXME: for the moment we do not derive from AnalysisTask as
+// we need GCC 7.4+ to fix a bug.
+struct DTask {
+  void process(o2::aod::Tracks const&)
+  {
+  }
+};
+
+// FIXME: for the moment we do not derive from AnalysisTask as
+// we need GCC 7.4+ to fix a bug.
+struct ETask {
+  void process(o2::aod::FooBars::iterator const& foobar)
+  {
+    foobar.sum();
+  }
+};
+
+// FIXME: for the moment we do not derive from AnalysisTask as
+// we need GCC 7.4+ to fix a bug.
+struct FTask {
+  expressions::Filter fooFilter = aod::track::foo > 1.;
+  void process(soa::Filtered<o2::aod::FooBars>::iterator const& foobar)
+  {
+    foobar.sum();
   }
 };
 
@@ -62,8 +90,29 @@ BOOST_AUTO_TEST_CASE(AdaptorCompilation)
 {
   auto task1 = adaptAnalysisTask<ATask>("test1");
   BOOST_CHECK_EQUAL(task1.inputs.size(), 1);
+  BOOST_CHECK_EQUAL(task1.outputs.size(), 1);
+  BOOST_CHECK_EQUAL(task1.inputs[0].binding, std::string("Tracks"));
+  BOOST_CHECK_EQUAL(task1.outputs[0].binding.value, std::string("FooBars"));
+
   auto task2 = adaptAnalysisTask<BTask>("test2");
   BOOST_CHECK_EQUAL(task2.inputs.size(), 2);
   BOOST_CHECK_EQUAL(task2.inputs[0].binding, "Collisions");
   BOOST_CHECK_EQUAL(task2.inputs[1].binding, "Tracks");
+
+  auto task3 = adaptAnalysisTask<CTask>("test3");
+  BOOST_CHECK_EQUAL(task3.inputs.size(), 2);
+  BOOST_CHECK_EQUAL(task3.inputs[0].binding, "Collisions");
+  BOOST_CHECK_EQUAL(task3.inputs[1].binding, "Tracks");
+
+  auto task4 = adaptAnalysisTask<DTask>("test4");
+  BOOST_CHECK_EQUAL(task4.inputs.size(), 1);
+  BOOST_CHECK_EQUAL(task4.inputs[0].binding, "Tracks");
+
+  auto task5 = adaptAnalysisTask<ETask>("test5");
+  BOOST_CHECK_EQUAL(task5.inputs.size(), 1);
+  BOOST_CHECK_EQUAL(task5.inputs[0].binding, "FooBars");
+
+  auto task6 = adaptAnalysisTask<FTask>("test6");
+  BOOST_CHECK_EQUAL(task6.inputs.size(), 1);
+  BOOST_CHECK_EQUAL(task6.inputs[0].binding, "FooBars");
 }

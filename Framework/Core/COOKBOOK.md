@@ -1,4 +1,6 @@
+<!-- doxy
 \page refFrameworkCoreCOOKBOOK Core COOKBOOK
+/doxy -->
 
 # Data Processing Layer Cookbook
 
@@ -197,6 +199,22 @@ the `ChannelConfigurationPolicy::modifyInput` and
 output channel associated to the two devices, giving the opportunity to modify 
 the matching channels.
 
+## Getting objects from the CCDB
+
+In order to get objects from the CCDB one can specify the `Lifetime::Condition`
+for the required input spec. That will retrieve the object not from another
+data processor but it will do a request to a CCDB server. The actual URL for
+the server can be specified via the `--condition-backend <backend-url>` option.
+It is also possible to specify a given timestamp for the object via the option
+`--condition-timestamp <timestamp>`. The final url is completed by the value of
+the the Origin and Description of the `InputSpec` to be:
+
+```bash
+<backend-url>/<origin>/<description>/<timestamp>
+```
+
+If the timestamp is not specified, DPL will look it up in the `DataProcessingHeader`.
+
 # Future features
 
 ## Lifetime support
@@ -331,3 +349,14 @@ timePipeline(DataProcessorSpec{
 
 which will result in two devices, one for even time periods, the other one for
 odd timeperiods.
+
+
+### Disabling monitoring
+
+Sometimes (e.g. when running a child inside valgrind) it might be useful to disable metrics which might pollute STDOUT. In order to disable monitoring you can use the `no-op://` backend:
+
+```bash
+some-workflow --monitoring-backend=no-op://
+```
+
+notice that the GUI will not function properly if you do so.

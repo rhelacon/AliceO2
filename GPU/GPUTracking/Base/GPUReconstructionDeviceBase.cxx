@@ -32,8 +32,11 @@ class GPUTPCRow;
 
 #define SemLockName "AliceHLTTPCGPUTrackerInitLockSem"
 
-GPUReconstructionDeviceBase::GPUReconstructionDeviceBase(const GPUSettingsProcessing& cfg) : GPUReconstructionCPU(cfg)
+GPUReconstructionDeviceBase::GPUReconstructionDeviceBase(const GPUSettingsProcessing& cfg, size_t sizeCheck) : GPUReconstructionCPU(cfg)
 {
+  if (sizeCheck != sizeof(GPUReconstructionDeviceBase)) {
+    GPUFatal("Mismatch of C++ object size between GPU compilers!");
+  }
 }
 
 GPUReconstructionDeviceBase::~GPUReconstructionDeviceBase()
@@ -144,7 +147,6 @@ void GPUReconstructionDeviceBase::ResetHelperThreads(int helpers)
 {
   GPUImportant("Error occurred, GPU tracker helper threads will be reset (Number of threads %d (%d))", mDeviceProcessingSettings.nDeviceHelperThreads, mNSlaveThreads);
   SynchronizeGPU();
-  ReleaseThreadContext();
   for (int i = 0; i < mDeviceProcessingSettings.nDeviceHelperThreads; i++) {
     mHelperParams[i].reset = true;
     if (helpers || i >= mDeviceProcessingSettings.nDeviceHelperThreads) {
@@ -241,15 +243,6 @@ int GPUReconstructionDeviceBase::InitDevice()
   void* semLock = nullptr;
   if (mDeviceProcessingSettings.globalInitMutex && GetGlobalLock(semLock)) {
     return (1);
-  }
-
-  mDeviceMemorySize = 0;
-  mHostMemorySize = 0;
-  for (unsigned int i = 0; i < mChains.size(); i++) {
-    size_t memGpu, memHost;
-    mChains[i]->MemorySize(memGpu, memHost);
-    mDeviceMemorySize += memGpu;
-    mHostMemorySize += memHost;
   }
 
   int retVal = InitDevice_Runtime();

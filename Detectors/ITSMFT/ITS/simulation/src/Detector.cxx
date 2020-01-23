@@ -32,6 +32,7 @@
 
 #include "TGeoManager.h"     // for TGeoManager, gGeoManager
 #include "TGeoTube.h"        // for TGeoTube
+#include "TGeoPcon.h"        // for TGeoPcon
 #include "TGeoVolume.h"      // for TGeoVolume, TGeoVolumeAssembly
 #include "TString.h"         // for TString, operator+
 #include "TVirtualMC.h"      // for gMC, TVirtualMC
@@ -79,13 +80,13 @@ static double radii2Turbo(double rMin, double rMid, double rMax, double sensW)
 static void configITS(Detector* its)
 {
   // build ITS upgrade detector
-  const double kSiThickIB = 50e-4;
-  const double kSiThickOB = 50e-4;
-  //
   const int kNLr = 7;
   const int kNLrInner = 3;
   const int kBuildLevel = 0;
   const int kSensTypeID = 0; // dummy id for Alpide sensor
+
+  const float ChipThicknessIB = 50.e-4;
+  const float ChipThicknessOB = 100.e-4;
 
   enum { kRmn,
          kRmd,
@@ -96,13 +97,13 @@ static void configITS(Detector* its)
          kNPar };
   // Radii are from last TDR (ALICE-TDR-017.pdf Tab. 1.1, rMid is mean value)
   const double tdr5dat[kNLr][kNPar] = {
-    { 2.24, 2.34, 2.67, 9., 16.42, 12 }, // for each inner layer: rMin,rMid,rMax,NChip/Stave, phi0, nStaves
-    { 3.01, 3.15, 3.46, 9., 12.18, 16 },
-    { 3.78, 3.93, 4.21, 9., 9.55, 20 },
-    { -1, 19.6, -1, 4., 0., 24 },  // for others: -, rMid, -, NMod/HStave, phi0, nStaves // 24 was 49
-    { -1, 24.55, -1, 4., 0., 30 }, // 30 was 61
-    { -1, 34.39, -1, 7., 0., 42 }, // 42 was 88
-    { -1, 39.34, -1, 7., 0., 48 }  // 48 was 100
+    {2.24, 2.34, 2.67, 9., 16.42, 12}, // for each inner layer: rMin,rMid,rMax,NChip/Stave, phi0, nStaves
+    {3.01, 3.15, 3.46, 9., 12.18, 16},
+    {3.78, 3.93, 4.21, 9., 9.55, 20},
+    {-1, 19.6, -1, 4., 0., 24},  // for others: -, rMid, -, NMod/HStave, phi0, nStaves // 24 was 49
+    {-1, 24.55, -1, 4., 0., 30}, // 30 was 61
+    {-1, 34.39, -1, 7., 0., 42}, // 42 was 88
+    {-1, 39.34, -1, 7., 0., 48}  // 48 was 100
   };
   const int nChipsPerModule = 7;  // For OB: how many chips in a row
   const double zChipGap = 0.01;   // For OB: gap in Z between chips
@@ -115,9 +116,9 @@ static void configITS(Detector* its)
   its->setStaveModelOB(o2::its::Detector::kOBModel2);
 
   const int kNWrapVol = 3;
-  const double wrpRMin[kNWrapVol] = { 2.1, 19.3, 32.0 };
-  const double wrpRMax[kNWrapVol] = { 14.0, 30.0, 46.0 };
-  const double wrpZSpan[kNWrapVol] = { 70., 93., 160. };
+  const double wrpRMin[kNWrapVol] = {2.1, 19.3, 32.0};
+  const double wrpRMax[kNWrapVol] = {15.4, 30.0, 46.0};
+  const double wrpZSpan[kNWrapVol] = {70., 93., 165.8};
 
   for (int iw = 0; iw < kNWrapVol; iw++) {
     its->defineWrapperVolume(iw, wrpRMin[iw], wrpRMax[iw], wrpZSpan[iw]);
@@ -131,12 +132,12 @@ static void configITS(Detector* its)
     nModPerStaveLr = TMath::Nint(tdr5dat[idLr][kNModPerStave]);
     int nChipsPerStaveLr = nModPerStaveLr;
     if (idLr >= kNLrInner) {
-      its->defineLayer(idLr, phi0, rLr, nStaveLr, nModPerStaveLr, kSiThickOB, Segmentation::SensorThickness,
+      its->defineLayer(idLr, phi0, rLr, nStaveLr, nModPerStaveLr, ChipThicknessOB, Segmentation::SensorLayerThickness,
                        kSensTypeID, kBuildLevel);
     } else {
       turbo = radii2Turbo(tdr5dat[idLr][kRmn], rLr, tdr5dat[idLr][kRmx], Segmentation::SensorSizeRows);
       its->defineLayerTurbo(idLr, phi0, rLr, nStaveLr, nChipsPerStaveLr, Segmentation::SensorSizeRows, turbo,
-                            kSiThickIB, Segmentation::SensorThickness, kSensTypeID, kBuildLevel);
+                            ChipThicknessIB, Segmentation::SensorLayerThickness, kSensTypeID, kBuildLevel);
     }
   }
 }
@@ -384,52 +385,58 @@ void Detector::createMaterials()
   Float_t stminAir = 0.0;         // cm "Default value used"
 
   // AIR
-  Float_t aAir[4] = { 12.0107, 14.0067, 15.9994, 39.948 };
-  Float_t zAir[4] = { 6., 7., 8., 18. };
-  Float_t wAir[4] = { 0.000124, 0.755267, 0.231781, 0.012827 };
+  Float_t aAir[4] = {12.0107, 14.0067, 15.9994, 39.948};
+  Float_t zAir[4] = {6., 7., 8., 18.};
+  Float_t wAir[4] = {0.000124, 0.755267, 0.231781, 0.012827};
   Float_t dAir = 1.20479E-3;
 
   // Water
-  Float_t aWater[2] = { 1.00794, 15.9994 };
-  Float_t zWater[2] = { 1., 8. };
-  Float_t wWater[2] = { 0.111894, 0.888106 };
+  Float_t aWater[2] = {1.00794, 15.9994};
+  Float_t zWater[2] = {1., 8.};
+  Float_t wWater[2] = {0.111894, 0.888106};
   Float_t dWater = 1.0;
 
   // PEEK CF30
-  Float_t aPEEK[3] = { 12.0107, 1.00794, 15.9994 };
-  Float_t zPEEK[3] = { 6., 1., 8. };
-  Float_t wPEEK[3] = { 19., 12., 3 };
+  Float_t aPEEK[3] = {12.0107, 1.00794, 15.9994};
+  Float_t zPEEK[3] = {6., 1., 8.};
+  Float_t wPEEK[3] = {19., 12., 3};
   Float_t dPEEK = 1.32;
 
   // Kapton
-  Float_t aKapton[4] = { 1.00794, 12.0107, 14.010, 15.9994 };
-  Float_t zKapton[4] = { 1., 6., 7., 8. };
-  Float_t wKapton[4] = { 0.026362, 0.69113, 0.07327, 0.209235 };
+  Float_t aKapton[4] = {1.00794, 12.0107, 14.010, 15.9994};
+  Float_t zKapton[4] = {1., 6., 7., 8.};
+  Float_t wKapton[4] = {0.026362, 0.69113, 0.07327, 0.209235};
   Float_t dKapton = 1.42;
 
   // Tungsten Carbide
-  Float_t aWC[2] = { 183.84, 12.0107 };
-  Float_t zWC[2] = { 74, 6 };
-  Float_t wWC[2] = { 0.5, 0.5 };
+  Float_t aWC[2] = {183.84, 12.0107};
+  Float_t zWC[2] = {74, 6};
+  Float_t wWC[2] = {0.5, 0.5};
   Float_t dWC = 15.63;
 
   // BEOL (Metal interconnection stack in Si sensors)
-  Float_t aBEOL[3] = { 26.982, 28.086, 15.999 };
-  Float_t zBEOL[3] = { 13, 14, 8 }; // Al, Si, O
-  Float_t wBEOL[3] = { 0.170, 0.388, 0.442 };
+  Float_t aBEOL[3] = {26.982, 28.086, 15.999};
+  Float_t zBEOL[3] = {13, 14, 8}; // Al, Si, O
+  Float_t wBEOL[3] = {0.170, 0.388, 0.442};
   Float_t dBEOL = 2.28;
 
   // Inox 304
-  Float_t aInox304[4] = { 12.0107, 51.9961, 58.6928, 55.845 };
-  Float_t zInox304[4] = { 6., 24., 28, 26 };       // C, Cr, Ni, Fe
-  Float_t wInox304[4] = { 0.0003, 0.18, 0.10, 0 }; // [3] will be computed
+  Float_t aInox304[4] = {12.0107, 51.9961, 58.6928, 55.845};
+  Float_t zInox304[4] = {6., 24., 28, 26};       // C, Cr, Ni, Fe
+  Float_t wInox304[4] = {0.0003, 0.18, 0.10, 0}; // [3] will be computed
   Float_t dInox304 = 7.85;
 
   // Ceramic (for IB capacitors) (BaTiO3)
-  Float_t aCeramic[3] = { 137.327, 47.867, 15.999 };
-  Float_t zCeramic[3] = { 56, 22, 8 }; // Ba, Ti, O
-  Float_t wCeramic[3] = { 1, 1, 3 };   // Molecular composition
+  Float_t aCeramic[3] = {137.327, 47.867, 15.999};
+  Float_t zCeramic[3] = {56, 22, 8}; // Ba, Ti, O
+  Float_t wCeramic[3] = {1, 1, 3};   // Molecular composition
   Float_t dCeramic = 6.02;
+
+  // Rohacell (C9 H13 N1 O2)
+  Float_t aRohac[4] = {12.01, 1.01, 14.010, 16.};
+  Float_t zRohac[4] = {6., 1., 7., 8.};
+  Float_t wRohac[4] = {9., 13., 1., 2.};
+  Float_t dRohac = 0.05;
 
   o2::base::Detector::Mixture(1, "AIR$", aAir, zAir, dAir, 4, wAir);
   o2::base::Detector::Medium(1, "AIR$", 1, 0, ifield, fieldm, tmaxfdAir, stemaxAir, deemaxAir, epsilAir, stminAir);
@@ -495,15 +502,18 @@ void Detector::createMaterials()
   o2::base::Detector::Material(13, "CarbonFleece$", 12.0107, 6, 0.4, 999, 999);
   o2::base::Detector::Medium(13, "CarbonFleece$", 13, 0, ifield, fieldm, tmaxfdSi, stemaxSi, deemaxSi, epsilSi,
                              stminSi);
+  // Rohacell
+  o2::base::Detector::Mixture(32, "ROHACELL$", aRohac, zRohac, dRohac, -4, wRohac);
+  o2::base::Detector::Medium(32, "ROHACELL$", 32, 0, ifield, fieldm, tmaxfdSi, stemaxSi, deemaxSi, epsilSi, stminSi);
 
   // PEEK CF30
   o2::base::Detector::Mixture(19, "PEEKCF30$", aPEEK, zPEEK, dPEEK, -3, wPEEK);
   o2::base::Detector::Medium(19, "PEEKCF30$", 19, 0, ifield, fieldm, tmaxfdSi, stemaxSi, deemaxSi, epsilSi, stminSi);
 
   // Flex cable
-  Float_t aFCm[5] = { 12.0107, 1.00794, 14.0067, 15.9994, 26.981538 };
-  Float_t zFCm[5] = { 6., 1., 7., 8., 13. };
-  Float_t wFCm[5] = { 0.520088819984, 0.01983871336, 0.0551367996, 0.157399667056, 0.247536 };
+  Float_t aFCm[5] = {12.0107, 1.00794, 14.0067, 15.9994, 26.981538};
+  Float_t zFCm[5] = {6., 1., 7., 8., 13.};
+  Float_t wFCm[5] = {0.520088819984, 0.01983871336, 0.0551367996, 0.157399667056, 0.247536};
   // Float_t dFCm = 1.6087;  // original
   // Float_t dFCm = 2.55;   // conform with STAR
   Float_t dFCm = 2.595; // conform with Corrado
@@ -686,13 +696,35 @@ void Detector::getLayerParameters(Int_t nlay, Double_t& phi0, Double_t& r, Int_t
 TGeoVolume* Detector::createWrapperVolume(Int_t id)
 {
   // Creates an air-filled wrapper cylindrical volume
+  // For OB a Pcon is needed to host the support rings
+  // while avoiding overlaps with MFT structures
+
+  const Double_t suppRingAZlen = 4.;
+  const Double_t suppRingCZlen[2] = {4.8, 4.0};
+  const Double_t suppRingsRmin[2] = {23.35, 20.05};
 
   if (mWrapperMinRadius[id] < 0 || mWrapperMaxRadius[id] < 0 || mWrapperZSpan[id] < 0) {
-    LOG(FATAL) << "Wrapper volume " << id << " was requested but not defined" << FairLogger::endl;
+    LOG(FATAL) << "Wrapper volume " << id << " was requested but not defined";
   }
 
   // Now create the actual shape and volume
-  auto* tube = new TGeoTube(mWrapperMinRadius[id], mWrapperMaxRadius[id], mWrapperZSpan[id] / 2.);
+  TGeoShape* tube;
+  if (id == 1) {
+    TGeoPcon* wrap = new TGeoPcon(0, 360, 6);
+    Double_t zlen = mWrapperZSpan[id] / 2 + suppRingCZlen[0];
+    wrap->DefineSection(0, -zlen, suppRingsRmin[0], mWrapperMaxRadius[id]);
+    zlen = mWrapperZSpan[id] / 2 + suppRingCZlen[1];
+    wrap->DefineSection(1, -zlen, suppRingsRmin[0], mWrapperMaxRadius[id]);
+    wrap->DefineSection(2, -zlen, suppRingsRmin[1], mWrapperMaxRadius[id]);
+    wrap->DefineSection(3, -mWrapperZSpan[id] / 2., suppRingsRmin[1], mWrapperMaxRadius[id]);
+    wrap->DefineSection(4, -mWrapperZSpan[id] / 2., mWrapperMinRadius[id], mWrapperMaxRadius[id]);
+    zlen = mWrapperZSpan[id] / 2 + suppRingAZlen;
+    wrap->DefineSection(5, zlen, mWrapperMinRadius[id], mWrapperMaxRadius[id]);
+    tube = (TGeoShape*)wrap;
+  } else {
+    TGeoTube* wrap = new TGeoTube(mWrapperMinRadius[id], mWrapperMaxRadius[id], mWrapperZSpan[id] / 2.);
+    tube = (TGeoShape*)wrap;
+  }
 
   TGeoMedium* medAir = gGeoManager->GetMedium("ITS_AIR$");
 
@@ -763,9 +795,6 @@ void Detector::constructDetectorGeometry()
     if (mChipThickness[j] == 0) {
       LOG(INFO) << "Chip thickness for layer " << j << " not set, using default";
     }
-    if (mDetectorThickness[j] == 0) {
-      LOG(INFO) << "Sensor thickness for layer " << j << " not set, using default";
-    }
   }
 
   // Create the wrapper volumes
@@ -830,10 +859,12 @@ void Detector::constructDetectorGeometry()
   mServicesGeometry = new V3Services();
 
   createInnerBarrelServices(wrapVols[0]);
+  createMiddlBarrelServices(wrapVols[1]);
+  createOuterBarrelServices(wrapVols[2]);
 
   // TEMPORARY - These routines will be obsoleted once the new services are completed - TEMPORARY
   //  createServiceBarrel(kTRUE, wrapVols[0]);
-  createServiceBarrel(kFALSE, wrapVols[2]);
+  //  createServiceBarrel(kFALSE, wrapVols[2]);
 
   delete[] wrapVols; // delete pointer only, not the volumes
 }
@@ -852,14 +883,68 @@ void Detector::createInnerBarrelServices(TGeoVolume* motherVolume)
   //
   // Created:      15 May 2019  Mario Sitta
   //               (partially based on P.Namwongsa implementation in AliRoot)
+  // Updated:      19 Jun 2019  Mario Sitta  IB Side A added
+  // Updated:      21 Oct 2019  Mario Sitta  CYSS added
   //
 
-  Double_t zpos;
+  // Create the End Wheels on Side A
+  TGeoVolume* endWheelsA = mServicesGeometry->createIBEndWheelsSideA();
+
+  motherVolume->AddNode(endWheelsA, 1, nullptr);
 
   // Create the End Wheels on Side C
   TGeoVolume* endWheelsC = mServicesGeometry->createIBEndWheelsSideC();
 
   motherVolume->AddNode(endWheelsC, 1, nullptr);
+
+  // Create the CYSS Assembly (i.e. the supporting half cylinder and cone)
+  TGeoVolume* cyss = mServicesGeometry->createCYSSAssembly();
+
+  motherVolume->AddNode(cyss, 1, nullptr);
+}
+
+void Detector::createMiddlBarrelServices(TGeoVolume* motherVolume)
+{
+  //
+  // Creates the Middle Barrel Service structures
+  //
+  // Input:
+  //         motherVolume : the volume hosting the services
+  //
+  // Output:
+  //
+  // Return:
+  //
+  // Created:      24 Sep 2019  Mario Sitta
+  //
+
+  // Create the End Wheels on Side A
+  mServicesGeometry->createMBEndWheelsSideA(motherVolume);
+
+  // Create the End Wheels on Side C
+  mServicesGeometry->createMBEndWheelsSideC(motherVolume);
+}
+
+void Detector::createOuterBarrelServices(TGeoVolume* motherVolume)
+{
+  //
+  // Creates the Outer Barrel Service structures
+  //
+  // Input:
+  //         motherVolume : the volume hosting the services
+  //
+  // Output:
+  //
+  // Return:
+  //
+  // Created:      27 Sep 2019  Mario Sitta
+  //
+
+  // Create the End Wheels on Side A
+  mServicesGeometry->createOBEndWheelsSideA(motherVolume);
+
+  // Create the End Wheels on Side C
+  mServicesGeometry->createOBEndWheelsSideC(motherVolume);
 }
 
 // Service Barrel
@@ -1081,13 +1166,13 @@ Hit* Detector::addHit(int trackID, int detID, const TVector3& startPos, const TV
 
 void Detector::Print(std::ostream* os) const
 {
-// Standard output format for this class.
-// Inputs:
-//   ostream *os   The output stream
-// Outputs:
-//   none.
-// Return:
-//   none.
+  // Standard output format for this class.
+  // Inputs:
+  //   ostream *os   The output stream
+  // Outputs:
+  //   none.
+  // Return:
+  //   none.
 
 #if defined __GNUC__
 #if __GNUC__ > 2
@@ -1158,4 +1243,4 @@ std::istream& operator>>(std::istream& is, Detector& r)
   return is;
 }
 
-ClassImp(o2::its::Detector)
+ClassImp(o2::its::Detector);

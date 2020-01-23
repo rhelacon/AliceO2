@@ -21,7 +21,7 @@ using DataHeader = o2::header::DataHeader;
 
 InjectorFunction dataSamplingReadoutAdapter(OutputSpec const& spec)
 {
-  return [spec](FairMQDevice& device, FairMQParts& parts, int index) {
+  return [spec](FairMQDevice& device, FairMQParts& parts, ChannelRetriever channelRetriever) {
     for (size_t i = 0; i < parts.Size() / 2; ++i) {
 
       auto dbh = reinterpret_cast<DataBlockHeaderBase*>(parts.At(2 * i)->GetData());
@@ -31,13 +31,13 @@ InjectorFunction dataSamplingReadoutAdapter(OutputSpec const& spec)
       ConcreteDataTypeMatcher dataType = DataSpecUtils::asConcreteDataTypeMatcher(spec);
       dh.dataOrigin = dataType.origin;
       dh.dataDescription = dataType.description;
-      dh.subSpecification = dbh->linkId;
+      dh.subSpecification = DataSpecUtils::getOptionalSubSpec(spec).value_or(dbh->linkId);
       dh.payloadSize = dbh->dataSize;
       dh.payloadSerializationMethod = o2::header::gSerializationMethodNone;
 
-      DataProcessingHeader dph{ dbh->id, 0 };
-      o2::header::Stack headerStack{ dh, dph };
-      broadcastMessage(device, std::move(headerStack), std::move(parts.At(2 * i + 1)), index);
+      DataProcessingHeader dph{dbh->blockId, 0};
+      o2::header::Stack headerStack{dh, dph};
+      sendOnChannel(device, std::move(headerStack), std::move(parts.At(2 * i + 1)), spec, channelRetriever);
     }
   };
 }

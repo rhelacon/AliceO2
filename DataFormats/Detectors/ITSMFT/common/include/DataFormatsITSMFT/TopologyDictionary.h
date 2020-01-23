@@ -29,10 +29,13 @@
 #ifndef ALICEO2_ITSMFT_TOPOLOGYDICTIONARY_H
 #define ALICEO2_ITSMFT_TOPOLOGYDICTIONARY_H
 #include "DataFormatsITSMFT/ClusterPattern.h"
+#include "Framework/Logger.h"
 #include <fstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "MathUtils/Cartesian3D.h"
+#include "DataFormatsITSMFT/CompCluster.h"
 
 namespace o2
 {
@@ -53,7 +56,8 @@ struct GroupStruct {
   ClusterPattern mPattern; ///< Bitmask of pixels. For groups the biggest bounding box for the group is taken, with all
                            ///the bits set to 1.
   double mFrequency;       ///< Frequency of the topology
-  ClassDefNV(GroupStruct, 1);
+  bool mIsGroup;           ///< false: common topology; true: group of rare topologies
+  ClassDefNV(GroupStruct, 2);
 };
 
 class TopologyDictionary
@@ -61,6 +65,9 @@ class TopologyDictionary
  public:
   /// Default constructor
   TopologyDictionary();
+  /// Constructor
+  TopologyDictionary(std::string fileName);
+
   /// constexpr for the definition of the groups of rare topologies.
   /// The attritbution of the group ID is stringly dependent on the following parameters: it must be a power of 2.
   static constexpr int RowClassSpan = 4;                                                 ///< Row span of the classes of rare topologies
@@ -75,23 +82,38 @@ class TopologyDictionary
   /// Reads the dictionary from a binary file
   int ReadBinaryFile(std::string fileName);
   /// Returns the x position of the COG for the n_th element
-  float GetXcog(int n);
+  float GetXcog(int n) const;
   /// Returns the error on the x position of the COG for the n_th element
-  float GetErrX(int n);
+  float GetErrX(int n) const;
   /// Returns the z position of the COG for the n_th element
-  float GetZcog(int n);
+  float GetZcog(int n) const;
   /// Returns the error on the z position of the COG for the n_th element
-  float GetErrZ(int n);
+  float GetErrZ(int n) const;
   /// Returns the hash of the n_th element
-  unsigned long GetHash(int n);
+  unsigned long GetHash(int n) const;
   /// Returns the number of fired pixels of the n_th element
-  int GetNpixels(int n);
+  int GetNpixels(int n) const;
+  /// Returns true if the element corresponds to a group of rare topologies
+  inline bool IsGroup(int n) const
+  {
+    if (n >= (int)mVectorOfGroupIDs.size()) {
+      if (mVectorOfGroupIDs.size()) { // produce error only if there is a real overflow
+        LOG(ERROR) << "Index out of bounds";
+      }
+      return false;
+    } else
+      return mVectorOfGroupIDs[n].mIsGroup;
+  }
+
   /// Returns the pattern of the topology
-  ClusterPattern GetPattern(int n);
+  ClusterPattern
+    GetPattern(int n) const;
   /// Returns the frequency of the n_th element;
-  double GetFrequency(int n);
+  double GetFrequency(int n) const;
   /// Returns the number of elements in the dicionary;
-  int GetSize() { return (int)mVectorOfGroupIDs.size(); }
+  int GetSize() const { return (int)mVectorOfGroupIDs.size(); }
+  ///Returns the local position of a compact cluster
+  Point3D<float> getClusterCoordinates(const CompCluster& cl) const;
 
   friend BuildTopologyDictionary;
   friend LookUp;
@@ -99,11 +121,11 @@ class TopologyDictionary
 
  private:
   std::unordered_map<unsigned long, int> mFinalMap; ///< Map of pair <hash, position in mVectorOfGroupIDs>
-  int mSmallTopologiesLUT[8 * 255];                 ///< Look-Up Table for the topologies with 1-byte linearised matrix
+  int mSmallTopologiesLUT[8 * 255 + 1];             ///< Look-Up Table for the topologies with 1-byte linearised matrix
   std::vector<GroupStruct> mVectorOfGroupIDs;       ///< Vector of topologies and groups
 
-  ClassDefNV(TopologyDictionary, 2);
-};
+  ClassDefNV(TopologyDictionary, 3);
+}; // namespace itsmft
 } // namespace itsmft
 } // namespace o2
 

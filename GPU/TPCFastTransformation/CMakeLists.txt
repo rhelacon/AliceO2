@@ -11,6 +11,10 @@
 set(MODULE TPCFastTransformation)
 
 set(SRCS
+    Spline1D.cxx  
+    Spline2D.cxx  
+    SplineHelper1D.cxx
+    SplineHelper2D.cxx
     IrregularSpline1D.cxx
     IrregularSpline2D3D.cxx
     SemiregularSpline2D3D.cxx
@@ -27,17 +31,39 @@ if(${ALIGPU_BUILD_TYPE} STREQUAL "O2")
                  TARGETVARNAME targetName
                  SOURCES ${SRCS}
                  PUBLIC_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_LIST_DIR}
-                 PUBLIC_LINK_LIBRARIES O2::GPUCommon Vc::Vc ROOT::Core)
+                 PUBLIC_LINK_LIBRARIES O2::GPUCommon Vc::Vc ROOT::Core ROOT::Matrix ROOT::Tree ROOT::Gpad)
 
   o2_target_root_dictionary(${MODULE}
                             HEADERS ${HDRS_CINT_O2}
                             LINKDEF TPCFastTransformationLinkDef_O2.h)
 
-  target_compile_definitions(${targetName} PRIVATE GPUCA_O2_LIB
-                             GPUCA_TPC_GEOMETRY_O2 HAVE_O2HEADERS)
-
   install(FILES ${HDRS_CINT_O2} DESTINATION include/GPU)
   file(COPY ${HDRS_CINT_O2} DESTINATION ${CMAKE_BINARY_DIR}/stage/include/GPU)
+
+  o2_add_test(${MODULE}
+              PUBLIC_LINK_LIBRARIES O2::${MODULE}
+              SOURCES test/testSplines.cxx
+              COMPONENT_NAME GPU
+              LABELS gpu)
+
+  foreach(m
+          SplineDemo.C
+          IrregularSpline1DTest.C
+          IrregularSpline2D3DCalibratorTest.C
+          IrregularSpline2D3DTest.C
+          RegularSpline1DTest.C
+          SemiregularSpline2D3DTest.C
+          fastTransformQA.C
+          generateTPCDistortionNTuple.C)
+    o2_add_test_root_macro(macro/${m}
+                           PUBLIC_LINK_LIBRARIES O2::TPCFastTransformation
+                                                 O2::DataFormatsTPC
+                                                 O2::TPCSimulation
+                                                 O2::TPCReconstruction
+                                                 PUBLIC_INCLUDE_DIRECTORIES
+                                                 ${CMAKE_BINARY_DIR}/stage/include
+                           LABELS gpu tpc)
+  endforeach()
 endif()
 
 if(${ALIGPU_BUILD_TYPE} STREQUAL "ALIROOT")
@@ -94,20 +120,6 @@ endif()
 if(ALIGPU_BUILD_TYPE STREQUAL "Standalone")
   add_library(${MODULE} SHARED ${SRCS})
 endif()
-
-foreach(m
-        IrregularSpline1DTest.C
-        IrregularSpline2D3DCalibratorTest.C
-        IrregularSpline2D3DTest.C
-        RegularSpline1DTest.C
-        SemiregularSpline2D3DTest.C
-        fastTransformQA.C)
-  o2_add_test_root_macro(macro/${m}
-                         PUBLIC_LINK_LIBRARIES O2::TPCFastTransformation
-                                               PUBLIC_INCLUDE_DIRECTORIES
-                                               ${CMAKE_BINARY_DIR}/stage/include
-                         LABELS gpu tpc)
-endforeach()
 
 #
 # FIXME: this one is misplaced : it depends (at least) on TPCSimulation which is

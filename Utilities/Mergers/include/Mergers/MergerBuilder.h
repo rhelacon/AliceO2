@@ -19,12 +19,16 @@
 #include "Mergers/MergerConfig.h"
 
 #include <Framework/DataProcessorSpec.h>
-#include <Framework/CompletionPolicy.h>
 
 #include <string>
 
 namespace o2
 {
+namespace framework
+{
+class CompletionPolicy;
+}
+
 namespace experimental::mergers
 {
 
@@ -68,8 +72,8 @@ class MergerBuilder
 
  private:
   std::string mName;
-  size_t mId{ 0 };
-  size_t mLayer{ 1 };
+  size_t mId{0};
+  size_t mLayer{1};
   framework::Inputs mInputSpecs;
   framework::OutputSpec mOutputSpec;
   MergerConfig mConfig;

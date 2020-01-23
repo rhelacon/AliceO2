@@ -6,13 +6,16 @@
 #include "TOFSimulation/Detector.h"
 #include "EMCALBase/Hit.h"
 #include "TRDSimulation/Detector.h" // For TRD Hit
-#include "T0Simulation/Detector.h"  // for Fit Hit
-#include "DataFormatsFITV0/Hit.h"
+#include "FT0Simulation/Detector.h" // for Fit Hit
+#include "DataFormatsFV0/Hit.h"
 #include "HMPIDBase/Hit.h"
 #include "TPCSimulation/Point.h"
 #include "PHOSBase/Hit.h"
-#include "FDDSimulation/Hit.h"
-
+#include "DataFormatsFDD/Hit.h"
+#include "MCHSimulation/Hit.h"
+#include "MIDSimulation/Hit.h"
+#include "CPVBase/Hit.h"
+#include "ZDCSimulation/Hit.h"
 #endif
 
 TString gPrefix("");
@@ -245,17 +248,17 @@ void analyzePHS(TTree* reftree)
   refresult.print();
 }
 
-void analyzeT0(TTree* reftree)
+void analyzeFT0(TTree* reftree)
 {
-  auto refresult = analyse<o2::t0::HitType, HitStats<o2::t0::HitType>>(reftree, "T0Hit");
-  std::cout << gPrefix << " T0 ";
+  auto refresult = analyse<o2::ft0::HitType, HitStats<o2::ft0::HitType>>(reftree, "FT0Hit");
+  std::cout << gPrefix << " FT0 ";
   refresult.print();
 }
 
 void analyzeHMP(TTree* reftree)
 {
   auto refresult = analyse<o2::hmpid::HitType, HitStats<o2::hmpid::HitType>>(reftree, "HMPHit");
-  std::cout << gPrefix << " HMPID ";
+  std::cout << gPrefix << " HMP ";
   refresult.print();
 }
 
@@ -273,10 +276,38 @@ void analyzeFDD(TTree* reftree)
   refresult.print();
 }
 
-void analyzeV0(TTree* reftree)
+void analyzeFV0(TTree* reftree)
 {
-  auto refresult = analyse<o2::v0::Hit, HitStats<o2::v0::Hit>>(reftree, "V0Hit");
-  std::cout << gPrefix << " V0 ";
+  auto refresult = analyse<o2::fv0::Hit, HitStats<o2::fv0::Hit>>(reftree, "FV0Hit");
+  std::cout << gPrefix << " FV0 ";
+  refresult.print();
+}
+
+void analyzeMCH(TTree* reftree)
+{
+  auto refresult = analyse<o2::mch::Hit, HitStats<o2::mch::Hit>>(reftree, "MCHHit");
+  std::cout << gPrefix << " MCH ";
+  refresult.print();
+}
+
+void analyzeMID(TTree* reftree)
+{
+  auto refresult = analyse<o2::mid::Hit, HitStats<o2::mid::Hit>>(reftree, "MIDHit");
+  std::cout << gPrefix << " MID ";
+  refresult.print();
+}
+
+void analyzeCPV(TTree* reftree)
+{
+  auto refresult = analyse<o2::cpv::Hit, HitStats<o2::cpv::Hit>>(reftree, "CPVHit");
+  std::cout << gPrefix << " CPV ";
+  refresult.print();
+}
+
+void analyzeZDC(TTree* reftree)
+{
+  auto refresult = analyse<o2::zdc::Hit, HitStats<o2::zdc::Hit>>(reftree, "ZDCHit");
+  std::cout << gPrefix << " ZDC ";
   refresult.print();
 }
 
@@ -301,6 +332,7 @@ void analyzeHits(const char* filename = "o2sim.root", const char* prefix = "")
   auto reftree = (TTree*)rf.Get("o2sim");
 
   gPrefix = prefix;
+  // should correspond to the same number as defined in DetID
   analyzeITS(reftree);
   analyzeTPC(reftree);
   analyzeMFT(reftree);
@@ -308,8 +340,13 @@ void analyzeHits(const char* filename = "o2sim.root", const char* prefix = "")
   analyzeEMC(reftree);
   analyzeTRD(reftree);
   analyzePHS(reftree);
-  analyzeT0(reftree);
-  analyzeV0(reftree);
+  analyzeCPV(reftree);
+  analyzeFT0(reftree);
+  analyzeFV0(reftree);
   analyzeFDD(reftree);
   analyzeHMP(reftree);
+  analyzeMCH(reftree);
+  analyzeMID(reftree);
+  analyzeZDC(reftree);
+  // analyzeACO(reftree);
 }

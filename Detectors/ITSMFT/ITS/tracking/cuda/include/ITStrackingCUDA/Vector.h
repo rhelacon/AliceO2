@@ -49,17 +49,23 @@ class Vector final
   Vector& operator=(Vector&&);
 
   int getSizeFromDevice() const;
+
+  T getElementFromDevice(const int) const;
+
   void resize(const int);
   void reset(const int, const int = 0);
   void reset(const T* const, const int, const int = 0);
   void copyIntoVector(std::vector<T>&, const int);
+  void copyIntoSizedVector(std::vector<T>&);
 
   GPU_HOST_DEVICE T* get() const;
   GPU_HOST_DEVICE int capacity() const;
   GPU_HOST_DEVICE Vector<T> getWeakCopy() const;
   GPU_DEVICE T& operator[](const int) const;
+
   GPU_DEVICE int size() const;
   GPU_DEVICE int extend(const int) const;
+  GPU_HOST_DEVICE void dump();
 
   template <typename... Args>
   GPU_DEVICE void emplace(const int, Args&&...);
@@ -77,19 +83,19 @@ class Vector final
 };
 
 template <typename T>
-Vector<T>::Vector() : Vector{ nullptr, 0 }
+Vector<T>::Vector() : Vector{nullptr, 0}
 {
   // Nothing to do
 }
 
 template <typename T>
-Vector<T>::Vector(const int capacity, const int initialSize) : Vector{ nullptr, capacity, initialSize }
+Vector<T>::Vector(const int capacity, const int initialSize) : Vector{nullptr, capacity, initialSize}
 {
   // Nothing to do
 }
 
 template <typename T>
-Vector<T>::Vector(const T* const source, const int size, const int initialSize) : mCapacity{ size }, mIsWeak{ false }
+Vector<T>::Vector(const T* const source, const int size, const int initialSize) : mCapacity{size}, mIsWeak{false}
 {
   if (size > 0) {
     try {
@@ -118,10 +124,10 @@ Vector<T>::Vector(const T* const source, const int size, const int initialSize) 
 
 template <typename T>
 Vector<T>::Vector(const Vector& other, const bool isWeak)
-  : mArrayPointer{ other.mArrayPointer },
-    mDeviceSize{ other.mDeviceSize },
-    mCapacity{ other.mCapacity },
-    mIsWeak{ isWeak }
+  : mArrayPointer{other.mArrayPointer},
+    mDeviceSize{other.mDeviceSize},
+    mCapacity{other.mCapacity},
+    mIsWeak{isWeak}
 {
   // Nothing to do
 }
@@ -144,10 +150,10 @@ GPU_HOST_DEVICE Vector<T>::~Vector()
 
 template <typename T>
 GPU_HOST_DEVICE Vector<T>::Vector(Vector<T>&& other)
-  : mArrayPointer{ other.mArrayPointer },
-    mDeviceSize{ other.mDeviceSize },
-    mCapacity{ other.mCapacity },
-    mIsWeak{ other.mIsWeak }
+  : mArrayPointer{other.mArrayPointer},
+    mDeviceSize{other.mDeviceSize},
+    mCapacity{other.mCapacity},
+    mIsWeak{other.mIsWeak}
 {
   other.mArrayPointer = nullptr;
   other.mDeviceSize = nullptr;
@@ -194,9 +200,7 @@ template <typename T>
 void Vector<T>::reset(const T* const source, const int size, const int initialSize)
 {
   if (size > mCapacity) {
-
     if (mArrayPointer != nullptr) {
-
       Utils::Host::gpuFree(mArrayPointer);
     }
 
@@ -210,7 +214,6 @@ void Vector<T>::reset(const T* const source, const int size, const int initialSi
     Utils::Host::gpuMemcpyHostToDevice(mDeviceSize, &size, sizeof(int));
 
   } else {
-
     Utils::Host::gpuMemcpyHostToDevice(mDeviceSize, &initialSize, sizeof(int));
   }
 }
@@ -237,6 +240,12 @@ void Vector<T>::copyIntoVector(std::vector<T>& destinationVector, const int size
 
     throw;
   }
+}
+
+template <typename T>
+void Vector<T>::copyIntoSizedVector(std::vector<T>& destinationVector)
+{
+  Utils::Host::gpuMemcpyDeviceToHost(destinationVector.data(), mArrayPointer, destinationVector.size() * sizeof(T));
 }
 
 template <typename T>
@@ -268,13 +277,22 @@ GPU_HOST_DEVICE inline int Vector<T>::capacity() const
 template <typename T>
 GPU_HOST_DEVICE inline Vector<T> Vector<T>::getWeakCopy() const
 {
-  return Vector{ *this, true };
+  return Vector{*this, true};
 }
 
 template <typename T>
 GPU_DEVICE inline T& Vector<T>::operator[](const int index) const
 {
   return mArrayPointer[index];
+}
+
+template <typename T>
+GPU_HOST inline T Vector<T>::getElementFromDevice(const int index) const
+{
+  T element;
+  Utils::Host::gpuMemcpyDeviceToHost(&element, mArrayPointer + index, sizeof(T));
+
+  return element;
 }
 
 template <typename T>
@@ -296,8 +314,14 @@ template <typename T>
 template <typename... Args>
 GPU_DEVICE void Vector<T>::emplace(const int index, Args&&... arguments)
 {
-
   new (mArrayPointer + index) T(std::forward<Args>(arguments)...);
+}
+
+template <typename T>
+GPU_HOST_DEVICE void Vector<T>::dump()
+{
+  printf("mArrayPointer = %p\nmDeviceSize   = %p\nmCapacity     = %d\nmIsWeak       = %s\n",
+         mArrayPointer, mDeviceSize, mCapacity, mIsWeak ? "true" : "false");
 }
 } // namespace GPU
 } // namespace its

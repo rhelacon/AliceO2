@@ -25,19 +25,19 @@ class ATask : public Task
 {
  public:
   ATask(int state)
-    : mSomeState{ state } {}
+    : mSomeState{state} {}
   void init(InitContext& ic) final
   {
     mSomeState += 1;
   }
   void run(ProcessingContext& pc) final
   {
-    auto result = pc.outputs().make<int>({ "dummy" }, 1);
+    auto& result = pc.outputs().make<int>({"dummy"}, 1);
     result[0] = mSomeState;
-    pc.services().get<o2::monitoring::Monitoring>().send({ result[0], "output" });
-    pc.services().get<ControlService>().readyToQuit(false);
+    pc.services().get<o2::monitoring::Monitoring>().send({result[0], "output"});
+    pc.services().get<ControlService>().endOfStream();
+    pc.services().get<ControlService>().readyToQuit(QuitRequest::Me);
   }
-
  private:
   int mSomeState;
 };
@@ -51,8 +51,12 @@ class BTask : public Task
   {
     auto result = pc.inputs().get<int>("in");
     ASSERT_ERROR(result == 2);
-    pc.services().get<o2::monitoring::Monitoring>().send({ result, "input" });
-    pc.services().get<ControlService>().readyToQuit(true);
+    pc.services().get<o2::monitoring::Monitoring>().send({result, "input"});
+  }
+
+  void endOfStream(EndOfStreamContext& eos) final
+  {
+    eos.services().get<ControlService>().readyToQuit(QuitRequest::All);
   }
 };
 
@@ -63,15 +67,14 @@ WorkflowSpec defineDataProcessing(ConfigContext const&)
       "producer",
       Inputs{},
       {
-        OutputSpec{ { "dummy" }, "TST", "TEST" },
+        OutputSpec{{"dummy"}, "TST", "TEST"},
       },
-      adaptFromTask<ATask>(1) },
+      adaptFromTask<ATask>(1)},
     DataProcessorSpec{
       "consumer",
       Inputs{
-        InputSpec{ "in", "TST", "TEST" },
+        InputSpec{"in", "TST", "TEST"},
       },
       {},
-      adaptFromTask<BTask>() }
-  };
+      adaptFromTask<BTask>()}};
 }

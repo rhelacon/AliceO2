@@ -20,6 +20,7 @@
 
 #include "TVectorF.h"
 #include "TTreeStream.h"
+#include "GPULogging.h"
 #include "GPUTRDTrack.h"
 
 namespace GPUCA_NAMESPACE
@@ -30,8 +31,14 @@ namespace gpu
 class GPUTRDTrackerDebug
 {
  public:
-  GPUTRDTrackerDebug() { fStreamer = new TTreeSRedirector("TRDhlt.root", "recreate"); }
+  GPUTRDTrackerDebug() : fStreamer(0x0) {}
   ~GPUTRDTrackerDebug() { delete fStreamer; }
+
+  void CreateStreamer()
+  {
+    GPUInfo("Creating streamer for debugging");
+    fStreamer = new TTreeSRedirector("TRDhlt.root", "recreate");
+  }
 
   int GetSector(float alpha)
   {
@@ -49,6 +56,7 @@ class GPUTRDTrackerDebug
     fTrackPhi.ResizeTo(6);
     fTrackLambda.ResizeTo(6);
     fTrackPt.ResizeTo(6);
+    fTrackQPt.ResizeTo(6);
     fTrackSector.ResizeTo(6);
     fTrackYerr.ResizeTo(6);
     fTrackZerr.ResizeTo(6);
@@ -86,7 +94,9 @@ class GPUTRDTrackerDebug
     fTrackYReal.ResizeTo(6);
     fTrackZReal.ResizeTo(6);
     fTrackSecReal.ResizeTo(6);
+    fChi2YZPhiUpdate.ResizeTo(6);
     fChi2Update.ResizeTo(6);
+    fChi2YZPhiReal.ResizeTo(6);
     fChi2Real.ResizeTo(6);
     fNmatchesAvail.ResizeTo(6);
     fFindable.ResizeTo(6);
@@ -102,6 +112,7 @@ class GPUTRDTrackerDebug
     fTrackPhi.Zero();
     fTrackLambda.Zero();
     fTrackPt.Zero();
+    fTrackQPt.Zero();
     fTrackSector.Zero();
     fTrackYerr.Zero();
     fTrackZerr.Zero();
@@ -139,7 +150,9 @@ class GPUTRDTrackerDebug
     fTrackYReal.Zero();
     fTrackZReal.Zero();
     fTrackSecReal.Zero();
+    fChi2YZPhiUpdate.Zero();
     fChi2Update.Zero();
+    fChi2YZPhiReal.Zero();
     fChi2Real.Zero();
     fNmatchesAvail.Zero();
     fFindable.Zero();
@@ -192,6 +205,7 @@ class GPUTRDTrackerDebug
     fTrackPhi(ly) = trk.getSnp();
     fTrackLambda(ly) = trk.getTgl();
     fTrackPt(ly) = trk.getPt();
+    fTrackQPt(ly) = trk.getQ2Pt();
     fTrackSector(ly) = GetSector(trk.getAlpha());
     fTrackYerr(ly) = trk.getSigmaY2();
     fTrackZerr(ly) = trk.getSigmaZ2();
@@ -233,13 +247,13 @@ class GPUTRDTrackerDebug
   }
 
   // tracklet parameters
-  void SetRawTrackletPosition(const float fX, const float (&fYZ)[2], int ly)
+  void SetRawTrackletPosition(const float fX, const float* fYZ, int ly)
   {
     fTrackletX(ly) = fX;
     fTrackletY(ly) = fYZ[0];
     fTrackletZ(ly) = fYZ[1];
   }
-  void SetCorrectedTrackletPosition(const My_Float (&fYZ)[2], int ly)
+  void SetCorrectedTrackletPosition(const My_Float* fYZ, int ly)
   {
     fTrackletYcorr(ly) = fYZ[0];
     fTrackletZcorr(ly) = fYZ[1];
@@ -275,6 +289,8 @@ class GPUTRDTrackerDebug
   // update information
   void SetChi2Update(float chi2, int ly) { fChi2Update(ly) = chi2; }
   void SetChi2Real(float chi2, int ly) { fChi2Real(ly) = chi2; }
+  void SetChi2YZPhiUpdate(float chi2, int ly) { fChi2YZPhiUpdate(ly) = chi2; }
+  void SetChi2YZPhiReal(float chi2, int ly) { fChi2YZPhiReal(ly) = chi2; }
 
   // other infos
   void SetRoad(float roadY, float roadZ, int ly)
@@ -316,6 +332,7 @@ class GPUTRDTrackerDebug
       "trackZ.=" << &fTrackZ <<                            // z-pos of track (layerwise)
       "trackPhi.=" << &fTrackPhi <<                        // phi angle of track (track.fP[2])
       "trackLambda.=" << &fTrackLambda <<                  // lambda angle of track (track.fP[3])
+      "trackQPt.=" << &fTrackQPt <<                        // track q/pT (track.fP[4])
       "trackPt.=" << &fTrackPt <<                          // track pT (layerwise)
       "trackYerr.=" << &fTrackYerr <<                      // sigma_y^2 for track
       "trackZerr.=" << &fTrackZerr <<                      // sigma_z^2 for track
@@ -352,6 +369,8 @@ class GPUTRDTrackerDebug
       "trackletDetReal.=" << &fTrackletDetReal <<          // detector number for matching or related tracklet if available, otherwise -1
       "chi2Update.=" << &fChi2Update <<                    // chi2 for update
       "chi2Real.=" << &fChi2Real <<                        // chi2 for first tracklet w/ matching MC label
+      "chi2YZPhiUpdate.=" << &fChi2YZPhiUpdate <<          // chi2 for update taking into account full tracklet information (y, z, dY aka sin(phi))
+      "chi2YZPhiReal.=" << &fChi2YZPhiReal <<              // chi2 for first tracklet w/ matching MC label taking into account full tracklet information (y, z, dY aka sin(phi))
       "chi2Total=" << fChi2 <<                             // total chi2 for track
       "nLayers=" << fNlayers <<                            // number of layers in which track was findable
       "nTracklets=" << fNtrklts <<                         // number of attached tracklets
@@ -400,6 +419,7 @@ class GPUTRDTrackerDebug
   TVectorF fTrackPhi;
   TVectorF fTrackLambda;
   TVectorF fTrackPt;
+  TVectorF fTrackQPt;
   TVectorF fTrackSector;
   TVectorF fTrackYerr;
   TVectorF fTrackZerr;
@@ -435,6 +455,8 @@ class GPUTRDTrackerDebug
   TVectorF fTrackletDetReal;
   TVectorF fChi2Update;
   TVectorF fChi2Real;
+  TVectorF fChi2YZPhiUpdate;
+  TVectorF fChi2YZPhiReal;
   TVectorF fRoadY;
   TVectorF fRoadZ;
   TVectorF fFindable;
@@ -460,6 +482,7 @@ namespace gpu
 class GPUTRDTrackerDebug
 {
  public:
+  GPUd() void CreateStreamer() {}
   GPUd() void ExpandVectors() {}
   GPUd() void Reset() {}
 
@@ -474,8 +497,8 @@ class GPUTRDTrackerDebug
   GPUd() void SetTrack(const GPUTRDTrack& trk) {}
 
   // tracklet parameters
-  GPUd() void SetRawTrackletPosition(const float fX, const float (&fYZ)[2], int ly) {}
-  GPUd() void SetCorrectedTrackletPosition(const My_Float (&fYZ)[2], int ly) {}
+  GPUd() void SetRawTrackletPosition(const float fX, const float* fYZ, int ly) {}
+  GPUd() void SetCorrectedTrackletPosition(const My_Float* fYZ, int ly) {}
   GPUd() void SetTrackletCovariance(const My_Float* fCov, int ly) {}
   GPUd() void SetTrackletProperties(const float dy, const int det, int ly) {}
   GPUd() void SetRawTrackletPositionReal(float fX, float* fYZ, int ly) {}
@@ -485,6 +508,8 @@ class GPUTRDTrackerDebug
   // update information
   GPUd() void SetChi2Update(float chi2, int ly) {}
   GPUd() void SetChi2Real(float chi2, int ly) {}
+  GPUd() void SetChi2YZPhiUpdate(float chi2, int ly) {}
+  GPUd() void SetChi2YZPhiReal(float chi2, int ly) {}
 
   // other infos
   GPUd() void SetRoad(float roadY, float roadZ, int ly) {}

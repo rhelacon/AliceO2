@@ -28,37 +28,53 @@ string(TOUPPER "${ENABLE_HIP}" ENABLE_HIP)
 # Detect and enable CUDA
 if(ENABLE_CUDA)
   set(CUDA_MINIMUM_VERSION "10.1")
-  if(CUDA_GCCBIN)
-    message(STATUS "Using as CUDA GCC version: ${CUDA_GCCBIN}")
-    set(CUDA_HOST_COMPILER "${CUDA_GCCBIN}")
-  endif()
   set(CMAKE_CUDA_STANDARD 14)
   set(CMAKE_CUDA_STANDARD_REQUIRED TRUE)
   include(CheckLanguage)
   check_language(CUDA)
-  if(CMAKE_CUDA_COMPILER)
+  if(CUDA_GCCBIN)
+    message(STATUS "Using as CUDA GCC version: ${CUDA_GCCBIN}")
+    set(CMAKE_CUDA_HOST_COMPILER "${CUDA_GCCBIN}")
+    if (NOT CMAKE_CUDA_COMPILER)
+      set(CMAKE_CUDA_COMPILER "nvcc") #check_language does not treat the HOST_COMPILER flag correctly, we force it and will fail below if wrong.
+    endif()
+  endif()
+  if (ENABLE_CUDA STREQUAL "AUTO")
+    find_package(cub)
+    set_package_properties(cub PROPERTIES TYPE OPTIONAL)
+  else()
+    find_package(cub REQUIRED)
+    set_package_properties(cub PROPERTIES TYPE REQUIRED)
+  endif()
+  if(CMAKE_CUDA_COMPILER AND CUB_FOUND)
     enable_language(CUDA)
     get_property(LANGUAGES GLOBAL PROPERTY ENABLED_LANGUAGES)
     if(NOT CUDA IN_LIST LANGUAGES)
       message(FATAL_ERROR "CUDA was found but cannot be enabled")
     endif()
+    find_path(THRUST_INCLUDE_DIR thrust/version.h PATHS ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES} NO_DEFAULT_PATH)
+    if(THRUST_INCLUDE_DIR STREQUAL "THRUST_INCLUDE_DIR-NOTFOUND")
+      message(FATAL_ERROR "CUDA found but thrust not available")
+    endif()
 
-    set(CMAKE_CUDA_FLAGS "--expt-relaxed-constexpr")
-    set(CMAKE_CUDA_FLAGS_DEBUG "-Xptxas -O0 -Xcompiler -O0")
-    set(CMAKE_CUDA_FLAGS_RELEASE "-Xptxas -O4 -Xcompiler -O4 -use_fast_math")
-    set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELEASE}")
-    set(CMAKE_CUDA_FLAGS_COVERAGE "${CMAKE_CUDA_FLAGS_RELEASE}")
+    # Forward CXX flags to CUDA C++ Host compiler (for warnings, gdb, etc.)
+    STRING(REGEX REPLACE "\-std=[^ ]*" "" CMAKE_CXX_FLAGS_NOSTD ${CMAKE_CXX_FLAGS}) # Need to strip c++17 imposed by alidist defaults
+    set(CMAKE_CUDA_FLAGS "-Xcompiler \"${CMAKE_CXX_FLAGS_NOSTD}\" --expt-relaxed-constexpr -Xptxas -v")
+    set(CMAKE_CUDA_FLAGS_DEBUG "-lineinfo -Xcompiler \"${CMAKE_CXX_FLAGS_DEBUG}\" -Xptxas -O0 -Xcompiler -O0")
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+      set(CMAKE_CUDA_FLAGS_${CMAKE_BUILD_TYPE} "-Xcompiler \"${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}\" -Xptxas -O4 -Xcompiler -O4 -use_fast_math --ftz=true")
+    endif()
     if(CUDA_COMPUTETARGET)
       set(
         CMAKE_CUDA_FLAGS
-        "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${CUDA_COMPUTETARGET},code=compute_${CUDA_COMPUTETARGET}"
+        "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${CUDA_COMPUTETARGET},code=sm_${CUDA_COMPUTETARGET}"
         )
     endif()
 
     set(CUDA_ENABLED ON)
     message(STATUS "CUDA found (Version ${CMAKE_CUDA_COMPILER_VERSION})")
   elseif(NOT ENABLE_CUDA STREQUAL "AUTO")
-    message(FATAL_ERROR "CUDA not found")
+    message(FATAL_ERROR "CUDA not found (Compiler: ${CMAKE_CUDA_COMPILER}, CUB: ${CUB_FOUND})")
   endif()
 endif()
 
@@ -90,17 +106,48 @@ endif()
 
 # Detect and enable OpenCL 2.x
 if(ENABLE_OPENCL2)
-  if(OpenCL_VERSION_STRING VERSION_GREATER_EQUAL 2.0
-     AND Clang_FOUND
+  find_package(LLVM)
+  if(LLVM_FOUND)
+    find_package(Clang)
+  endif()
+  find_package(ROCM PATHS /opt/rocm)
+  if(NOT ROCM_DIR STREQUAL "ROCM_DIR-NOTFOUND")
+    get_filename_component(ROCM_ROOT "${ROCM_DIR}/../../../" ABSOLUTE)
+  else()
+    set(ROCM_ROOT "/opt/rocm")
+  endif()
+  find_program(CLANG_OCL clang-ocl PATHS "${ROCM_ROOT}/bin")
+  find_program(ROCM_AGENT_ENUMERATOR rocm_agent_enumerator PATHS "${ROCM_ROOT}/bin")
+  find_program(LLVM_SPIRV llvm-spirv)
+  if(Clang_FOUND
      AND LLVM_FOUND
-     AND LLVM_PACKAGE_VERSION VERSION_GREATER_EQUAL 9.0)
+     AND LLVM_PACKAGE_VERSION VERSION_GREATER_EQUAL 10.0)
+    set(OPENCL2_COMPATIBLE_CLANG_FOUND ON)
+  endif()
+  if(OpenCL_VERSION_STRING VERSION_GREATER_EQUAL 2.0
+     AND OPENCL2_COMPATIBLE_CLANG_FOUND
+     AND NOT CLANG_OCL STREQUAL "CLANG_OCL-NOTFOUND")
+    set(OPENCL2_ENABLED_AMD ON)
+  endif()
+  if(OpenCL_VERSION_STRING VERSION_GREATER_EQUAL 2.2
+     AND OPENCL2_COMPATIBLE_CLANG_FOUND
+     AND NOT LLVM_SPIRV STREQUAL "LLVM_SPIRV-NOTFOUND")
+    set(OPENCL2_ENABLED_SPIRV ON)
+  endif ()
+  if(OPENCL2_COMPATIBLE_CLANG_FOUND AND
+     (OpenCL_VERSION_STRING VERSION_GREATER_EQUAL 2.2
+     OR OPENCL2_ENABLED_AMD
+     OR OPENCL2_ENABLED_SPIRV))
     set(OPENCL2_ENABLED ON)
     message(
       STATUS
-        "Found OpenCL 2 (${OpenCL_VERSION_STRING} compiled by LLVM/Clang ${LLVM_PACKAGE_VERSION})"
+        "Found OpenCL 2 (${OpenCL_VERSION_STRING} ; AMD ${OPENCL2_ENABLED_AMD} ${CLANG_OCL} ; SPIR-V ${OPENCL2_ENABLED_SPIRV} ${LLVM_SPIRV} with CLANG ${LLVM_PACKAGE_VERSION})"
       )
   elseif(NOT ENABLE_OPENCL2 STREQUAL "AUTO")
-    # message(FATAL_ERROR "OpenCL 2.x not yet implemented")
+    message(FATAL_ERROR "OpenCL 2.x not available")
+  endif()
+  if (FORCE_OPENCL2_ALL AND NOT(OPENCL2_ENABLED_AMD AND OPENCL2_ENABLED_SPIRV))
+    message(FATAL_ERROR "Not all OpenCL2 backends available, but requested (AMD ${OPENCL2_ENABLED_AMD} SPIRV ${OPENCL2_ENABLED_SPIRV})")
   endif()
 endif()
 
@@ -129,20 +176,32 @@ if(ENABLE_HIP)
     endif()
   endif()
 
-  if(HIP_PATH AND EXISTS "${HIP_PATH}" AND HCC_HOME AND EXISTS "${HCC_HOME}")
+  if(EXISTS "${HIP_PATH}" AND EXISTS "${HCC_HOME}")
     get_filename_component(hip_ROOT "${HIP_PATH}" ABSOLUTE)
     get_filename_component(hcc_ROOT "${HCC_HOME}" ABSOLUTE)
     find_package(hip)
+    find_package(hipcub)
+    find_package(rocprim)
+    find_package(rocthrust)
     if(ENABLE_HIP STREQUAL "AUTO")
       set_package_properties(hip PROPERTIES TYPE OPTIONAL)
+      set_package_properties(hipcub PROPERTIES TYPE OPTIONAL)
+      set_package_properties(rocprim PROPERTIES TYPE OPTIONAL)
+      set_package_properties(rocthrust PROPERTIES TYPE OPTIONAL)
     else()
       set_package_properties(hip PROPERTIES TYPE REQUIRED)
+      set_package_properties(hipcub PROPERTIES TYPE REQUIRED)
+      set_package_properties(rocprim PROPERTIES TYPE REQUIRED)
+      set_package_properties(rocthrust PROPERTIES TYPE REQUIRED)
     endif()
-    if(hip_HIPCC_EXECUTABLE)
+    if(hip_FOUND AND hipcub_FOUND AND rocthrust_FOUND AND rocprim_FOUND AND hip_HIPCC_EXECUTABLE)
       set(HIP_ENABLED ON)
-      message(STATUS "HIP Found")
+      set_target_properties(rocthrust PROPERTIES IMPORTED_GLOBAL TRUE)
+      add_library(ROCm::rocThrust ALIAS rocthrust)
+      message(STATUS "HIP Found (${hip_HIPCC_EXECUTABLE})")
     endif()
-  elseif(NOT ENABLE_HIP STREQUAL "AUTO")
+  endif()
+  if(NOT HIP_ENABLED AND NOT ENABLE_HIP STREQUAL "AUTO")
     message(
       FATAL_ERROR
         "HIP requested but HIP_PATH=${HIP_PATH} or HCC_HOME=${HCC_HOME} does not exist"
@@ -153,4 +212,3 @@ endif()
 
 # if we end up here without a FATAL, it means we have found the "O2GPU" package
 set(O2GPU_FOUND TRUE)
-

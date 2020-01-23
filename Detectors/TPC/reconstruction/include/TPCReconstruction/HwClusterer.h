@@ -27,8 +27,10 @@
 #include <utility>
 #include <memory>
 
-namespace o2{
-namespace tpc {
+namespace o2
+{
+namespace tpc
+{
 
 class Digit;
 class ClusterHardware;
@@ -61,6 +63,9 @@ class HwClusterer : public Clusterer
 
   /// Copy Constructor
   HwClusterer(HwClusterer const& other) = default;
+
+  /// initialize the clusterer from HwClustererParam
+  void init();
 
   /// Process digits
   /// \param digits Container with TPC digits
@@ -275,8 +280,7 @@ inline short HwClusterer::getFirstSetBitOfField()
   return -1;
 }
 
-}
-}
-
+} // namespace tpc
+} // namespace o2
 
 #endif

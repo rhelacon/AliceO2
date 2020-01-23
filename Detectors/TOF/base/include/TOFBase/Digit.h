@@ -13,11 +13,14 @@
 
 #include <iosfwd>
 #include "Rtypes.h"
+#include "TOFBase/Geo.h"
 
 #include <boost/serialization/base_object.hpp> // for base_object
 
-namespace o2 {
-namespace tof {
+namespace o2
+{
+namespace tof
+{
 /// \class Digit
 /// \brief TOF digit implementation
 class Digit
@@ -49,7 +52,7 @@ class Digit
   Int_t getLabel() const { return mLabel; }
   void setLabel(Int_t label) { mLabel = label; }
 
-  void printStream(std::ostream &stream) const;
+  void printStream(std::ostream& stream) const;
 
   void merge(Int_t tdc, Int_t tot);
 
@@ -59,20 +62,37 @@ class Digit
 
   void setIsUsedInCluster() { mIsUsedInCluster = kTRUE; }
 
+  Int_t getElectronicIndex() const { return mElectronIndex; }
+  void setElectronicIndex(Int_t ind) { mElectronIndex = ind; }
+  Int_t getElCrateIndex() const { return Geo::getCrateFromECH(mElectronIndex); } // to be derived from mElectronIndex
+  Int_t getElTRMIndex() const { return Geo::getTRMFromECH(mElectronIndex); }     // to be derived from mElectronIndex
+  Int_t getElChainIndex() const { return Geo::getChainFromECH(mElectronIndex); } // to be derived from mElectronIndex
+  Int_t getElTDCIndex() const { return Geo::getTDCFromECH(mElectronIndex); }     // to be derived from mElectronIndex
+  Int_t getElChIndex() const { return Geo::getTDCChFromECH(mElectronIndex); }    // to be derived from mElectronIndex
+
+  void setCalibratedTime(Double_t time) { mCalibratedTime = time; }
+  double getCalibratedTime() const { return mCalibratedTime; }
+
+  void setIsProblematic(bool flag) { mIsProblematic = flag; }
+  bool isProblematic() const { return mIsProblematic; }
+
  private:
   friend class boost::serialization::access;
 
-  Int_t mChannel;       ///< TOF channel index
-  Int_t mTDC;           ///< TDC bin number
-  Int_t mTOT;           ///< TOT bin number
-  Int_t mBC;            ///< Bunch Crossing
-  Int_t mLabel;         ///< Index of the corresponding entry in the MC label array
+  Int_t mChannel;          ///< TOF channel index
+  Int_t mTDC;              ///< TDC bin number
+  Int_t mTOT;              ///< TOT bin number
+  Int_t mBC;               ///< Bunch Crossing
+  Int_t mLabel;            ///< Index of the corresponding entry in the MC label array
   Bool_t mIsUsedInCluster; //!/< flag to declare that the digit was used to build a cluster
+  Int_t mElectronIndex;    //!/< index in electronic format
+  Double_t mCalibratedTime;      //!< time of the digits after calibration (not persistent; it will be filled during clusterization)
+  Bool_t mIsProblematic = false; //!< flag to tell whether the channel of the digit was problemati; not persistent; default = ok
 
   ClassDefNV(Digit, 1);
 };
 
-std::ostream &operator<<(std::ostream &stream, const Digit &dig);
-} // namespace TOF
+std::ostream& operator<<(std::ostream& stream, const Digit& dig);
+} // namespace tof
 } // namespace o2
 #endif

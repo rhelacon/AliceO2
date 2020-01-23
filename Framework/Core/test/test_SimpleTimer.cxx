@@ -13,6 +13,7 @@
 #include "Framework/ControlService.h"
 
 #include <chrono>
+#include <thread>
 
 using namespace o2::framework;
 
@@ -28,28 +29,27 @@ std::vector<DataProcessorSpec> defineDataProcessing(ConfigContext const&)
         adaptStateless([](ControlService& control) {
           // This is invoked autonomously by the timer.
           std::this_thread::sleep_for(std::chrono::seconds(1));
-          control.readyToQuit(true);
-        }) } },
+          control.readyToQuit(QuitRequest::All);
+        })}},
     DataProcessorSpec{
       "atimer",
       Inputs{
-        InputSpec{ "atimer", "TST", "TIMER", 0, Lifetime::Timer } },
+        InputSpec{"atimer", "TST", "TIMER", 0, Lifetime::Timer}},
       {},
       AlgorithmSpec{
         adaptStateless([](ControlService& control) {
           // This is invoked autonomously by the timer.
-          control.readyToQuit(false);
-        }) } },
+          control.readyToQuit(QuitRequest::Me);
+        })}},
     DataProcessorSpec{
       "btimer",
       Inputs{
-        InputSpec{ "btimer", "TST", "TIMER2", 0, Lifetime::Timer } },
+        InputSpec{"btimer", "TST", "TIMER2", 0, Lifetime::Timer}},
       {},
       AlgorithmSpec{
         adaptStateless([](ControlService& control) {
           // This is invoked autonomously by the timer.
-          control.readyToQuit(false);
-        }) },
-      { ConfigParamSpec{ "period-btimer", VariantType::Int, 2000, { "period of timer" } } } }
-  };
+          control.readyToQuit(QuitRequest::Me);
+        })},
+      {ConfigParamSpec{"period-btimer", VariantType::Int, 2000, {"period of timer"}}}}};
 }

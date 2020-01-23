@@ -12,13 +12,13 @@ add_subdirectory(Logger)
 
 add_subdirectory(Foundation)
 
-add_subdirectory(DebugGUI)
-
 add_subdirectory(Core)
 
 add_subdirectory(Utils)
 
-# add_subdirectory(TestWorkflows)
+add_subdirectory(TestWorkflows) 
+
+add_subdirectory(AnalysisTutorial)
 
 if(arrow_FOUND)
   add_subdirectory(ArrowTests)

@@ -20,8 +20,8 @@
 
 #include "FairLogger.h" // for LOG
 
-#include "TH1.h" // for TH1, TH1D, TH1F
-#include "TMath.h"
+#include <TH1.h> // for TH1, TH1D, TH1F
+#include <TFile.h>
 
 #include <vector>
 #include "ITSBase/GeometryTGeo.h"
@@ -69,13 +69,13 @@ InitStatus HitAnalysis::Init()
   // Get the FairRootManager
   FairRootManager* mgr = FairRootManager::Instance();
   if (!mgr) {
-    LOG(ERROR) << "Could not instantiate FairRootManager. Exiting ..." << FairLogger::endl;
+    LOG(ERROR) << "Could not instantiate FairRootManager. Exiting ...";
     return kERROR;
   }
 
   mHits = mgr->InitObjectAs<const std::vector<o2::itsmft::Hit>*>("ITSHit");
   if (!mHits) {
-    LOG(ERROR) << "ITS points not registered in the FairRootManager. Exiting ..." << FairLogger::endl;
+    LOG(ERROR) << "ITS points not registered in the FairRootManager. Exiting ...";
     return kERROR;
   }
 
@@ -89,7 +89,7 @@ InitStatus HitAnalysis::Init()
 
   // Create histograms
   // Ranges to be adjusted
-  Double_t maxLengthX(Segmentation::SensorSizeRows), maxLengthY(Segmentation::SensorThickness),
+  Double_t maxLengthX(Segmentation::SensorSizeRows), maxLengthY(Segmentation::SensorLayerThickness),
     maxLengthZ(Segmentation::SensorSizeCols);
 
   mLineSegment = new TH1D("lineSegment", "Length of the line segment within the chip", 500, 0.0, 0.01);

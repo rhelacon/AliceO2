@@ -17,6 +17,7 @@
 
 #include "DPLUtils/RootTreeWriter.h"
 #include "Framework/InputSpec.h"
+#include "Framework/ConfigParamRegistry.h"
 #include "Framework/DataProcessorSpec.h"
 #include "Framework/CallbackService.h"
 #include "Framework/ControlService.h"
@@ -195,8 +196,8 @@ class MakeRootTreeWriterSpec
     Workflow,
   };
   const std::map<std::string, TerminationPolicy> TerminationPolicyMap = {
-    { "process", TerminationPolicy::Process },
-    { "workflow", TerminationPolicy::Workflow },
+    {"process", TerminationPolicy::Process},
+    {"workflow", TerminationPolicy::Workflow},
   };
 
   struct TerminationCondition {
@@ -382,7 +383,7 @@ class MakeRootTreeWriterSpec
 
         if ((nEvents >= 0 && counter == nEvents) || checkReady(pc.inputs())) {
           writer->close();
-          pc.services().get<ControlService>().readyToQuit(terminationPolicy == TerminationPolicy::Workflow);
+          pc.services().get<ControlService>().readyToQuit(terminationPolicy == TerminationPolicy::Workflow ? QuitRequest::All : QuitRequest::Me);
         }
       };
 
@@ -391,10 +392,10 @@ class MakeRootTreeWriterSpec
 
     Options options{
       // default options
-      { "outfile", VariantType::String, mDefaultFileName.c_str(), { "Name of the output file" } },
-      { "treename", VariantType::String, mDefaultTreeName.c_str(), { "Name of tree" } },
-      { "nevents", VariantType::Int, mDefaultNofEvents, { "Number of events to execute" } },
-      { "terminate", VariantType::String, mDefaultTerminationPolicy.c_str(), { "Terminate the 'process' or 'workflow'" } },
+      {"outfile", VariantType::String, mDefaultFileName.c_str(), {"Name of the output file"}},
+      {"treename", VariantType::String, mDefaultTreeName.c_str(), {"Name of tree"}},
+      {"nevents", VariantType::Int, mDefaultNofEvents, {"Number of events to execute"}},
+      {"terminate", VariantType::String, mDefaultTerminationPolicy.c_str(), {"Terminate the 'process' or 'workflow'"}},
     };
     for (size_t branchIndex = 0; branchIndex < mBranchNameOptions.size(); branchIndex++) {
       // adding option definitions for those ones defined in the branch definition
@@ -404,7 +405,7 @@ class MakeRootTreeWriterSpec
       options.push_back(ConfigParamSpec(mBranchNameOptions[branchIndex].first.c_str(),  // option key
                                         VariantType::String,                            // option argument type
                                         mBranchNameOptions[branchIndex].second.c_str(), // default branch name
-                                        { "configurable branch name" }                  // help message
+                                        {"configurable branch name"}                    // help message
                                         ));
     }
 

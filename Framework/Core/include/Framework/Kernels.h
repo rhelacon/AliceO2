@@ -11,9 +11,11 @@
 #ifndef O2_FRAMEWORK_KERNELS_H_
 #define O2_FRAMEWORK_KERNELS_H_
 
-#include "arrow/compute/kernel.h"
-#include "arrow/status.h"
-#include "arrow/util/visibility.h"
+#include "Framework/BasicOps.h"
+
+#include <arrow/compute/kernel.h>
+#include <arrow/status.h>
+#include <arrow/util/visibility.h>
 #include <arrow/util/variant.h>
 
 #include <string>
@@ -29,9 +31,7 @@ class FunctionContext;
 } // namespace compute
 } // namespace arrow
 
-namespace o2
-{
-namespace framework
+namespace o2::framework
 {
 
 struct ARROW_EXPORT HashByColumnOptions {
@@ -51,8 +51,20 @@ class ARROW_EXPORT HashByColumnKernel : public arrow::compute::UnaryKernel
                      arrow::compute::Datum const& table,
                      arrow::compute::Datum* hashes) override;
 
+#pragma GCC diagnostic push
+#ifdef __clang__
+#pragma GCC diagnostic ignored "-Winconsistent-missing-override"
+#endif // __clang__
+
+  std::shared_ptr<arrow::DataType> out_type() const final
+  {
+    return mType;
+  }
+#pragma GCC diagnostic pop
+
  private:
   HashByColumnOptions mOptions;
+  std::shared_ptr<arrow::DataType> mType;
 };
 
 struct ARROW_EXPORT GroupByOptions {
@@ -67,9 +79,15 @@ class ARROW_EXPORT SortedGroupByKernel : public arrow::compute::UnaryKernel
   arrow::Status Call(arrow::compute::FunctionContext* ctx,
                      arrow::compute::Datum const& table,
                      arrow::compute::Datum* outputRanges) override;
-  //virtual std::shared_ptr<arrow::DataType> out_type() const override {
-  //  return mType;
-  //}
+#pragma GCC diagnostic push
+#ifdef __clang__
+#pragma GCC diagnostic ignored "-Winconsistent-missing-override"
+#endif // __clang__
+  std::shared_ptr<arrow::DataType> out_type() const final
+  {
+    return mType;
+  }
+#pragma GCC diagnostic pop
 
  private:
   std::shared_ptr<arrow::DataType> mType;
@@ -82,7 +100,6 @@ arrow::Status sliceByColumn(arrow::compute::FunctionContext* context,
                             arrow::compute::Datum const& inputTable,
                             std::vector<arrow::compute::Datum>* outputSlices);
 
-} // namespace framework
-} // namespace o2
+} // namespace o2::framework
 
 #endif // O2_FRAMEWORK_KERNELS_H_

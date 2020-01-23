@@ -11,7 +11,7 @@
 /// \file Digitizer.cxx
 /// \brief Implementation of the ITS/MFT digitizer
 
-#include "ITSMFTBase/Digit.h"
+#include "DataFormatsITSMFT/Digit.h"
 #include "ITSMFTBase/SegmentationAlpide.h"
 #include "ITSMFTSimulation/Digitizer.h"
 #include "MathUtils/Cartesian3D.h"
@@ -23,8 +23,8 @@
 #include <numeric>
 #include "FairLogger.h" // for LOG
 
-using o2::itsmft::Hit;
 using o2::itsmft::Digit;
+using o2::itsmft::Hit;
 using Segmentation = o2::itsmft::SegmentationAlpide;
 
 using namespace o2::itsmft;
@@ -55,7 +55,7 @@ void Digitizer::process(const std::vector<Hit>* hits, int evID, int srcID)
             << srcID << " at time " << mEventTime + mParams.getTimeOffset() << " (TOff.= "
             << mParams.getTimeOffset() << " ROFrame= " << mNewROFrame << ")"
             << " cont.mode: " << isContinuous()
-            << " Min/Max ROFrames " << mROFrameMin << "/" << mROFrameMax << FairLogger::endl;
+            << " Min/Max ROFrames " << mROFrameMin << "/" << mROFrameMax;
 
   // is there something to flush ?
   if (mNewROFrame > mROFrameMin) {
@@ -93,7 +93,7 @@ void Digitizer::setEventTime(double t)
     }
   } else {                             // in the triggered mode we start from 0 ROFrame in every event, is this correct?
     mParams.setTimeOffset(mEventTime); // + mParams.getROFrameLength() * (gRandom->Rndm() - 0.5));
-    mROFrameMin = 0; // so we reset the frame counters
+    mROFrameMin = 0;                   // so we reset the frame counters
     mROFrameMax = 0;
   }
 
@@ -101,14 +101,14 @@ void Digitizer::setEventTime(double t)
   if (mEventTime < 0.) {
     mEventTime = 0.;
   } else if (mEventTime > UINT_MAX * mParams.getROFrameLength()) {
-    LOG(FATAL) << "ROFrame for event time " << t << " exceeds allowe maximum " << UINT_MAX << FairLogger::endl;
+    LOG(FATAL) << "ROFrame for event time " << t << " exceeds allowe maximum " << UINT_MAX;
   }
 
   // RO frame corresponding to provided time
   mNewROFrame = static_cast<UInt_t>(mEventTime * mParams.getROFrameLengthInv());
 
   if (mNewROFrame < mROFrameMin) {
-    LOG(FATAL) << "New ROFrame (time=" << t << ") precedes currently cashed " << mROFrameMin << FairLogger::endl;
+    LOG(FATAL) << "New ROFrame (time=" << t << ") precedes currently cashed " << mROFrameMin;
   }
 
   if (mParams.isContinuous() && mROFrameMax < mNewROFrame) {
@@ -127,14 +127,14 @@ void Digitizer::fillOutputContainer(UInt_t frameLast)
   getExtraDigBuffer(mROFrameMax);
 
   LOG(INFO) << "Filling " << mGeometry->getName() << " digits output for RO frames " << mROFrameMin << ":"
-            << frameLast << FairLogger::endl;
+            << frameLast;
 
   o2::itsmft::ROFRecord rcROF;
 
   // we have to write chips in RO increasing order, therefore have to loop over the frames here
   for (; mROFrameMin <= frameLast; mROFrameMin++) {
     rcROF.setROFrame(mROFrameMin);
-    rcROF.getROFEntry().setIndex(mDigits->size()); // start of current ROF in digits
+    rcROF.setFirstEntry(mDigits->size()); // start of current ROF in digits
 
     auto& extra = *(mExtraBuff.front().get());
     for (auto& chip : mChips) {
@@ -153,7 +153,7 @@ void Digitizer::fillOutputContainer(UInt_t frameLast)
         auto& preDig = iter->second; // preDigit
         if (preDig.charge >= mParams.getChargeThreshold()) {
           int digID = mDigits->size();
-          mDigits->emplace_back(chip.getChipIndex(), mROFrameMin, preDig.row, preDig.col, preDig.charge);
+          mDigits->emplace_back(chip.getChipIndex(), preDig.row, preDig.col, preDig.charge);
           mMCLabels->addElement(digID, preDig.labelRef.label);
           auto& nextRef = preDig.labelRef; // extra contributors are in extra array
           while (nextRef.next >= 0) {
@@ -165,7 +165,7 @@ void Digitizer::fillOutputContainer(UInt_t frameLast)
       buffer.erase(itBeg, iter);
     }
     // finalize ROF record
-    rcROF.setNROFEntries(mDigits->size() - rcROF.getROFEntry().getIndex()); // number of digits
+    rcROF.setNEntries(mDigits->size() - rcROF.getFirstEntry()); // number of digits
     rcROF.getBCData().setFromNS(mROFrameMin * mParams.getROFrameLength() + mParams.getTimeOffset());
     if (mROFRecords) {
       mROFRecords->push_back(rcROF);
@@ -206,6 +206,7 @@ void Digitizer::processHit(const o2::itsmft::Hit& hit, UInt_t& maxFr, int evID, 
   const auto& matrix = mGeometry->getMatrixL2G(hit.GetDetectorID());
   Vector3D<float> xyzLocS(matrix ^ (hit.GetPosStart())); // start position in sensor frame
   Vector3D<float> xyzLocE(matrix ^ (hit.GetPos()));      // end position in sensor frame
+
   Vector3D<float> step(xyzLocE);
   step -= xyzLocS;
   step *= nStepsInv; // position increment at each step
@@ -268,8 +269,11 @@ void Digitizer::processHit(const o2::itsmft::Hit& hit, UInt_t& maxFr, int evID, 
 
   const o2::itsmft::AlpideSimResponse* resp = mParams.getAlpSimResponse();
 
-  // take into account that the AlpideSimResponse has min/max thickness non-symmetric around 0
-  xyzLocS.SetY(xyzLocS.Y() + resp->getDepthShift());
+  // take into account that the AlpideSimResponse depth defintion has different min/max boundaries
+  // although the max should coincide with the surface of the epitaxial layer, which in the chip
+  // local coordinates has Y = +SensorLayerThickness/2
+
+  xyzLocS.SetY(xyzLocS.Y() + resp->getDepthMax() - Segmentation::SensorLayerThickness / 2.);
 
   // collect charge in evey pixel which might be affected by the hit
   for (int iStep = nSteps; iStep--;) {

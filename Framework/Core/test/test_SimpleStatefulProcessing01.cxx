@@ -21,13 +21,14 @@ using DataHeader = o2::header::DataHeader;
 
 // This is a simple consumer / producer workflow where both are
 // stateful, i.e. they have context which comes from their initialization.
-WorkflowSpec defineDataProcessing(ConfigContext const&) {
+WorkflowSpec defineDataProcessing(ConfigContext const&)
+{
   return WorkflowSpec{
     //
     DataProcessorSpec{
-      "producer",                                                  //
-      Inputs{},                                                    //
-      { OutputSpec{ "TES", "STATEFUL", 0, Lifetime::Timeframe } }, //
+      "producer",                                              //
+      Inputs{},                                                //
+      {OutputSpec{"TES", "STATEFUL", 0, Lifetime::Timeframe}}, //
       // The producer is stateful, we use a static for the state in this
       // particular case, but a Singleton or a captured new object would
       // work as well.
@@ -51,18 +52,21 @@ WorkflowSpec defineDataProcessing(ConfigContext const&) {
             callbacks.set(CallbackService::Id::Start, startcb);
             callbacks.set(CallbackService::Id::Stop, stopcb);
             callbacks.set(CallbackService::Id::Reset, resetcb);
-            return adaptStateless([](DataAllocator& outputs) {
-              auto& out = outputs.newChunk({ "TES", "STATEFUL", 0 }, sizeof(int));
+            return adaptStateless([](DataAllocator& outputs, ControlService& control) {
+              auto& out = outputs.newChunk({"TES", "STATEFUL", 0}, sizeof(int));
               auto outI = reinterpret_cast<int*>(out.data());
+              LOG(INFO) << "foo " << foo;
               outI[0] = foo++;
+              control.endOfStream();
+              control.readyToQuit(QuitRequest::Me);
             });
           }) //
       }      //
     },       //
     DataProcessorSpec{
-      "consumer",                                                         //
-      { InputSpec{ "test", "TES", "STATEFUL", 0, Lifetime::Timeframe } }, //
-      Outputs{},                                                          //
+      "consumer",                                                     //
+      {InputSpec{"test", "TES", "STATEFUL", 0, Lifetime::Timeframe}}, //
+      Outputs{},                                                      //
       AlgorithmSpec{
         adaptStateful(
           []() {
@@ -73,8 +77,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const&) {
               if (*in != expected++) {
                 LOG(ERROR) << "Expecting " << expected << " found " << *in;
               } else {
-                LOG(INFO) << "Everything OK for " << expected << std::endl;
-                control.readyToQuit(true);
+                LOG(INFO) << "Everything OK for " << (expected - 1);
               }
             });
           }) //

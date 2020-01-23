@@ -94,6 +94,12 @@ class ROC
   /// \return ROC type
   RocType rocType() const { return mROC < MaxROC / SIDES ? RocType::IROC : RocType::OROC; }
 
+  /// If roc is an IROC
+  bool isIROC() const { return mROC < MaxROC / SIDES; }
+
+  /// If roc is an OROC
+  bool isOROC() const { return mROC >= MaxROC / SIDES; }
+
   /// get sector
   Sector getSector() const { return Sector(mROC); }
 
@@ -101,10 +107,10 @@ class ROC
   bool looped() const { return mLoop; }
 
  private:
-  unsigned char mROC{ 0 }; ///< ROC representation 0-MaxROC-1
-  bool mLoop{ false };     ///< if increment operator resulted in looping
+  unsigned char mROC{0}; ///< ROC representation 0-MaxROC-1
+  bool mLoop{false};     ///< if increment operator resulted in looping
 };
-}
-}
+} // namespace tpc
+} // namespace o2
 
 #endif

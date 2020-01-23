@@ -15,31 +15,26 @@
 #define GPUO2INTERFACE_H
 
 // Some defines denoting that we are compiling for O2
-#ifndef GPUCA_O2_LIB
-#define GPUCA_O2_LIB
-#endif
 #ifndef HAVE_O2HEADERS
 #define HAVE_O2HEADERS
 #endif
 #ifndef GPUCA_TPC_GEOMETRY_O2
 #define GPUCA_TPC_GEOMETRY_O2
 #endif
+#ifndef GPUCA_O2_INTERFACE
+#define GPUCA_O2_INTERFACE
+#endif
 
 #include <memory>
 #include "GPUCommonDef.h"
 #include "GPUDataTypes.h"
-namespace o2
-{
-namespace tpc
+namespace o2::tpc
 {
 struct ClusterNativeAccess;
 struct ClusterNative;
-} // namespace tpc
-} // namespace o2
+} // namespace o2::tpc
 
-namespace o2
-{
-namespace gpu
+namespace o2::gpu
 {
 class GPUReconstruction;
 class GPUChainTracking;
@@ -59,7 +54,9 @@ class GPUTPCO2Interface
   void Clear(bool clearOutputs);
 
   bool GetParamContinuous() { return (mContinuous); }
-  void GetClusterErrors2(int row, float z, float sinPhi, float DzDs, float& ErrY2, float& ErrZ2) const;
+  void GetClusterErrors2(int row, float z, float sinPhi, float DzDs, short clusterState, float& ErrY2, float& ErrZ2) const;
+
+  const GPUO2InterfaceConfiguration& getConfig() const { return *mConfig; }
 
  private:
   GPUTPCO2Interface(const GPUTPCO2Interface&);
@@ -73,7 +70,6 @@ class GPUTPCO2Interface
   GPUChainTracking* mChain = nullptr;
   std::unique_ptr<GPUO2InterfaceConfiguration> mConfig;
 };
-} // namespace gpu
-} // namespace o2
+} // namespace o2::gpu
 
 #endif

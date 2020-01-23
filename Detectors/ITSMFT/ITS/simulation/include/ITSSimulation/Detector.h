@@ -38,7 +38,7 @@ namespace itsmft
 {
 class Hit;
 }
-}
+} // namespace o2
 
 namespace o2
 {
@@ -46,14 +46,14 @@ namespace its
 {
 class GeometryTGeo;
 }
-}
+} // namespace o2
 namespace o2
 {
 namespace its
 {
 class V3Layer;
 }
-}
+} // namespace o2
 
 namespace o2
 {
@@ -305,6 +305,14 @@ class Detector : public o2::base::DetImpl<Detector>
   /// \param motherVolume the TGeoVolume owing the volume structure
   void createInnerBarrelServices(TGeoVolume* motherVolume);
 
+  /// Creates the Middle Barrel Services
+  /// \param motherVolume the TGeoVolume owing the volume structure
+  void createMiddlBarrelServices(TGeoVolume* motherVolume);
+
+  /// Creates the Outer Barrel Services
+  /// \param motherVolume the TGeoVolume owing the volume structure
+  void createOuterBarrelServices(TGeoVolume* motherVolume);
+
   Detector(const Detector&);
 
   Detector& operator=(const Detector&);
@@ -316,15 +324,15 @@ class Detector : public o2::base::DetImpl<Detector>
 
   template <typename Det>
   friend class o2::base::DetImpl;
-  ClassDefOverride(Detector, 1)
+  ClassDefOverride(Detector, 1);
 };
 
 // Input and output function for standard C++ input/output.
 std::ostream& operator<<(std::ostream& os, Detector& source);
 
 std::istream& operator>>(std::istream& os, Detector& source);
-}
-}
+} // namespace its
+} // namespace o2
 
 #ifdef USESHM
 namespace o2

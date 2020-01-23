@@ -21,6 +21,7 @@
 #include <stdexcept>
 
 #include "Framework/CallbackService.h"
+#include "Framework/ConfigParamRegistry.h"
 #include "Framework/ControlService.h"
 #include "Framework/DataProcessorSpec.h"
 #include "Framework/Lifetime.h"
@@ -74,11 +75,10 @@ o2::framework::DataProcessorSpec getTrackSinkSpec(o2::header::DataDescription de
 {
   return DataProcessorSpec{
     "TrackSink",
-    Inputs{ InputSpec{ "tracks", "MCH", description, 0, Lifetime::Timeframe } },
+    Inputs{InputSpec{"tracks", "MCH", description, 0, Lifetime::Timeframe}},
     Outputs{},
-    AlgorithmSpec{ adaptFromTask<TrackSinkTask>() },
-    Options{ { "outfile", VariantType::String, "AliESDs.out.dat", { "output filename" } } }
-  };
+    AlgorithmSpec{adaptFromTask<TrackSinkTask>()},
+    Options{{"outfile", VariantType::String, "AliESDs.out.dat", {"output filename"}}}};
 }
 
 } // end namespace mch

@@ -20,6 +20,7 @@
 #include "GPUTPCTracker.h"
 #include "GPUTPCTracklet.h"
 #include "GPUTPCTrackletConstructor.h"
+#include "GPUParam.inc"
 #include "GPUCommonMath.h"
 
 using namespace GPUCA_NAMESPACE::gpu;
@@ -57,14 +58,14 @@ GPUd() void GPUTPCTrackletConstructor::StoreTracklet(int /*nBlocks*/, int /*nThr
     r.mNHits = 0;
   }
 
-  /*printf("Tracklet %d: Hits %3d NDF %3d Chi %8.4f Sign %f Cov: %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f\n", r.mItr, r.mNHits, tParam.GetNDF(), tParam.GetChi2(), tParam.GetSignCosPhi(),
+  /*GPUInfo("Tracklet %d: Hits %3d NDF %3d Chi %8.4f Sign %f Cov: %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f", r.mItr, r.mNHits, tParam.GetNDF(), tParam.GetChi2(), tParam.GetSignCosPhi(),
           tParam.Cov()[0], tParam.Cov()[1], tParam.Cov()[2], tParam.Cov()[3], tParam.Cov()[4], tParam.Cov()[5], tParam.Cov()[6], tParam.Cov()[7], tParam.Cov()[8], tParam.Cov()[9],
           tParam.Cov()[10], tParam.Cov()[11], tParam.Cov()[12], tParam.Cov()[13], tParam.Cov()[14]);*/
 
   GPUglobalref() MEM_GLOBAL(GPUTPCTracklet)& tracklet = tracker.Tracklets()[r.mItr];
 
   tracklet.SetNHits(r.mNHits);
-  CADEBUG(printf("    DONE %d hits\n", r.mNHits));
+  CADEBUG(GPUInfo("    DONE %d hits", r.mNHits));
 
   if (r.mNHits > 0) {
     tracklet.SetFirstRow(r.mFirstRow);
@@ -151,7 +152,7 @@ GPUd() void GPUTPCTrackletConstructor::UpdateTracklet(int /*nBlocks*/, int /*nTh
           tParam.SetSignCosPhi(dx);
           tParam.SetDzDs(dz * ri);
           // std::cout << "Init. errors... " << r.mItr << std::endl;
-          tracker.GetErrors2(iRow, tParam, err2Y, err2Z);
+          tracker.GetErrors2Seeding(iRow, tParam, err2Y, err2Z);
           // std::cout << "Init. errors = " << err2Y << " " << err2Z << std::endl;
           tParam.SetCov(0, err2Y);
           tParam.SetCov(2, err2Z);
@@ -166,13 +167,13 @@ GPUd() void GPUTPCTrackletConstructor::UpdateTracklet(int /*nBlocks*/, int /*nTh
         }
         CADEBUG(
           printf("%14s: FIT TRACK ROW %3d X %8.3f -", "", iRow, tParam.X()); for (int i = 0; i < 5; i++) { printf(" %8.3f", tParam.Par()[i]); } printf(" -"); for (int i = 0; i < 15; i++) { printf(" %8.3f", tParam.Cov()[i]); } printf("\n"));
-        if (!tParam.TransportToX(x, sinPhi, cosPhi, tracker.Param().ConstBz, CALINK_INVAL)) {
+        if (!tParam.TransportToX(x, sinPhi, cosPhi, tracker.Param().ConstBz, GPUCA_MAX_SIN_PHI)) {
           CA_SET_ROW_HIT(iRow, CALINK_INVAL);
           break;
         }
         CADEBUG(
           printf("%15s hits %3d: FIT PROP  ROW %3d X %8.3f -", "", r.mNHits, iRow, tParam.X()); for (int i = 0; i < 5; i++) { printf(" %8.3f", tParam.Par()[i]); } printf(" -"); for (int i = 0; i < 15; i++) { printf(" %8.3f", tParam.Cov()[i]); } printf("\n"));
-        tracker.GetErrors2(iRow, tParam.GetZ(), sinPhi, tParam.GetDzDs(), err2Y, err2Z);
+        tracker.GetErrors2Seeding(iRow, tParam.GetZ(), sinPhi, tParam.GetDzDs(), err2Y, err2Z);
 
         if (r.mNHits >= 10) {
           const float kFactor = tracker.Param().rec.HitPickUpFactor * tracker.Param().rec.HitPickUpFactor * 3.5f * 3.5f;
@@ -259,7 +260,7 @@ GPUd() void GPUTPCTrackletConstructor::UpdateTracklet(int /*nBlocks*/, int /*nTh
       calink best = CALINK_INVAL;
 
       { // search for the closest hit
-        tracker.GetErrors2(iRow, *((MEM_LG2(GPUTPCTrackParam)*)&tParam), err2Y, err2Z);
+        tracker.GetErrors2Seeding(iRow, *((MEM_LG2(GPUTPCTrackParam)*)&tParam), err2Y, err2Z);
         const float kFactor = tracker.Param().rec.HitPickUpFactor * tracker.Param().rec.HitPickUpFactor * 3.5f * 3.5f;
         float sy2 = kFactor * (tParam.GetErr2Y() + err2Y);
         float sz2 = kFactor * (tParam.GetErr2Z() + err2Z);
@@ -305,7 +306,7 @@ GPUd() void GPUTPCTrackletConstructor::UpdateTracklet(int /*nBlocks*/, int /*nTh
       float y = y0 + hh.x * stepY;
       float z = z0 + hh.y * stepZ;
 
-      CADEBUG(printf("%14s: SEA Hit %5d, Res %f %f\n", "", best, tParam.Y() - y, tParam.Z() - z));
+      CADEBUG(GPUInfo("%14s: SEA Hit %5d, Res %f %f", "", best, tParam.Y() - y, tParam.Z() - z));
 
       calink oldHit = (r.mStage == 2 && iRow >= r.mStartRow) ? CA_GET_ROW_HIT(iRow) : CALINK_INVAL;
       if (oldHit != best && !tParam.Filter(y, z, err2Y, err2Z, GPUCA_MAX_SIN_PHI_LOW, oldHit != CALINK_INVAL)) {
@@ -367,7 +368,7 @@ GPUd() void GPUTPCTrackletConstructor::DoTracklet(GPUconstantref() MEM_GLOBAL(GP
         CADEBUG(
           printf("%14s: SEA BACK  ROW %3d X %8.3f -", "", iRow, tParam.X()); for (int i = 0; i < 5; i++) { printf(" %8.3f", tParam.Par()[i]); } printf(" -"); for (int i = 0; i < 15; i++) { printf(" %8.3f", tParam.Cov()[i]); } printf("\n"));
         float err2Y, err2Z;
-        tracker.GetErrors2(r.mEndRow, tParam, err2Y, err2Z);
+        tracker.GetErrors2Seeding(r.mEndRow, tParam, err2Y, err2Z);
         if (tParam.GetCov(0) < err2Y) {
           tParam.SetCov(0, err2Y);
         }
@@ -386,7 +387,7 @@ GPUd() void GPUTPCTrackletConstructor::DoTracklet(GPUconstantref() MEM_GLOBAL(GP
 }
 
 template <>
-GPUd() void GPUTPCTrackletConstructor::Thread<0>(int nBlocks, int nThreads, int iBlock, int iThread, GPUsharedref() MEM_LOCAL(GPUTPCSharedMemory) & sMem, processorType& tracker)
+GPUd() void GPUTPCTrackletConstructor::Thread<GPUTPCTrackletConstructor::singleSlice>(int nBlocks, int nThreads, int iBlock, int iThread, GPUsharedref() MEM_LOCAL(GPUTPCSharedMemory) & sMem, processorType& tracker)
 {
   if (get_local_id(0) == 0) {
     sMem.mNTracklets = *tracker.NTracklets();
@@ -408,7 +409,7 @@ GPUd() void GPUTPCTrackletConstructor::Thread<0>(int nBlocks, int nThreads, int 
 }
 
 template <>
-GPUd() void GPUTPCTrackletConstructor::Thread<1>(int nBlocks, int nThreads, int iBlock, int iThread, GPUsharedref() MEM_LOCAL(GPUTPCSharedMemory) & sMem, processorType& tracker0)
+GPUd() void GPUTPCTrackletConstructor::Thread<GPUTPCTrackletConstructor::allSlices>(int nBlocks, int nThreads, int iBlock, int iThread, GPUsharedref() MEM_LOCAL(GPUTPCSharedMemory) & sMem, processorType& tracker0)
 {
 #ifdef GPUCA_GPUCODE
   GPUconstantref() MEM_GLOBAL(GPUTPCTracker)* pTracker = &tracker0;

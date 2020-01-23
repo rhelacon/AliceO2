@@ -50,22 +50,21 @@ void to_json(nlohmann::json& j, const TrackingParameters& par);
 void from_json(const nlohmann::json& j, TrackingParameters& par);
 void to_json(nlohmann::json& j, const MemoryParameters& par);
 void from_json(const nlohmann::json& j, MemoryParameters& par);
-void to_json(nlohmann::json& j, const IndexTableParameters& par);
-void from_json(const nlohmann::json& j, IndexTableParameters& par);
 
 namespace ioutils
 {
 void loadConfigurations(const std::string&);
 std::vector<ROframe> loadEventData(const std::string&);
-void loadEventData(ROframe& events, const std::vector<itsmft::Cluster>* mClustersArray,
-                   const dataformats::MCTruthContainer<MCCompLabel>* mClsLabels = nullptr);
-int loadROFrameData(const o2::itsmft::ROFRecord& rof, ROframe& events, const std::vector<itsmft::Cluster>* mClustersArray,
+void loadEventData(ROframe& events, gsl::span<const itsmft::Cluster> clusters,
+                   const dataformats::MCTruthContainer<MCCompLabel>* clsLabels = nullptr);
+int loadROFrameData(const o2::itsmft::ROFRecord& rof, ROframe& events, gsl::span<const itsmft::Cluster> clusters,
                     const dataformats::MCTruthContainer<MCCompLabel>* mClsLabels = nullptr);
+void generateSimpleData(ROframe& event, const int phiDivs, const int zDivs);
 
 std::vector<std::unordered_map<int, Label>> loadLabels(const int, const std::string&);
 void writeRoadsReport(std::ofstream&, std::ofstream&, std::ofstream&, const std::vector<std::vector<Road>>&,
                       const std::unordered_map<int, Label>&);
-} // namespace IOUtils
+} // namespace ioutils
 } // namespace its
 } // namespace o2
 

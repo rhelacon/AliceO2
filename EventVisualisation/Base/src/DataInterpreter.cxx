@@ -13,27 +13,16 @@
 /// \author  Jeremi Niedziela
 
 #include "EventVisualisationBase/DataInterpreter.h"
-
-#include <iostream>
+#include "FairLogger.h"
 
 using namespace std;
 
-namespace o2  {
-namespace event_visualisation {
-  
-DataInterpreter::DataInterpreter() = default;
+namespace o2
+{
+namespace event_visualisation
+{
 
-DataInterpreter::~DataInterpreter()
-{
-  cout<<"Virtual destructor of the DataInterpreter -- should be implemented in deriving class!!"<<endl;
-}
-  
-TEveElement* DataInterpreter::interpretDataForType(EDataType type)
-{
-  cout<<"Virtual method interpretDataForType(EventManager::EDataType type) -- should be implemented in deriving class!!"<<endl;
-  
-  return nullptr;
-}
-  
-}
-}
+DataInterpreter* DataInterpreter::instance[EVisualisationGroup::NvisualisationGroups];
+
+} // namespace event_visualisation
+} // namespace o2

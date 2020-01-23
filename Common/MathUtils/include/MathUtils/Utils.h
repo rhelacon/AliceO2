@@ -74,6 +74,32 @@ inline void sincosf(float ang, float& s, float& c)
   c = o2::gpu::CAMath::Cos(ang);
 }
 
+inline void rotateZ(float xL, float yL, float& xG, float& yG, float snAlp, float csAlp)
+{
+  // 2D rotation of the point by angle alpha (local to global)
+  xG = xL * csAlp - yL * snAlp;
+  yG = xL * snAlp + yL * csAlp;
+}
+
+inline void rotateZInv(float xG, float yG, float& xL, float& yL, float snAlp, float csAlp)
+{
+  // inverse 2D rotation of the point by angle alpha (global to local)
+  rotateZ(xG, yG, xL, yL, -snAlp, csAlp);
+}
+
+inline void rotateZ(double xL, double yL, double& xG, double& yG, double snAlp, double csAlp)
+{
+  // 2D rotation of the point by angle alpha (local to global)
+  xG = xL * csAlp - yL * snAlp;
+  yG = xL * snAlp + yL * csAlp;
+}
+
+inline void rotateZInv(double xG, double yG, double& xL, double& yL, double snAlp, double csAlp)
+{
+  // inverse 2D rotation of the point by angle alpha (global to local)
+  rotateZ(xG, yG, xL, yL, -snAlp, csAlp);
+}
+
 #ifndef __OPENCL__
 inline void RotateZ(std::array<float, 3>& xy, float alpha)
 {
@@ -110,6 +136,15 @@ inline float Angle2Alpha(float phi)
 }
 
 //-------------------------------------->>>
+// fast bit count
+inline int numberOfBitsSet(uint32_t x)
+{
+  // count number of non-0 bits in 32bit word
+  x = x - ((x >> 1) & 0x55555555);
+  x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
+  return (((x + (x >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
+}
+
 // recursive creation of bitmask
 template <typename T>
 constexpr int bit2Mask(T v)
@@ -123,8 +158,50 @@ constexpr int bit2Mask(T first, Args... args)
   return (0x1 << first) | bit2Mask(args...);
 }
 //--------------------------------------<<<
+
+GPUhdi() float FastATan2(float y, float x)
+{
+  // Fast atan2(y,x) for any angle [-Pi,Pi]
+  // Average inaccuracy: 0.00048
+  // Max inaccuracy: 0.00084
+  // Speed: 6.2 times faster than atan2f()
+
+  constexpr float kPi = 3.1415926535897f;
+
+  auto atan = [](float a) -> float {
+    // returns the arctan for the angular range [-Pi/4, Pi/4]
+    // the polynomial coefficients are taken from:
+    // https://stackoverflow.com/questions/42537957/fast-accurate-atan-arctan-approximation-algorithm
+    constexpr float kA = 0.0776509570923569f;
+    constexpr float kB = -0.287434475393028f;
+    constexpr float kC = (kPi / 4 - kA - kB);
+    float a2 = a * a;
+    return ((kA * a2 + kB) * a2 + kC) * a;
+  };
+
+  auto atan2P = [atan](float yy, float xx) -> float {
+    // fast atan2(yy,xx) for the angular range [0,+Pi]
+    constexpr float kPi025 = 1 * kPi / 4;
+    constexpr float kPi075 = 3 * kPi / 4;
+    float x1 = xx + yy; //  point p1 (x1,y1) = (xx,yy) - Pi/4
+    float y1 = yy - xx;
+    float phi0, tan;
+    if (xx < 0) { // p1 is in the range [Pi/4, 3*Pi/4]
+      phi0 = kPi075;
+      tan = -x1 / y1;
+    } else { // p1 is in the range [-Pi/4, Pi/4]
+      phi0 = kPi025;
+      tan = y1 / x1;
+    }
+    return phi0 + atan(tan);
+  };
+
+  // fast atan2(y,x) for any angle [-Pi,Pi]
+  return o2::gpu::GPUCommonMath::Copysign(atan2P(o2::gpu::CAMath::Abs(y), x), y);
 }
+
+} // namespace utils
 //}
-}
+} // namespace o2
 
 #endif

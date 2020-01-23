@@ -1,11 +1,15 @@
-/*
- #include "Riostream.h"
- #include "TFile.h"
- #include "TMath.h"
- #include "TCanvas.h"
- #include "TH1F.h"
- #include "AliHLTTPCGeometry.h"
- */
+#if !defined(__CLING__) || defined(__ROOTCLING__)
+#include "Riostream.h"
+#include "TFile.h"
+#include "TMath.h"
+#include "TCanvas.h"
+#include "TH1F.h"
+#include "GPUO2Interface.h"
+#include "GPUTPCGMPhysicalTrackModel.h"
+#endif
+
+using namespace o2::gpu;
+
 const double kTwoPi = TMath::TwoPi(); // 2.*kPi;
 const double kSliceDAngle = kTwoPi / 18.;
 const double kSliceAngleOffset = kSliceDAngle / 2;
@@ -56,7 +60,7 @@ int checkPropagation()
 {
   // gSystem->Load("libAliHLTTPC.so");
 
-  TH1F* hDiff[3] = { 0, 0, 0 };
+  TH1F* hDiff[3] = {0, 0, 0};
 
   for (int i = 0; i < 3; i++) {
     char* s = i == 0 ? "X" : (i == 1 ? "Y" : "Z");
@@ -107,7 +111,7 @@ int checkPropagation()
     AliExternalTrackParam t0;
     {
       double alpha = GetSliceAngle(iSlice);
-      double p[5] = { t.GetY(), t.GetZ(), t.GetSinPhi(), t.GetDzDs(), t.GetQPt() };
+      double p[5] = {t.GetY(), t.GetZ(), t.GetSinPhi(), t.GetDzDs(), t.GetQPt()};
       double cv[15];
       for (int i = 0; i < 15; i++) {
         cv[i] = 0;
@@ -138,7 +142,7 @@ int checkPropagation()
         double cs = TMath::Cos(alpha);
         double sn = TMath::Sin(alpha);
         const double kCLight = 0.000299792458;
-        double b[3] = { (B[0] * cs - B[1] * sn) / kCLight, (B[0] * sn + B[1] * cs) / kCLight, B[2] / kCLight };
+        double b[3] = {(B[0] * cs - B[1] * sn) / kCLight, (B[0] * sn + B[1] * cs) / kCLight, B[2] / kCLight};
         err = err & !t0.PropagateToBxByBz(xRow, b);
         // err = err & !t0.PropagateTo( xRow, b[2] );
         if (err) {

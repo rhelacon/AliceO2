@@ -14,16 +14,16 @@
 #pragma link off all classes;
 #pragma link off all functions;
 
-#pragma link C++ class o2::itsmft::Hit+;
-#pragma link C++ class std::vector<o2::itsmft::Hit>+;
+#pragma link C++ class o2::itsmft::Hit + ;
+#pragma link C++ class std::vector < o2::itsmft::Hit> + ;
 #pragma link C++ class o2::itsmft::ChipDigitsContainer + ;
 #pragma link C++ class o2::itsmft::PreDigit + ;
 #pragma link C++ class o2::itsmft::PreDigitLabelRef + ;
-#pragma link C++ class o2::itsmft::AlpideChip+;
-#pragma link C++ class o2::itsmft::AlpideSimResponse+;
-#pragma link C++ class o2::itsmft::AlpideRespSimMat+;
-#pragma link C++ class o2::itsmft::DigiParams+;
-#pragma link C++ class o2::itsmft::Digitizer+;
+#pragma link C++ class o2::itsmft::AlpideChip + ;
+#pragma link C++ class o2::itsmft::AlpideSimResponse + ;
+#pragma link C++ class o2::itsmft::AlpideRespSimMat + ;
+#pragma link C++ class o2::itsmft::DigiParams + ;
+#pragma link C++ class o2::itsmft::Digitizer + ;
 #pragma link C++ class o2::itsmft::AlpideSignalTrapezoid + ;
 
 #pragma link C++ class o2::itsmft::ClusterShape + ;
@@ -32,5 +32,8 @@
 #pragma link C++ class o2::itsmft::DPLDigitizerParam < o2::detectors::DetID::MFT> + ;
 #pragma link C++ class o2::conf::ConfigurableParamHelper < o2::itsmft::DPLDigitizerParam < o2::detectors::DetID::ITS>> + ;
 #pragma link C++ class o2::conf::ConfigurableParamHelper < o2::itsmft::DPLDigitizerParam < o2::detectors::DetID::MFT>> + ;
+
+#pragma link C++ class o2::itsmft::MC2RawEncoder < o2::itsmft::ChipMappingITS> + ;
+#pragma link C++ class o2::itsmft::MC2RawEncoder < o2::itsmft::ChipMappingMFT> + ;
 
 #endif

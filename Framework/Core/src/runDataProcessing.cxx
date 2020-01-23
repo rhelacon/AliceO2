@@ -15,25 +15,32 @@
 #include "Framework/ConfigContext.h"
 #include "Framework/DataProcessingDevice.h"
 #include "Framework/DataProcessorSpec.h"
+#if __has_include(<DebugGUI/DebugGUI.h>)
+#include "DebugGUI/DebugGUI.h"
+#else
+#pragma message "Old DebugGUI.h included. Update alidist."
 #include "Framework/DebugGUI.h"
+#endif
 #include "Framework/DeviceControl.h"
 #include "Framework/DeviceExecution.h"
 #include "Framework/DeviceInfo.h"
 #include "Framework/DeviceMetricsInfo.h"
 #include "Framework/DeviceSpec.h"
+#include "Framework/DeviceState.h"
 #include "Framework/FrameworkGUIDebugger.h"
-#include "Framework/FreePortFinder.h"
 #include "Framework/LocalRootFileService.h"
 #include "Framework/LogParsingHelpers.h"
 #include "Framework/Logger.h"
 #include "Framework/ParallelContext.h"
 #include "Framework/RawDeviceService.h"
 #include "Framework/SimpleRawDeviceService.h"
+#define O2_SIGNPOST_DEFINE_CONTEXT
 #include "Framework/Signpost.h"
 #include "Framework/TextControlService.h"
 #include "Framework/CallbackService.h"
 #include "Framework/WorkflowSpec.h"
 
+#include "ComputingResourceHelpers.h"
 #include "DataProcessingStatus.h"
 #include "DDSConfigHelpers.h"
 #include "O2ControlHelpers.h"
@@ -71,6 +78,7 @@
 #include <chrono>
 #include <utility>
 
+#include <fcntl.h>
 #include <netinet/ip.h>
 #include <sys/resource.h>
 #include <sys/select.h>
@@ -249,13 +257,45 @@ int createPipes(int maxFd, int* pipes)
 // we simply note down the fact a signal arrived.
 // All the processing is done by the state machine.
 volatile sig_atomic_t graceful_exit = false;
+volatile sig_atomic_t forceful_exit = false;
 volatile sig_atomic_t sigchld_requested = false;
 
-static void handle_sigint(int) { graceful_exit = true; }
+static void handle_sigint(int)
+{
+  if (graceful_exit == false) {
+    graceful_exit = true;
+  } else {
+    forceful_exit = true;
+  }
+}
 
 static void handle_sigchld(int) { sigchld_requested = true; }
 
+void spawnRemoteDevice(std::string const& forwardedStdin,
+                       DeviceSpec const& spec,
+                       std::map<int, size_t>& socket2DeviceInfo,
+                       DeviceControl& control,
+                       DeviceExecution& execution,
+                       std::vector<DeviceInfo>& deviceInfos,
+                       int& maxFd, fd_set& childFdset)
+{
+  LOG(INFO) << "Starting " << spec.id << " as remote device";
+  DeviceInfo info;
+  // FIXME: we should make sure we do not sent a kill to pid 0.
+  info.pid = 0;
+  info.active = true;
+  info.readyToQuit = false;
+  info.historySize = 1000;
+  info.historyPos = 0;
+  info.maxLogLevel = LogParsingHelpers::LogLevel::Debug;
+  info.dataRelayerViewIndex = Metric2DViewIndex{"data_relayer", 0, 0, {}};
+  info.variablesViewIndex = Metric2DViewIndex{"matcher_variables", 0, 0, {}};
+  info.queriesViewIndex = Metric2DViewIndex{"data_queries", 0, 0, {}};
 
+  deviceInfos.emplace_back(info);
+  // Let's add also metrics information for the given device
+  gDeviceMetricsInfos.emplace_back(DeviceMetricsInfo{});
+}
 /// This will start a new device by forking and executing a
 /// new child
 void spawnDevice(std::string const& forwardedStdin,
@@ -283,7 +323,6 @@ void spawnDevice(std::string const& forwardedStdin,
   if (id == 0) {
     // We allow being debugged and do not terminate on SIGTRAP
     signal(SIGTRAP, SIG_IGN);
-
 
     // This is the child.
     // For stdout / stderr, we close the read part of the pipe, the
@@ -314,7 +353,7 @@ void spawnDevice(std::string const& forwardedStdin,
     exit(1);
   }
 
-  LOG(INFO) << "Starting " << spec.id << " on pid " << id << "\n";
+  LOG(INFO) << "Starting " << spec.id << " on pid " << id;
   DeviceInfo info;
   info.pid = id;
   info.active = true;
@@ -322,9 +361,9 @@ void spawnDevice(std::string const& forwardedStdin,
   info.historySize = 1000;
   info.historyPos = 0;
   info.maxLogLevel = LogParsingHelpers::LogLevel::Debug;
-  info.dataRelayerViewIndex = Metric2DViewIndex{ "data_relayer", 0, 0, {} };
-  info.variablesViewIndex = Metric2DViewIndex{ "matcher_variables", 0, 0, {} };
-  info.queriesViewIndex = Metric2DViewIndex{ "data_queries", 0, 0, {} };
+  info.dataRelayerViewIndex = Metric2DViewIndex{"data_relayer", 0, 0, {}};
+  info.variablesViewIndex = Metric2DViewIndex{"matcher_variables", 0, 0, {}};
+  info.queriesViewIndex = Metric2DViewIndex{"data_queries", 0, 0, {}};
 
   socket2DeviceInfo.insert(std::make_pair(childstdout[0], deviceInfos.size()));
   socket2DeviceInfo.insert(std::make_pair(childstderr[0], deviceInfos.size()));
@@ -341,6 +380,16 @@ void spawnDevice(std::string const& forwardedStdin,
   }
   close(childstdin[1]); // Not allowing further communication...
 
+  // Setting them to non-blocking to avoid haing the driver hang when
+  // reading from child.
+  int resultCode = fcntl(childstdout[0], F_SETFL, O_NONBLOCK);
+  if (resultCode == -1) {
+    LOGP(ERROR, "Error while setting the socket to non-blocking: {}", strerror(errno));
+  }
+  resultCode = fcntl(childstderr[0], F_SETFL, O_NONBLOCK);
+  if (resultCode == -1) {
+    LOGP(ERROR, "Error while setting the socket to non-blocking: {}", strerror(errno));
+  }
   FD_SET(childstdout[0], &childFdset);
   FD_SET(childstderr[0], &childFdset);
 }
@@ -406,6 +455,8 @@ void processChildrenOutput(DriverInfo& driverInfo, DeviceInfos& infos, DeviceSpe
     DeviceInfo& info = infos[di];
     DeviceControl& control = controls[di];
     DeviceMetricsInfo& metrics = metricsInfos[di];
+    assert(specs.size() == infos.size());
+    DeviceSpec const& spec = specs[di];
 
     if (info.unprinted.empty()) {
       continue;
@@ -419,17 +470,26 @@ void processChildrenOutput(DriverInfo& driverInfo, DeviceInfos& infos, DeviceSpe
     info.historyLevel.resize(info.historySize);
 
     auto updateMetricsViews =
-      Metric2DViewIndex::getUpdater({ &info.dataRelayerViewIndex,
-                                      &info.variablesViewIndex,
-                                      &info.queriesViewIndex });
+      Metric2DViewIndex::getUpdater({&info.dataRelayerViewIndex,
+                                     &info.variablesViewIndex,
+                                     &info.queriesViewIndex});
 
     auto newMetricCallback = [&updateMetricsViews, &driverInfo, &metricsInfos, &hasNewMetric](std::string const& name, MetricInfo const& metric, int value, size_t metricIndex) {
       updateMetricsViews(name, metric, value, metricIndex);
       hasNewMetric = true;
     };
 
+    auto doToMatchingPid = [&infos](int pid, auto lambda) {
+      for (auto& deviceInfo : infos) {
+        if (deviceInfo.pid == pid) {
+          lambda(deviceInfo);
+          break;
+        }
+      }
+    };
+
     while ((pos = s.find(delimiter)) != std::string::npos) {
-      std::string token{ s.substr(0, pos) };
+      std::string token{s.substr(0, pos)};
       auto logLevel = LogParsingHelpers::parseTokenLevel(token);
 
       // Check if the token is a metric from SimpleMetricsService
@@ -443,22 +503,23 @@ void processChildrenOutput(DriverInfo& driverInfo, DeviceInfos& infos, DeviceSpe
         DeviceMetricsHelper::processMetric(metricMatch, metrics, newMetricCallback);
       } else if (logLevel == LogParsingHelpers::LogLevel::Info && parseControl(token, match)) {
         auto command = match[1];
-        auto validFor = match[2];
-        LOG(DEBUG) << "Found control command " << command << " from pid " << info.pid << " valid for " << validFor;
-        if (command == "QUIT") {
-          if (validFor == "ALL") {
-            for (auto& deviceInfo : infos) {
-              deviceInfo.readyToQuit = true;
-            }
+        auto arg = match[2];
+        LOGP(debug, "Found control command {} from pid {} with argument {}.", command, info.pid, arg);
+        if (command == "QUIT" && arg == "ALL") {
+          for (auto& deviceInfo : infos) {
+            deviceInfo.readyToQuit = true;
           }
-          // in case of "ME", fetch the pid and modify only matching deviceInfos
-          if (validFor == "ME") {
-            for (auto& deviceInfo : infos) {
-              if (deviceInfo.pid == info.pid) {
-                deviceInfo.readyToQuit = true;
-              }
-            }
-          }
+        } else if (command == "QUIT" && arg == "ME") {
+          doToMatchingPid(info.pid, [](DeviceInfo& info) { info.readyToQuit = true; });
+        } else if (command == "NOTIFY_STREAMING_STATE" && arg == "IDLE") {
+          // FIXME: this should really be a policy...
+          doToMatchingPid(info.pid, [](DeviceInfo& info) { info.readyToQuit = true; info.streamingState = StreamingState::Idle; });
+        } else if (command == "NOTIFY_STREAMING_STATE" && arg == "STREAMING") {
+          // FIXME: this should really be a policy...
+          doToMatchingPid(info.pid, [](DeviceInfo& info) { info.streamingState = StreamingState::Streaming; });
+        } else if (command == "NOTIFY_STREAMING_STATE" && arg == "EOS") {
+          // FIXME: this should really be a policy...
+          doToMatchingPid(info.pid, [](DeviceInfo& info) { info.streamingState = StreamingState::EndOfStreaming; });
         }
       } else if (!control.quiet && (token.find(control.logFilter) != std::string::npos) &&
                  logLevel >= control.logLevel) {
@@ -467,7 +528,7 @@ void processChildrenOutput(DriverInfo& driverInfo, DeviceInfos& infos, DeviceSpe
         info.history[info.historyPos] = token;
         info.historyLevel[info.historyPos] = logLevel;
         info.historyPos = (info.historyPos + 1) % info.history.size();
-        std::cout << "[" << info.pid << "]: " << token << std::endl;
+        std::cout << "[" << info.pid << ":" << spec.name << "]: " << token << std::endl;
       }
       // We keep track of the maximum log error a
       // device has seen.
@@ -558,8 +619,7 @@ auto createInfoLoggerSinkHelper(std::unique_ptr<InfoLogger>& logger, std::unique
       level,
       InfoLogger::undefinedMessageOption.errorCode,
       metadata.file.c_str(),
-      atoi(metadata.line.c_str())
-    };
+      atoi(metadata.line.c_str())};
 
     if (logger) {
       logger->log(opt, *ctx, "DPL: %s", content.c_str());
@@ -573,7 +633,7 @@ int doChild(int argc, char** argv, const o2::framework::DeviceSpec& spec)
   LOG(INFO) << "Spawing new device " << spec.id << " in process with pid " << getpid();
 
   try {
-    fair::mq::DeviceRunner runner{ argc, argv };
+    fair::mq::DeviceRunner runner{argc, argv};
 
     // Populate options from the command line. Notice that only the options
     // declared in the workflow definition are allowed.
@@ -601,6 +661,7 @@ int doChild(int argc, char** argv, const o2::framework::DeviceSpec& spec)
     std::unique_ptr<InfoLogger> infoLoggerService;
     std::unique_ptr<InfoLoggerContext> infoLoggerContext;
     std::unique_ptr<TimesliceIndex> timesliceIndex;
+    std::unique_ptr<DeviceState> deviceState;
 
     auto afterConfigParsingCallback = [&localRootFileService,
                                        &textControlService,
@@ -612,11 +673,13 @@ int doChild(int argc, char** argv, const o2::framework::DeviceSpec& spec)
                                        &spec,
                                        &serviceRegistry,
                                        &infoLoggerContext,
+                                       &deviceState,
                                        &timesliceIndex](fair::mq::DeviceRunner& r) {
       localRootFileService = std::make_unique<LocalRootFileService>();
-      textControlService = std::make_unique<TextControlService>();
+      deviceState = std::make_unique<DeviceState>();
+      textControlService = std::make_unique<TextControlService>(serviceRegistry, *deviceState.get());
       parallelContext = std::make_unique<ParallelContext>(spec.rank, spec.nSlots);
-      simpleRawDeviceService = std::make_unique<SimpleRawDeviceService>(nullptr);
+      simpleRawDeviceService = std::make_unique<SimpleRawDeviceService>(nullptr, spec);
       callbackService = std::make_unique<CallbackService>();
       monitoringService = MonitoringFactory::Get(r.fConfig.GetStringValue("monitoring-backend"));
       auto infoLoggerMode = r.fConfig.GetStringValue("infologger-mode");
@@ -645,7 +708,7 @@ int doChild(int argc, char** argv, const o2::framework::DeviceSpec& spec)
       // The decltype stuff is to be able to compile with both new and old
       // FairMQ API (one which uses a shared_ptr, the other one a unique_ptr.
       decltype(r.fDevice) device;
-      device = std::move(make_matching<decltype(device), DataProcessingDevice>(spec, serviceRegistry));
+      device = std::move(make_matching<decltype(device), DataProcessingDevice>(spec, serviceRegistry, *deviceState.get()));
 
       serviceRegistry.get<RawDeviceService>().setDevice(device.get());
       r.fDevice = std::move(device);
@@ -693,7 +756,16 @@ int runStateMachine(DataProcessorSpecs const& workflow,
   DeviceControls controls;
   DeviceExecutions deviceExecutions;
   DataProcessorInfos dataProcessorInfos = previousDataProcessorInfos;
-  auto resourceManager = std::make_unique<SimpleResourceManager>(driverInfo.startPort, driverInfo.portRange);
+
+  std::vector<ComputingResource> resources;
+
+  if (driverInfo.resources != "") {
+    resources = ComputingResourceHelpers::parseResources(driverInfo.resources);
+  } else {
+    resources = {ComputingResourceHelpers::getLocalhostResource()};
+  }
+
+  auto resourceManager = std::make_unique<SimpleResourceManager>(resources);
 
   void* window = nullptr;
   decltype(gui::getGUIDebugger(infos, deviceSpecs, dataProcessorInfos, metricsInfos, driverInfo, controls, driverControl)) debugGUICallback;
@@ -702,7 +774,7 @@ int runStateMachine(DataProcessorSpecs const& workflow,
   if (driverInfo.batch == false && frameworkId.empty()) {
     window = initGUI("O2 Framework debug GUI");
   }
-  if (driverInfo.batch == false && window == nullptr) {
+  if (driverInfo.batch == false && window == nullptr && frameworkId.empty()) {
     LOG(WARN) << "Could not create GUI. Switching to batch mode. Do you have GLFW on your system?";
     driverInfo.batch = true;
   }
@@ -776,6 +848,9 @@ int runStateMachine(DataProcessorSpecs const& workflow,
         driverInfo.states.push_back(DriverState::GUI);
         //        driverInfo.states.push_back(DriverState::REDEPLOY_GUI);
         LOG(INFO) << "O2 Data Processing Layer initialised. We brake for nobody.";
+#ifdef NDEBUG
+        LOGF(info, "Optimised build. O2DEBUG / LOG(DEBUG) / LOGF(DEBUG) / assert statement will not be shown.");
+#endif
         break;
       case DriverState::IMPORT_CURRENT_WORKFLOW:
         // This state is needed to fill the metadata structure
@@ -793,17 +868,18 @@ int runStateMachine(DataProcessorSpecs const& workflow,
               device.id,
               workflowInfo.executable,
               workflowInfo.args,
-              workflowInfo.options });
+              workflowInfo.options});
         }
         break;
       case DriverState::MATERIALISE_WORKFLOW:
         try {
-          std::vector<ComputingResource> resources = resourceManager->getAvailableResources();
           DeviceSpecHelpers::dataProcessorSpecs2DeviceSpecs(workflow,
                                                             driverInfo.channelPolicies,
                                                             driverInfo.completionPolicies,
+                                                            driverInfo.dispatchPolicies,
                                                             deviceSpecs,
-                                                            resources);
+                                                            *resourceManager,
+                                                            driverInfo.uniqueWorkflowId);
           // This should expand nodes so that we can build a consistent DAG.
         } catch (std::runtime_error& e) {
           std::cerr << "Invalid workflow: " << e.what() << std::endl;
@@ -862,12 +938,19 @@ int runStateMachine(DataProcessorSpecs const& workflow,
                                             dataProcessorInfos,
                                             deviceSpecs,
                                             deviceExecutions, controls);
+
         std::ostringstream forwardedStdin;
         WorkflowSerializationHelpers::dump(forwardedStdin, workflow, dataProcessorInfos);
         for (size_t di = 0; di < deviceSpecs.size(); ++di) {
-          spawnDevice(forwardedStdin.str(),
-                      deviceSpecs[di], driverInfo.socket2DeviceInfo, controls[di], deviceExecutions[di], infos,
-                      driverInfo.maxFd, driverInfo.childFdset);
+          if (deviceSpecs[di].resource.hostname != driverInfo.deployHostname) {
+            spawnRemoteDevice(forwardedStdin.str(),
+                              deviceSpecs[di], driverInfo.socket2DeviceInfo, controls[di], deviceExecutions[di], infos,
+                              driverInfo.maxFd, driverInfo.childFdset);
+          } else {
+            spawnDevice(forwardedStdin.str(),
+                        deviceSpecs[di], driverInfo.socket2DeviceInfo, controls[di], deviceExecutions[di], infos,
+                        driverInfo.maxFd, driverInfo.childFdset);
+          }
         }
         driverInfo.maxFd += 1;
         assert(infos.empty() == false);
@@ -931,8 +1014,10 @@ int runStateMachine(DataProcessorSpecs const& workflow,
         }
         break;
       case DriverState::QUIT_REQUESTED:
-        LOG(INFO) << "QUIT_REQUESTED" << std::endl;
+        LOG(INFO) << "QUIT_REQUESTED";
         guiQuitRequested = true;
+        // We send SIGCONT to make sure stopped children are resumed
+        killChildren(infos, SIGCONT);
         killChildren(infos, SIGTERM);
         driverInfo.states.push_back(DriverState::HANDLE_CHILDREN);
         driverInfo.states.push_back(DriverState::GUI);
@@ -940,6 +1025,11 @@ int runStateMachine(DataProcessorSpecs const& workflow,
       case DriverState::HANDLE_CHILDREN:
         // I allow queueing of more sigchld only when
         // I process the previous call
+        if (forceful_exit == true) {
+          LOG(INFO) << "Forceful exit requested.";
+          killChildren(infos, SIGCONT);
+          killChildren(infos, SIGKILL);
+        }
         sigchld_requested = false;
         driverInfo.sigchldRequested = false;
         processChildrenOutput(driverInfo, infos, deviceSpecs, controls, metricsInfos);
@@ -1039,12 +1129,12 @@ void initialiseDriverControl(bpo::variables_map const& varmap,
 
   if (varmap["graphviz"].as<bool>()) {
     // Dump a graphviz representation of what I will do.
-    control.callbacks = { [](WorkflowSpec const& workflow,
-                             DeviceSpecs const& specs,
-                             DeviceExecutions const&,
-                             DataProcessorInfos&) {
+    control.callbacks = {[](WorkflowSpec const& workflow,
+                            DeviceSpecs const& specs,
+                            DeviceExecutions const&,
+                            DataProcessorInfos&) {
       GraphvizHelpers::dumpDeviceSpec2Graphviz(std::cout, specs);
-    } };
+    }};
     control.forcedTransitions = {
       DriverState::EXIT,                    //
       DriverState::PERFORM_CALLBACKS,       //
@@ -1056,12 +1146,12 @@ void initialiseDriverControl(bpo::variables_map const& varmap,
     // Notice that compared to DDS we need to schedule things,
     // because DDS needs to be able to have actual Executions in
     // order to provide a correct configuration.
-    control.callbacks = { [](WorkflowSpec const& workflow,
-                             DeviceSpecs const& specs,
-                             DeviceExecutions const& executions,
-                             DataProcessorInfos&) {
+    control.callbacks = {[](WorkflowSpec const& workflow,
+                            DeviceSpecs const& specs,
+                            DeviceExecutions const& executions,
+                            DataProcessorInfos&) {
       dumpDeviceSpec2DDS(std::cout, specs, executions);
-    } };
+    }};
     control.forcedTransitions = {
       DriverState::EXIT,                    //
       DriverState::PERFORM_CALLBACKS,       //
@@ -1070,12 +1160,12 @@ void initialiseDriverControl(bpo::variables_map const& varmap,
       DriverState::MATERIALISE_WORKFLOW     //
     };
   } else if (varmap["o2-control"].as<bool>()) {
-    control.callbacks = { [](WorkflowSpec const& workflow,
-                             DeviceSpecs const& specs,
-                             DeviceExecutions const& executions,
-                             DataProcessorInfos&) {
+    control.callbacks = {[](WorkflowSpec const& workflow,
+                            DeviceSpecs const& specs,
+                            DeviceExecutions const& executions,
+                            DataProcessorInfos&) {
       dumpDeviceSpec2O2Control(std::cout, specs, executions);
-    } };
+    }};
     control.forcedTransitions = {
       DriverState::EXIT,                    //
       DriverState::PERFORM_CALLBACKS,       //
@@ -1094,14 +1184,14 @@ void initialiseDriverControl(bpo::variables_map const& varmap,
       DriverState::MATERIALISE_WORKFLOW     //
     };
   } else if ((varmap["dump-workflow"].as<bool>() == true) || (varmap["run"].as<bool>() == false && varmap.count("id") == 0 && isOutputToPipe())) {
-    control.callbacks = { [](WorkflowSpec const& workflow,
-                             DeviceSpecs const devices,
-                             DeviceExecutions const&,
-                             DataProcessorInfos& dataProcessorInfos) {
+    control.callbacks = {[](WorkflowSpec const& workflow,
+                            DeviceSpecs const devices,
+                            DeviceExecutions const&,
+                            DataProcessorInfos& dataProcessorInfos) {
       WorkflowSerializationHelpers::dump(std::cout, workflow, dataProcessorInfos);
       // FIXME: this is to avoid trailing garbage..
       exit(0);
-    } };
+    }};
     control.forcedTransitions = {
       DriverState::EXIT,                    //
       DriverState::PERFORM_CALLBACKS,       //
@@ -1130,9 +1220,11 @@ void initialiseDriverControl(bpo::variables_map const& varmap,
 int doMain(int argc, char** argv, o2::framework::WorkflowSpec const& workflow,
            std::vector<ChannelConfigurationPolicy> const& channelPolicies,
            std::vector<CompletionPolicy> const& completionPolicies,
+           std::vector<DispatchPolicy> const& dispatchPolicies,
            std::vector<ConfigParamSpec> const& currentWorkflowOptions,
            o2::framework::ConfigContext& configContext)
 {
+  O2_SIGNPOST_INIT();
   std::vector<std::string> currentArgs;
   for (size_t ai = 1; ai < argc; ++ai) {
     currentArgs.push_back(argv[ai]);
@@ -1141,8 +1233,7 @@ int doMain(int argc, char** argv, o2::framework::WorkflowSpec const& workflow,
   WorkflowInfo currentWorkflow{
     argv[0],
     currentArgs,
-    currentWorkflowOptions
-  };
+    currentWorkflowOptions};
 
   enum TerminationPolicy policy;
   bpo::options_description executorOptions("Executor options");
@@ -1153,6 +1244,8 @@ int doMain(int argc, char** argv, o2::framework::WorkflowSpec const& workflow,
     ("stop,s", bpo::value<bool>()->zero_tokens()->default_value(false), "stop before device start")         //
     ("single-step", bpo::value<bool>()->zero_tokens()->default_value(false), "start in single step mode")   //
     ("batch,b", bpo::value<bool>()->zero_tokens()->default_value(false), "batch processing mode")           //
+    ("hostname", bpo::value<std::string>()->default_value("localhost"), "hostname to deploy")               //
+    ("resources", bpo::value<std::string>()->default_value(""), "resources allocated for the workflow")     //
     ("start-port,p", bpo::value<unsigned short>()->default_value(22000), "start port to allocate")          //
     ("port-range,pr", bpo::value<unsigned short>()->default_value(1000), "ports in range")                  //
     ("completion-policy,c", bpo::value<TerminationPolicy>(&policy)->default_value(TerminationPolicy::QUIT), //
@@ -1167,8 +1260,7 @@ int doMain(int argc, char** argv, o2::framework::WorkflowSpec const& workflow,
   executorOptions.add(DeviceSpecHelpers::getForwardedDeviceOptions());
 
   gHiddenDeviceOptions.add_options()                                                    //
-    ((std::string("id") + ",i").c_str(), bpo::value<std::string>(),                     //
-     "device id for child spawning")                                                    //
+    ("id,i", bpo::value<std::string>(), "device id for child spawning")                 //
     ("channel-config", bpo::value<std::vector<std::string>>(), "channel configuration") //
     ("control", "control plugin")                                                       //
     ("log-color", "logging color scheme")("color", "logging color scheme");
@@ -1257,14 +1349,16 @@ int doMain(int argc, char** argv, o2::framework::WorkflowSpec const& workflow,
   driverInfo.sigchldRequested = false;
   driverInfo.channelPolicies = channelPolicies;
   driverInfo.completionPolicies = completionPolicies;
+  driverInfo.dispatchPolicies = dispatchPolicies;
   driverInfo.argc = argc;
   driverInfo.argv = argv;
   driverInfo.batch = varmap["batch"].as<bool>();
   driverInfo.terminationPolicy = varmap["completion-policy"].as<TerminationPolicy>();
   driverInfo.startTime = std::chrono::steady_clock::now();
   driverInfo.timeout = varmap["timeout"].as<double>();
-  driverInfo.startPort = varmap["start-port"].as<unsigned short>();
-  driverInfo.portRange = varmap["port-range"].as<unsigned short>();
+  driverInfo.deployHostname = varmap["hostname"].as<std::string>();
+  driverInfo.resources = varmap["resources"].as<std::string>();
+
   // FIXME: should use the whole dataProcessorInfos, actually...
   driverInfo.processorInfo = dataProcessorInfos;
   driverInfo.configContext = &configContext;
@@ -1272,15 +1366,11 @@ int doMain(int argc, char** argv, o2::framework::WorkflowSpec const& workflow,
   std::string frameworkId;
   // If the id is set, this means this is a device,
   // otherwise this is the driver.
-  FreePortFinder finder(driverInfo.startPort - 1,
-                        65535 - driverInfo.portRange,
-                        driverInfo.portRange);
   if (varmap.count("id")) {
     frameworkId = varmap["id"].as<std::string>();
+    driverInfo.uniqueWorkflowId = fmt::format("{}", getppid());
   } else {
-    finder.scan();
-    driverInfo.startPort = finder.port();
-    driverInfo.portRange = finder.range();
+    driverInfo.uniqueWorkflowId = fmt::format("{}", getpid());
   }
   return runStateMachine(physicalWorkflow,
                          currentWorkflow,

@@ -30,7 +30,7 @@
 #endif
 
 #if !(defined(__CINT__) || defined(__ROOTCINT__) || defined(__CLING__) || defined(__ROOTCLING__) || defined(G__ROOT)) //No GPU code for ROOT
-  #if defined(__CUDACC__) || defined(__OPENCL__) || defined(__HIPCC__)
+  #if defined(__CUDACC__) || defined(__OPENCL__) || defined(__HIPCC__) || defined(__OPENCL_HOST__)
     #define GPUCA_GPUCODE //Compiled by GPU compiler
   #endif
 
@@ -44,14 +44,16 @@
   #define CON_DELETE = delete
   #define CON_DEFAULT = default
   #define CONSTEXPR constexpr
+  #define CONSTEXPRRET CONSTEXPR
 #else
   #define CON_DELETE
   #define CON_DEFAULT
   #define CONSTEXPR const
+  #define CONSTEXPRRET
 #endif
 
 //Set AliRoot / O2 namespace
-#if defined(GPUCA_STANDALONE) || defined(GPUCA_O2_LIB) || defined(GPUCA_GPULIBRARY)
+#if defined(GPUCA_STANDALONE) || defined(GPUCA_O2_LIB) || defined(GPUCA_ALIROOT_LIB) || defined(GPUCA_GPULIBRARY)
   #define GPUCA_ALIGPUCODE
 #endif
 #ifdef GPUCA_ALIROOT_LIB

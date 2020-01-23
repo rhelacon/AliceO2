@@ -16,7 +16,6 @@
 #include "Mergers/Merger.h"
 #include "Mergers/MergerBuilder.h"
 
-#include <Framework/CompletionPolicyHelpers.h>
 #include <Framework/TimesliceIndex.h>
 #include <Framework/CallbackService.h>
 
@@ -36,7 +35,7 @@ namespace o2
 namespace experimental::mergers
 {
 
-Merger::Merger(MergerConfig config, header::DataHeader::SubSpecificationType subSpec)
+Merger::Merger(const MergerConfig& config, const header::DataHeader::SubSpecificationType& subSpec)
   : mConfig(config),
     mSubSpec(subSpec),
     mCache(config.ownershipMode.value == OwnershipMode::Full)
@@ -86,7 +85,7 @@ std::function<void()> Merger::prepareTimerCallback(InitContext& ictx) const
     if (duration_cast<milliseconds>(timeNow - *timeLast).count() > periodMs) {
 
       data_matcher::VariableContext context;
-      context.put(data_matcher::ContextUpdate{ 0, timesliceID });
+      context.put(data_matcher::ContextUpdate{0, timesliceID});
       context.commit();
 
       timesliceIndex.replaceLRUWith(context);
@@ -223,9 +222,9 @@ void Merger::publish(framework::DataAllocator& allocator)
 {
   if (mMergedObjects) {
     if (mConfig.ownershipMode.value == OwnershipMode::Integral) {
-      allocator.snapshot(framework::OutputRef{ MergerBuilder::mergerOutputBinding(), mSubSpec }, *mMergedObjects.get());
+      allocator.snapshot(framework::OutputRef{MergerBuilder::mergerOutputBinding(), mSubSpec}, *mMergedObjects.get());
     } else if (mConfig.ownershipMode.value == OwnershipMode::Full) {
-      allocator.adopt(framework::OutputRef{ MergerBuilder::mergerOutputBinding(), mSubSpec }, mMergedObjects.release());
+      allocator.adopt(framework::OutputRef{MergerBuilder::mergerOutputBinding(), mSubSpec}, mMergedObjects.release());
     }
   }
 }
@@ -235,7 +234,7 @@ std::vector<TObject*> Merger::unpackObjects(TObject* obj)
   if (auto objMergeInterface = dynamic_cast<MergeInterface*>(obj)) {
     return objMergeInterface->unpack();
   } else if (mConfig.unpackingMethod.value == UnpackingMethod::NoUnpackingNeeded) {
-    return std::vector<TObject*>{ obj };
+    return std::vector<TObject*>{obj};
   } else if (mConfig.unpackingMethod.value == UnpackingMethod::TCollection) {
     // todo: this could be also checked by casting
     return {};

@@ -1,5 +1,8 @@
+<!-- doxy
 \page refFrameworkCore Core
 \subpage refFrameworkCoreCOOKBOOK Core COOKBOOK
+\subpage refFrameworkCoreANALYSIS Core ANALYSIS
+/doxy -->
 
 # Data Processing Layer in O2 Framework
 
@@ -295,7 +298,7 @@ The control service allow DataProcessors to modify their state or the one of the
 ```cpp
 #include "Framework/ControlService.h"
 //...
-auto ctx.services().get<ControlService>().readyToQuit(true) // In the DataProcessor lambda
+auto ctx.services().get<ControlService>().readyToQuit(QuitRequest::All) // In the DataProcessor lambda
 ```
 
 #### RawDeviceService
@@ -370,8 +373,9 @@ A service that data processors can register callback functions invoked by the fr
 
 Moreover in case you want to process events which are not coming from `FairMQ`, there is a `CallbackService::Id::ClockTick` which is called according to the rate specified for the backing FairMQ device.
 
-Similarly the `CallbackService::Id::Idle` callback is fired whenever there
-was nothing to process.
+Similarly the `CallbackService::Id::Idle` callback is fired whenever there was nothing to process.
+
+One last callback is `CallbackService::Id::EndOfStream`. This callback will be invoked whenever all the upstream DataProcessingDevice consider that they will not produce any more data, so we can finalize our results and exit.
 
 ## Expressing parallelism
 
@@ -473,20 +477,9 @@ Data Sampling provides possibility to sample data in DPL workflows, basing on ce
   "machines": [                         # list of machines where the policy should be run (now ignored)
     "aido2flp1",
     "aido2flp2"
-  ],
-  "dataHeaders": [                      # list of data that should be sampled
-    {
-      "binding": "clusters",            # binding of the data in InputRecord
-      "dataOrigin": "TPC",              # data origin in DataHeader
-      "dataDescription": "CLUSTERS"     # data description in DataHeader
-    },
-    {
-      "binding": "tracks",
-      "dataOrigin": "TPC",
-      "dataDescription": "TRACKS"
-    }
-  ],
-  "subSpec": "0",                       # subspecification in DataHeader, use -1 for all
+  ],                                    # list of data that should be sampled, the format is:
+                                        # binding1:origin1/description1/subSpec1[;binding2:...]
+  "query": "clusters:TPC/CLUSTERS/0;tracks:TPC/TRACKS/0",
   "samplingConditions": [               # list of sampling conditions
     {
       "condition": "random",            # condition type
@@ -557,6 +550,15 @@ The following sampling conditions are available. When more than one is used, a p
   "condition": "payloadSize",
   "lowerLimit": "300",
   "upperLimit": "500"
+}
+```
+- **DataSamplingConditionCustom** - loads a custom condition, which should inherit from DataSamplingCondition, from a specified library.
+```json
+{
+  "condition": "custom",
+  "moduleName": "QcExample",
+  "className": "o2::quality_control_modules::example::ExampleCondition",
+  "customParam": "value"
 }
 ```
 ## Document history

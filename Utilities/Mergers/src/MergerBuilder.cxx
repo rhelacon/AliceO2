@@ -15,6 +15,7 @@
 
 #include <Framework/DeviceSpec.h>
 #include "Framework/DataSpecUtils.h"
+#include <Framework/CompletionPolicyHelpers.h>
 
 #include "Mergers/MergerBuilder.h"
 #include "Mergers/Merger.h"
@@ -28,7 +29,7 @@ namespace experimental::mergers
 
 MergerBuilder::MergerBuilder() : mName("INVALID"),
                                  mInputSpecs{},
-                                 mOutputSpec{ header::gDataOriginInvalid, header::gDataDescriptionInvalid },
+                                 mOutputSpec{header::gDataOriginInvalid, header::gDataDescriptionInvalid},
                                  mConfig{}
 {
 }
@@ -52,7 +53,7 @@ void MergerBuilder::setInputSpecs(const framework::Inputs& inputs)
 void MergerBuilder::setOutputSpec(const framework::OutputSpec& output)
 {
   mOutputSpec = output;
-  mOutputSpec.binding = { MergerBuilder::mergerOutputBinding() };
+  mOutputSpec.binding = {MergerBuilder::mergerOutputBinding()};
 }
 
 void MergerBuilder::setConfig(MergerConfig config)
@@ -73,20 +74,20 @@ framework::DataProcessorSpec MergerBuilder::buildSpec()
   if (DataSpecUtils::validate(mOutputSpec) == false) {
     // inner layer => generate output spec according to scheme
     subSpec = mergerSubSpec(mLayer, mId);
-    merger.outputs[0] = OutputSpec{ { mergerOutputBinding() },
-                                    mergerDataOrigin(),
-                                    mergerDataDescription(mName),
-                                    subSpec }; // it servers as a unique merger output ID
+    merger.outputs[0] = OutputSpec{{mergerOutputBinding()},
+                                   mergerDataOrigin(),
+                                   mergerDataDescription(mName),
+                                   subSpec}; // it servers as a unique merger output ID
   } else {
     // last layer
-    merger.outputs[0].binding = { mergerOutputBinding() };
+    merger.outputs[0].binding = {mergerOutputBinding()};
   }
 
   merger.algorithm = framework::adaptFromTask<Merger>(mConfig, subSpec);
 
   if (mConfig.publicationDecision.value == PublicationDecision::EachNSeconds) {
-    merger.inputs.push_back({ "timer-publish", "MRGR", mergerDataDescription("timer-" + mName), mergerSubSpec(mLayer, mId), framework::Lifetime::Timer });
-    merger.options.push_back({ "period-timer-publish", framework::VariantType::Int, static_cast<int>(mConfig.publicationDecision.param * 1000000), { "timer period" } });
+    merger.inputs.push_back({"timer-publish", "MRGR", mergerDataDescription("timer-" + mName), mergerSubSpec(mLayer, mId), framework::Lifetime::Timer});
+    merger.options.push_back({"period-timer-publish", framework::VariantType::Int, static_cast<int>(mConfig.publicationDecision.param * 1000000), {"timer period"}});
   }
 
   return std::move(merger);
@@ -94,14 +95,8 @@ framework::DataProcessorSpec MergerBuilder::buildSpec()
 
 void MergerBuilder::customizeInfrastructure(std::vector<framework::CompletionPolicy>& policies)
 {
-  auto matcher = [](framework::DeviceSpec const& device) {
-    return device.name.find(MergerBuilder::mergerIdString()) != std::string::npos;
-  };
-  auto callback = [](gsl::span<framework::PartRef const> const& inputs) {
-    return framework::CompletionPolicy::CompletionOp::Consume;
-  };
-  framework::CompletionPolicy mergerConsumes{ "mergerConsumes", matcher, callback };
-  policies.push_back(mergerConsumes);
+  // merger is identified by the ID string and should always consume
+  policies.push_back(CompletionPolicyHelpers::defineByName(MergerBuilder::mergerIdString(), CompletionPolicy::CompletionOp::Consume));
 }
 
 } // namespace experimental::mergers

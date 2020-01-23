@@ -21,6 +21,7 @@
 #include <stdexcept>
 
 #include "Framework/CallbackService.h"
+#include "Framework/ConfigParamRegistry.h"
 #include "Framework/ControlService.h"
 #include "Framework/DataProcessorSpec.h"
 #include "Framework/Lifetime.h"
@@ -74,11 +75,10 @@ o2::framework::DataProcessorSpec getPreClusterSinkSpec()
 {
   return DataProcessorSpec{
     "PreClusterSink",
-    Inputs{ InputSpec{ "preclusters", "MCH", "PRECLUSTERS", 0, Lifetime::Timeframe } },
+    Inputs{InputSpec{"preclusters", "MCH", "PRECLUSTERS", 0, Lifetime::Timeframe}},
     Outputs{},
-    AlgorithmSpec{ adaptFromTask<PreClusterSinkTask>() },
-    Options{ { "outfile", VariantType::String, "preclusters.out", { "output filename" } } }
-  };
+    AlgorithmSpec{adaptFromTask<PreClusterSinkTask>()},
+    Options{{"outfile", VariantType::String, "preclusters.out", {"output filename"}}}};
 }
 
 } // end namespace mch

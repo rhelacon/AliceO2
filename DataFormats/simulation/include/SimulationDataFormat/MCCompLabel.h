@@ -32,8 +32,8 @@ class MCCompLabel
   // number of bits reserved for MC track ID, DON'T modify this, since the
   // track ID might be negative
   static constexpr int nbitsTrackID = 31; // number of bits reserved for MC track ID
-  static constexpr int nbitsEvID = 19; // number of bits reserved for MC event ID
-  static constexpr int nbitsSrcID = 8; // number of bits reserved for MC source ID
+  static constexpr int nbitsEvID = 19;    // number of bits reserved for MC event ID
+  static constexpr int nbitsSrcID = 8;    // number of bits reserved for MC source ID
   // the rest of the bits is reserved at the moment
 
   // check if the fields are defined consistently
@@ -91,7 +91,7 @@ class MCCompLabel
   // allow to retrieve bare label
   ULong64_t getRawValue() const { return mLabel; }
 
-  // comparison operator, compares only label, not evential weight or correctness info
+  // comparison operator, compares only label, not eventual weight or correctness info
   bool operator==(const MCCompLabel& other) const { return (mLabel & maskFull) == (other.mLabel & maskFull); }
   // invalidate
   void unset() { mLabel = NotSet; }

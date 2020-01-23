@@ -45,6 +45,7 @@ class TRDCommonParam
   bool IsArgon() const { return (mGasMixture == kArgon); }
   int GetGasMixture() const { return mGasMixture; }
   float GetSamplingFrequency() const { return mSamplingFrequency; }
+  float GetCachedField() const { return mField; }
 
   // Cached magnetic field, to be called by the user before using GetDiffCoeff or GetOmegaTau
   bool cacheMagField();
@@ -80,7 +81,7 @@ class TRDCommonParam
   // This is a singleton, constructor is private!
   TRDCommonParam();
 
-  ClassDef(TRDCommonParam, 1) // The constant parameters common to simulation and reconstruction
+  ClassDef(TRDCommonParam, 1); // The constant parameters common to simulation and reconstruction
 };
 } // namespace trd
 } // namespace o2

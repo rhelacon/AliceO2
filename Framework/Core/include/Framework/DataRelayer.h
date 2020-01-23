@@ -39,8 +39,9 @@ struct DataRelayerStats {
   uint64_t relayedMessages = 0;         /// How many messages have been successfully relayed
 };
 
-class DataRelayer {
-public:
+class DataRelayer
+{
+ public:
   enum RelayChoice {
     WillRelay,
     WillNotRelay
@@ -52,8 +53,7 @@ public:
   };
 
   DataRelayer(CompletionPolicy const&,
-              std::vector<InputRoute> const&,
-              std::vector<ForwardRoute> const&,
+              std::vector<InputRoute> const& routes,
               monitoring::Monitoring&,
               TimesliceIndex&);
 
@@ -66,8 +66,8 @@ public:
   /// This is used to ask for relaying a given (header,payload) pair.
   /// Notice that we expect that the header is an O2 Header Stack
   /// with a DataProcessingHeader inside so that we can assess time.
-  RelayChoice relay(std::unique_ptr<FairMQMessage> &&header,
-                    std::unique_ptr<FairMQMessage> &&payload);
+  RelayChoice relay(std::unique_ptr<FairMQMessage>&& header,
+                    std::unique_ptr<FairMQMessage>&& payload);
 
   /// @returns the actions ready to be performed.
   std::vector<RecordAction> getReadyToProcess();
@@ -80,7 +80,7 @@ public:
 
   /// Returns the index of the arguments which have to be forwarded to
   /// the next processor
-  const std::vector<int> &forwardingMask();
+  const std::vector<int>& forwardingMask();
 
   /// Returns how many timeslices we can handle in parallel
   size_t getParallelTimeslices() const;
@@ -93,10 +93,12 @@ public:
 
   /// Send metrics with the VariableContext information
   void sendContextState();
+  void publishMetrics();
+
+  /// Remove all pending messages
+  void clear();
 
  private:
-  std::vector<InputRoute> const& mInputRoutes;
-  std::vector<ForwardRoute> const& mForwardRoutes;
   monitoring::Monitoring& mMetrics;
 
   /// This is the actual cache of all the parts in flight.
@@ -109,7 +111,6 @@ public:
   /// cacheline.
   TimesliceIndex& mTimesliceIndex;
 
-  std::vector<bool> mForwardingMask;
   CompletionPolicy mCompletionPolicy;
   std::vector<size_t> mDistinctRoutesIndex;
   std::vector<data_matcher::DataDescriptorMatcher> mInputMatchers;

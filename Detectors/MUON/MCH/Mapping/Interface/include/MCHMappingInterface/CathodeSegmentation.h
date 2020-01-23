@@ -22,6 +22,7 @@
 #include <iostream>
 #include <vector>
 #include <boost/format.hpp>
+#include <functional>
 
 namespace o2
 {
@@ -62,10 +63,10 @@ class CathodeSegmentation
  public:
   /// This ctor throws if detElemId is invalid
   CathodeSegmentation(int detElemId, bool isBendingPlane)
-    : mImpl{ mchCathodeSegmentationConstruct(detElemId, isBendingPlane) },
+    : mImpl{mchCathodeSegmentationConstruct(detElemId, isBendingPlane)},
       mDualSampaIds{},
-      mDetElemId{ detElemId },
-      mIsBendingPlane{ isBendingPlane }
+      mDetElemId{detElemId},
+      mIsBendingPlane{isBendingPlane}
   {
     if (!mImpl) {
       throw std::runtime_error("Can not create segmentation for DE " + std::to_string(detElemId) +
@@ -79,7 +80,7 @@ class CathodeSegmentation
     };
     mchCathodeSegmentationForEachDualSampa(mImpl, callback, &addDualSampaId);
     mDualSampaIds = dpid;
-    int n{ 0 };
+    int n{0};
     for (auto i = 0; i < nofDualSampas(); ++i) {
       forEachPadInDualSampa(dualSampaId(i), [&n](int /*catPadIndex*/) { ++n; });
     }
@@ -176,6 +177,9 @@ class CathodeSegmentation
   int dualSampaId(int dualSampaIndex) const { return mDualSampaIds[dualSampaIndex]; }
   ///@}
 
+  /// Loop over dual sampas of this detection element
+  void forEachDualSampa(std::function<void(int dualSampaId)> func) const;
+
   /** @name ForEach methods.
    * Those methods let you execute a function on each of the pads belonging to
    * some group.
@@ -237,6 +241,15 @@ void CathodeSegmentation::forEachNeighbouringPad(int catPadIndex, CALLABLE&& fun
     (*fn)(puid);
   };
   mchCathodeSegmentationForEachNeighbouringPad(mImpl, catPadIndex, callback, &func);
+}
+
+inline void CathodeSegmentation::forEachDualSampa(std::function<void(int dualSampaId)> func) const
+{
+  auto callback = [](void* data, int dualSampaId) {
+    auto fn = static_cast<decltype(&func)>(data);
+    (*fn)(dualSampaId);
+  };
+  mchCathodeSegmentationForEachDualSampa(mImpl, callback, &func);
 }
 
 /** Convenience method to loop over detection elements. */

@@ -25,7 +25,6 @@
 
 #include <TClonesArray.h>
 
-
 namespace o2
 {
 namespace framework
@@ -38,18 +37,17 @@ using DataProcessingHeader = o2::framework::DataProcessingHeader;
 DataAllocator::DataAllocator(TimingInfo* timingInfo,
                              ContextRegistry* contextRegistry,
                              const AllowedOutputRoutes& routes)
-  : mAllowedOutputRoutes{ routes },
-    mTimingInfo{ timingInfo },
-    mContextRegistry{ contextRegistry }
+  : mAllowedOutputRoutes{routes},
+    mTimingInfo{timingInfo},
+    mContextRegistry{contextRegistry}
 {
 }
 
-std::string
-DataAllocator::matchDataHeader(const Output& spec, size_t timeslice) {
+std::string const& DataAllocator::matchDataHeader(const Output& spec, size_t timeslice)
+{
   // FIXME: we should take timeframeId into account as well.
-  for (auto &output : mAllowedOutputRoutes) {
-    if (DataSpecUtils::match(output.matcher, spec.origin, spec.description, spec.subSpec)
-        && ((timeslice % output.maxTimeslices) == output.timeslice)) {
+  for (auto& output : mAllowedOutputRoutes) {
+    if (DataSpecUtils::match(output.matcher, spec.origin, spec.description, spec.subSpec) && ((timeslice % output.maxTimeslices) == output.timeslice)) {
       return output.channel;
     }
   }
@@ -63,13 +61,13 @@ DataAllocator::matchDataHeader(const Output& spec, size_t timeslice) {
 
 DataChunk& DataAllocator::newChunk(const Output& spec, size_t size)
 {
-  std::string channel = matchDataHeader(spec, mTimingInfo->timeslice);
+  std::string const& channel = matchDataHeader(spec, mTimingInfo->timeslice);
   auto context = mContextRegistry->get<MessageContext>();
 
   FairMQMessagePtr headerMessage = headerMessageFromOutput(spec, channel,                        //
                                                            o2::header::gSerializationMethodNone, //
                                                            size                                  //
-                                                           );
+  );
   auto& co = context->add<MessageContext::ContainerRefObject<DataChunk>>(std::move(headerMessage), channel, 0, size);
   return co;
 }
@@ -78,12 +76,12 @@ void DataAllocator::adoptChunk(const Output& spec, char* buffer, size_t size, fa
 {
   // Find a matching channel, create a new message for it and put it in the
   // queue to be sent at the end of the processing
-  std::string channel = matchDataHeader(spec, mTimingInfo->timeslice);
+  std::string const& channel = matchDataHeader(spec, mTimingInfo->timeslice);
 
   FairMQMessagePtr headerMessage = headerMessageFromOutput(spec, channel,                        //
                                                            o2::header::gSerializationMethodNone, //
                                                            size                                  //
-                                                           );
+  );
 
   // FIXME: how do we want to use subchannels? time based parallelism?
   auto context = mContextRegistry->get<MessageContext>();
@@ -106,13 +104,13 @@ FairMQMessagePtr DataAllocator::headerMessageFromOutput(Output const& spec,     
   auto context = mContextRegistry->get<MessageContext>();
 
   auto channelAlloc = o2::pmr::getTransportAllocator(context->proxy().getTransport(channel, 0));
-  return o2::pmr::getMessage(o2::header::Stack{ channelAlloc, dh, dph, spec.metaHeader });
+  return o2::pmr::getMessage(o2::header::Stack{channelAlloc, dh, dph, spec.metaHeader});
 }
 
 void DataAllocator::addPartToContext(FairMQMessagePtr&& payloadMessage, const Output& spec,
                                      o2::header::SerializationMethod serializationMethod)
 {
-  std::string channel = matchDataHeader(spec, mTimingInfo->timeslice);
+  std::string const& channel = matchDataHeader(spec, mTimingInfo->timeslice);
   // the correct payload size is st later when sending the
   // RootObjectContext, see DataProcessor::doSend
   auto headerMessage = headerMessageFromOutput(spec, channel, serializationMethod, 0);
@@ -123,13 +121,16 @@ void DataAllocator::addPartToContext(FairMQMessagePtr&& payloadMessage, const Ou
   DataHeader* dh = const_cast<DataHeader*>(cdh);
   dh->payloadSize = payloadMessage->GetSize();
   auto context = mContextRegistry->get<MessageContext>();
-  context->add<MessageContext::TrivialObject>(std::move(headerMessage), std::move(payloadMessage), channel);
+  // make_scoped creates the context object inside of a scope handler, since it goes out of
+  // scope immediately, the created object is scheduled and can be directly sent if the context
+  // is configured with the dispatcher callback
+  context->make_scoped<MessageContext::TrivialObject>(std::move(headerMessage), std::move(payloadMessage), channel);
 }
 
 void DataAllocator::adopt(const Output& spec, TObject* ptr)
 {
   std::unique_ptr<TObject> payload(ptr);
-  std::string channel = matchDataHeader(spec, mTimingInfo->timeslice);
+  std::string const& channel = matchDataHeader(spec, mTimingInfo->timeslice);
   // the correct payload size is set later when sending the
   // RootObjectContext, see DataProcessor::doSend
   auto header = headerMessageFromOutput(spec, channel, o2::header::gSerializationMethodROOT, 0);
@@ -140,7 +141,7 @@ void DataAllocator::adopt(const Output& spec, TObject* ptr)
 void DataAllocator::adopt(const Output& spec, std::string* ptr)
 {
   std::unique_ptr<std::string> payload(ptr);
-  std::string channel = matchDataHeader(spec, mTimingInfo->timeslice);
+  std::string const& channel = matchDataHeader(spec, mTimingInfo->timeslice);
   // the correct payload size is set later when sending the
   // StringContext, see DataProcessor::doSend
   auto header = headerMessageFromOutput(spec, channel, o2::header::gSerializationMethodNone, 0);
@@ -150,7 +151,7 @@ void DataAllocator::adopt(const Output& spec, std::string* ptr)
 
 void DataAllocator::adopt(const Output& spec, TableBuilder* tb)
 {
-  std::string channel = matchDataHeader(spec, mTimingInfo->timeslice);
+  std::string const& channel = matchDataHeader(spec, mTimingInfo->timeslice);
   auto header = headerMessageFromOutput(spec, channel, o2::header::gSerializationMethodArrow, 0);
   auto context = mContextRegistry->get<ArrowContext>();
 
@@ -191,7 +192,7 @@ void DataAllocator::create(const Output& spec,
                            std::shared_ptr<arrow::ipc::RecordBatchWriter>* writer,
                            std::shared_ptr<arrow::Schema> schema)
 {
-  std::string channel = matchDataHeader(spec, mTimingInfo->timeslice);
+  std::string const& channel = matchDataHeader(spec, mTimingInfo->timeslice);
   auto header = headerMessageFromOutput(spec, channel, o2::header::gSerializationMethodArrow, 0);
   auto context = mContextRegistry->get<ArrowContext>();
 
@@ -220,12 +221,12 @@ Output DataAllocator::getOutputByBind(OutputRef&& ref)
     if (mAllowedOutputRoutes[ri].matcher.binding.value == ref.label) {
       auto spec = mAllowedOutputRoutes[ri].matcher;
       auto dataType = DataSpecUtils::asConcreteDataTypeMatcher(spec);
-      return Output{ dataType.origin, dataType.description, ref.subSpec, spec.lifetime, std::move(ref.headerStack) };
+      return Output{dataType.origin, dataType.description, ref.subSpec, spec.lifetime, std::move(ref.headerStack)};
     }
   }
   throw std::runtime_error("Unable to find OutputSpec with label " + ref.label);
   O2_BUILTIN_UNREACHABLE();
 }
 
-}
-}
+} // namespace framework
+} // namespace o2

@@ -13,6 +13,7 @@
 
 #include "GPUTPCCompressionTrackModel.h"
 #include "GPUConstantMem.h"
+#include "GPUParam.inc"
 
 using namespace GPUCA_NAMESPACE::gpu;
 
@@ -28,8 +29,8 @@ GPUd() void GPUTPCCompressionTrackModel::Init(float x, float y, float z, float a
   mProp.SetMaterial(kRadLen, kRho);
   mProp.SetMaxSinPhi(GPUCA_MAX_SIN_PHI);
   mProp.SetToyMCEventsFlag(false);
-  mProp.SetSpecialErrors(false);
-  mProp.SetFitInProjections(false);
+  mProp.SetSeedingErrors(true); // Larger errors for seeds, better since we don't start with good hypothesis
+  mProp.SetFitInProjections(true);
   mProp.SetPolynomialField(&param.polynomialField);
   mTrk.X() = x;
   mTrk.Y() = y;
@@ -40,13 +41,13 @@ GPUd() void GPUTPCCompressionTrackModel::Init(float x, float y, float z, float a
   mTrk.ResetCovariance();
   mProp.SetTrack(&mTrk, alpha);
   mParam = &param;
-  // printf("Initialized: x %f y %f z %f alpha %f qPt %f\n", x, y, z, alpha, mTrk.QPt());
+  // GPUInfo("Initialized: x %f y %f z %f alpha %f qPt %f", x, y, z, alpha, mTrk.QPt());
 }
 
 GPUd() int GPUTPCCompressionTrackModel::Propagate(float x, float alpha)
 {
   int retVal = mProp.PropagateToXAlpha(x, alpha, true);
-  // printf("Propagated to: x %f y %f z %f alpha %f qPt %f\n", x, mTrk.Y(), mTrk.Z(), alpha, mTrk.QPt());
+  // GPUInfo("Propagated to: x %f y %f z %f alpha %f qPt %f", x, mTrk.Y(), mTrk.Z(), alpha, mTrk.QPt());
   return retVal;
 }
 
@@ -54,14 +55,14 @@ GPUd() int GPUTPCCompressionTrackModel::Filter(float y, float z, int iRow)
 {
   mTrk.ConstrainSinPhi();
   int retVal = mProp.Update(y, z, iRow, *mParam, 0, false, false);
-  // printf("Filtered with %f %f: y %f z %f qPt %f\n", y, z, mTrk.Y(), mTrk.Z(), mTrk.QPt());
+  // GPUInfo("Filtered with %f %f: y %f z %f qPt %f", y, z, mTrk.Y(), mTrk.Z(), mTrk.QPt());
   return retVal;
 }
 
 GPUd() int GPUTPCCompressionTrackModel::Mirror()
 {
   mProp.Mirror(true);
-  // printf("Mirrored: y %f z %f qPt %f\n", mTrk.Y(), mTrk.Z(), mTrk.QPt());
+  // GPUInfo("Mirrored: y %f z %f qPt %f", mTrk.Y(), mTrk.Z(), mTrk.QPt());
   return 0;
 }
 

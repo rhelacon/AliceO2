@@ -194,8 +194,8 @@ struct WorkflowImporter : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>,
   WorkflowImporter(std::vector<DataProcessorSpec>& o,
                    std::vector<DataProcessorInfo>& m)
     : states{},
-      output{ o },
-      metadata{ m }
+      output{o},
+      metadata{m}
   {
     push(State::IN_START);
   }
@@ -212,8 +212,10 @@ struct WorkflowImporter : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>,
       output.push_back(DataProcessorSpec{});
     } else if (in(State::IN_INPUTS)) {
       push(State::IN_INPUT);
+      inputHasSubSpec = false;
     } else if (in(State::IN_OUTPUTS)) {
       push(State::IN_OUTPUT);
+      outputHasSubSpec = false;
     } else if (in(State::IN_OPTIONS)) {
       push(State::IN_OPTION);
     } else if (in(State::IN_WORKFLOW_OPTIONS)) {
@@ -231,34 +233,44 @@ struct WorkflowImporter : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>,
   {
     enter("END_OBJECT");
     if (in(State::IN_INPUT)) {
-      output.back().inputs.push_back(InputSpec(binding, origin, description, subspec, lifetime));
+      if (inputHasSubSpec) {
+        output.back().inputs.push_back(InputSpec(binding, origin, description, subspec, lifetime));
+      } else {
+        output.back().inputs.push_back(InputSpec(binding, {origin, description}, lifetime));
+      }
+      inputHasSubSpec = false;
     } else if (in(State::IN_OUTPUT)) {
-      output.back().outputs.push_back(OutputSpec({ binding }, origin, description, subspec, lifetime));
+      if (outputHasSubSpec) {
+        output.back().outputs.push_back(OutputSpec({binding}, origin, description, subspec, lifetime));
+      } else {
+        output.back().outputs.push_back(OutputSpec({binding}, {origin, description}, lifetime));
+      }
+      outputHasSubSpec = false;
     } else if (in(State::IN_OPTION)) {
-      std::unique_ptr<ConfigParamSpec> opt{ nullptr };
+      std::unique_ptr<ConfigParamSpec> opt{nullptr};
 
       using HelpString = ConfigParamSpec::HelpString;
       switch (optionType) {
         case VariantType::String:
-          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, optionDefault.c_str(), HelpString{ optionHelp });
+          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, optionDefault.c_str(), HelpString{optionHelp});
           break;
         case VariantType::Int:
-          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, std::stoi(optionDefault, nullptr), HelpString{ optionHelp });
+          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, std::stoi(optionDefault, nullptr), HelpString{optionHelp});
           break;
         case VariantType::Int64:
-          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, std::stol(optionDefault, nullptr), HelpString{ optionHelp });
+          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, std::stol(optionDefault, nullptr), HelpString{optionHelp});
           break;
         case VariantType::Float:
-          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, std::stof(optionDefault, nullptr), HelpString{ optionHelp });
+          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, std::stof(optionDefault, nullptr), HelpString{optionHelp});
           break;
         case VariantType::Double:
-          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, std::stod(optionDefault, nullptr), HelpString{ optionHelp });
+          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, std::stod(optionDefault, nullptr), HelpString{optionHelp});
           break;
         case VariantType::Bool:
-          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, (bool)std::stoi(optionDefault, nullptr), HelpString{ optionHelp });
+          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, (bool)std::stoi(optionDefault, nullptr), HelpString{optionHelp});
           break;
         default:
-          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, optionDefault, HelpString{ optionHelp });
+          opt = std::make_unique<ConfigParamSpec>(optionName, optionType, optionDefault, HelpString{optionHelp});
       }
       // Depending on the previous state, push options to the right place.
       if (previousIs(State::IN_OPTIONS)) {
@@ -280,8 +292,10 @@ struct WorkflowImporter : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>,
       push(State::IN_DATAPROCESSORS);
     } else if (in(State::IN_INPUTS)) {
       push(State::IN_INPUT);
+      inputHasSubSpec = false;
     } else if (in(State::IN_OUTPUTS)) {
       push(State::IN_OUTPUT);
+      outputHasSubSpec = false;
     } else if (in(State::IN_OPTIONS)) {
       push(State::IN_OPTION);
     } else if (in(State::IN_WORKFLOW_OPTIONS)) {
@@ -318,6 +332,7 @@ struct WorkflowImporter : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>,
       push(State::IN_INPUT_DESCRIPTION);
     } else if (in(State::IN_INPUT) && strncmp(str, "subspec", length) == 0) {
       push(State::IN_INPUT_SUBSPEC);
+      inputHasSubSpec = true;
     } else if (in(State::IN_INPUT) && strncmp(str, "lifetime", length) == 0) {
       push(State::IN_INPUT_LIFETIME);
     } else if (in(State::IN_OUTPUT) && strncmp(str, "binding", length) == 0) {
@@ -328,6 +343,7 @@ struct WorkflowImporter : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>,
       push(State::IN_OUTPUT_DESCRIPTION);
     } else if (in(State::IN_OUTPUT) && strncmp(str, "subspec", length) == 0) {
       push(State::IN_OUTPUT_SUBSPEC);
+      outputHasSubSpec = true;
     } else if (in(State::IN_OUTPUT) && strncmp(str, "lifetime", length) == 0) {
       push(State::IN_OUTPUT_LIFETIME);
     } else if (in(State::IN_DATAPROCESSOR) && strncmp(str, "name", length) == 0) {
@@ -504,6 +520,8 @@ struct WorkflowImporter : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>,
   VariantType optionType;
   std::string optionDefault;
   std::string optionHelp;
+  bool outputHasSubSpec;
+  bool inputHasSubSpec;
 };
 
 void WorkflowSerializationHelpers::import(std::istream& s,
@@ -527,7 +545,7 @@ void WorkflowSerializationHelpers::import(std::istream& s,
   }
   rapidjson::Reader reader;
   rapidjson::IStreamWrapper isw(s);
-  WorkflowImporter importer{ workflow, metadata };
+  WorkflowImporter importer{workflow, metadata};
   bool ok = reader.Parse(isw, importer);
   if (ok == false) {
     throw std::runtime_error("Error while parsing serialised workflow");
@@ -556,19 +574,25 @@ void WorkflowSerializationHelpers::dump(std::ostream& out,
     w.Key("inputs");
     w.StartArray();
     for (auto& input : processor.inputs) {
-      auto concrete = DataSpecUtils::asConcreteDataMatcher(input);
-      if (concrete.origin == header::DataOrigin("DPL")) {
+      /// FIXME: this only works for a selected set of InputSpecs...
+      ///        a proper way to fully serialize an InputSpec with
+      ///        a DataDescriptorMatcher is needed.
+      auto dataType = DataSpecUtils::asConcreteDataTypeMatcher(input);
+      if (dataType.origin == header::DataOrigin("DPL")) {
         continue;
       }
       w.StartObject();
       w.Key("binding");
       w.String(input.binding.c_str());
       w.Key("origin");
-      w.String(concrete.origin.str, strnlen(concrete.origin.str, 4));
+      w.String(dataType.origin.str, strnlen(dataType.origin.str, 4));
       w.Key("description");
-      w.String(concrete.description.str, strnlen(concrete.description.str, 16));
-      w.Key("subspec");
-      w.Uint64(concrete.subSpec);
+      w.String(dataType.description.str, strnlen(dataType.description.str, 16));
+      auto subSpec = DataSpecUtils::getOptionalSubSpec(input);
+      if (subSpec.has_value()) {
+        w.Key("subspec");
+        w.Uint64(*subSpec);
+      }
       w.Key("lifetime");
       w.Uint((int)input.lifetime);
       w.EndObject();
@@ -594,7 +618,7 @@ void WorkflowSerializationHelpers::dump(std::ostream& out,
       // FIXME: this will have to change once we introduce wildcards for
       //        OutputSpec
       auto subSpec = DataSpecUtils::getOptionalSubSpec(output);
-      if (subSpec != std::nullopt) {
+      if (subSpec.has_value()) {
         w.Key("subspec");
         w.Uint64(*subSpec);
       }

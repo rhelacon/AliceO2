@@ -11,6 +11,7 @@
 #include "Framework/DataProcessingHeader.h"
 #include "Framework/InputSpec.h"
 #include "Framework/LifetimeHelpers.h"
+#include "Framework/Logger.h"
 #include "Framework/RawDeviceService.h"
 #include "Framework/ServiceRegistry.h"
 #include "Framework/TimesliceIndex.h"
@@ -21,6 +22,8 @@
 #include <curl/curl.h>
 
 #include <fairmq/FairMQDevice.h>
+
+#include <cstdlib>
 
 using namespace o2::header;
 using namespace fair;
@@ -38,12 +41,12 @@ size_t getCurrentTime()
   auto duration = now.time_since_epoch();
   return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
 }
-}
+} // namespace
 
 ExpirationHandler::Creator LifetimeHelpers::dataDrivenCreation()
 {
-  return [](TimesliceIndex&) -> TimesliceSlot {
-    return { TimesliceSlot::INVALID };
+  return [](TimesliceIndex& index) -> TimesliceSlot {
+    return {TimesliceSlot::ANY};
   };
 }
 
@@ -53,17 +56,17 @@ ExpirationHandler::Creator LifetimeHelpers::enumDrivenCreation(size_t start, siz
   return [start, end, step, last](TimesliceIndex& index) -> TimesliceSlot {
     for (size_t si = 0; si < index.size(); si++) {
       if (*last > end) {
-        return TimesliceSlot{ TimesliceSlot::INVALID };
+        return TimesliceSlot{TimesliceSlot::INVALID};
       }
-      auto slot = TimesliceSlot{ si };
+      auto slot = TimesliceSlot{si};
       if (index.isValid(slot) == false) {
-        TimesliceId timestamp{ *last };
+        TimesliceId timestamp{*last};
         *last += step;
         index.associate(timestamp, slot);
         return slot;
       }
     }
-    return TimesliceSlot{ TimesliceSlot::INVALID };
+    return TimesliceSlot{TimesliceSlot::INVALID};
   };
 }
 
@@ -77,31 +80,31 @@ ExpirationHandler::Creator LifetimeHelpers::timeDrivenCreation(std::chrono::micr
     auto current = getCurrentTime();
     auto delta = current - *last;
     if (delta < period.count()) {
-      return TimesliceSlot{ TimesliceSlot::INVALID };
+      return TimesliceSlot{TimesliceSlot::INVALID};
     }
     // We first check if the current time is not already present
     // FIXME: this should really be done by query matching? Ok
     //        for now to avoid duplicate entries.
     for (size_t i = 0; i < index.size(); ++i) {
-      TimesliceSlot slot{ i };
+      TimesliceSlot slot{i};
       if (index.isValid(slot) == false) {
         continue;
       }
       if (index.getTimesliceForSlot(slot).value == current) {
-        return TimesliceSlot{ TimesliceSlot::INVALID };
+        return TimesliceSlot{TimesliceSlot::INVALID};
       }
     }
     // If we are here the timer has expired and a new slice needs
     // to be created.
     *last = current;
     data_matcher::VariableContext newContext;
-    newContext.put({ 0, static_cast<uint64_t>(current) });
+    newContext.put({0, static_cast<uint64_t>(current)});
     newContext.commit();
     auto [action, slot] = index.replaceLRUWith(newContext);
     switch (action) {
       case TimesliceIndex::ActionTaken::ReplaceObsolete:
       case TimesliceIndex::ActionTaken::ReplaceUnused:
-        index.associate(TimesliceId{ current }, slot);
+        index.associate(TimesliceId{current}, slot);
         break;
       case TimesliceIndex::ActionTaken::DropInvalid:
       case TimesliceIndex::ActionTaken::DropObsolete:
@@ -165,14 +168,24 @@ size_t readToMessage(void* p, size_t size, size_t nmemb, void* userdata)
 ///
 /// "<namespace>/<InputRoute.origin>/<InputRoute.description>"
 ///
-/// FIXME: actually implement the fetching
-/// FIXME: for the moment we always go to CCDB every time we are expired.
-/// FIXME: this should really be done in the common fetcher.
-/// FIXME: provide a way to customize the namespace from the ProcessingContext
-ExpirationHandler::Handler LifetimeHelpers::fetchFromCCDBCache(ConcreteDataMatcher const& matcher, std::string const& prefix, std::string const& sourceChannel)
+/// \todo for the moment we always go to CCDB every time we are expired.
+/// \todo this should really be done in the common fetcher.
+/// \todo provide a way to customize the namespace from the ProcessingContext
+ExpirationHandler::Handler
+  LifetimeHelpers::fetchFromCCDBCache(ConcreteDataMatcher const& matcher,
+                                      std::string const& prefix,
+                                      std::string const& overrideTimestamp,
+                                      std::string const& sourceChannel)
 {
-  return [ matcher, sourceChannel, serverUrl = prefix ](ServiceRegistry & services, PartRef & ref, uint64_t timestamp)->void
-  {
+  char* err;
+  uint64_t overrideTimestampMilliseconds = strtoll(overrideTimestamp.c_str(), &err, 10);
+  if (*err != 0) {
+    throw std::runtime_error("fetchFromCCDBCache: Unable to parse forced timestamp for conditions");
+  }
+  if (overrideTimestampMilliseconds) {
+    LOGP(info, "fetchFromCCDBCache: forcing timestamp for conditions to {} milliseconds from epoch UTC", overrideTimestampMilliseconds);
+  }
+  return [matcher, sourceChannel, serverUrl = prefix, overrideTimestampMilliseconds](ServiceRegistry& services, PartRef& ref, uint64_t timestamp) -> void {
     // We should invoke the handler only once.
     assert(!ref.header);
     assert(!ref.payload);
@@ -189,6 +202,9 @@ ExpirationHandler::Handler LifetimeHelpers::fetchFromCCDBCache(ConcreteDataMatch
       throw std::runtime_error("fetchFromCCDBCache: Unable to initialise CURL");
     }
     CURLcode res;
+    if (overrideTimestampMilliseconds) {
+      timestamp = overrideTimestampMilliseconds;
+    }
     auto path = std::string("/") + matcher.origin.as<std::string>() + "/" + matcher.description.as<std::string>() + "/" + std::to_string(timestamp / 1000);
     auto url = serverUrl + path;
     LOG(INFO) << "fetchFromCCDBCache: Fetching " << url;
@@ -196,6 +212,7 @@ ExpirationHandler::Handler LifetimeHelpers::fetchFromCCDBCache(ConcreteDataMatch
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &payloadBuffer);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, readToMessage);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, true);
 
     res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
@@ -221,8 +238,8 @@ ExpirationHandler::Handler LifetimeHelpers::fetchFromCCDBCache(ConcreteDataMatch
     dh.payloadSize = payloadBuffer.size();
     dh.payloadSerializationMethod = gSerializationMethodNone;
 
-    DataProcessingHeader dph{ timestamp, 1 };
-    auto header = o2::pmr::getMessage(o2::header::Stack{ channelAlloc, dh, dph });
+    DataProcessingHeader dph{timestamp, 1};
+    auto header = o2::pmr::getMessage(o2::header::Stack{channelAlloc, dh, dph});
 
     ref.header = std::move(header);
     ref.payload = std::move(payload);
@@ -270,11 +287,11 @@ ExpirationHandler::Handler LifetimeHelpers::enumerate(ConcreteDataMatcher const&
     dh.payloadSize = 8;
     dh.payloadSerializationMethod = gSerializationMethodNone;
 
-    DataProcessingHeader dph{ timestamp, 1 };
+    DataProcessingHeader dph{timestamp, 1};
 
     auto&& transport = rawDeviceService.device()->GetChannel(sourceChannel, 0).Transport();
     auto channelAlloc = o2::pmr::getTransportAllocator(transport);
-    auto header = o2::pmr::getMessage(o2::header::Stack{ channelAlloc, dh, dph });
+    auto header = o2::pmr::getMessage(o2::header::Stack{channelAlloc, dh, dph});
     ref.header = std::move(header);
 
     auto payload = rawDeviceService.device()->NewMessage(*counter);

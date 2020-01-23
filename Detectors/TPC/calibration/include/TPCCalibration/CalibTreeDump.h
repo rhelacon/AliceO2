@@ -34,7 +34,6 @@ class CalDet;
 template <class T>
 class CalArray;
 
-
 /// \brief class to dump calibration data to a ttree for simple visualisation
 ///
 /// This class class provided functionanlity for dumping calibration data from
@@ -44,54 +43,80 @@ class CalArray;
 /// \todo At present this will only work for the PadSubset type ROC
 /// \author Jens Wiechula, Jens.Wiechula@ikf.uni-frankfurt.de
 
-class CalibTreeDump {
-  public:
-    using DataTypes = boost::variant<CalDet<int>, CalDet<float>, CalDet<double>, CalDet<bool>, CalDet<unsigned int>>;
+class CalibTreeDump
+{
+ public:
+  using DataTypes = CalDet<float>; //boost::variant<CalDet<int>, CalDet<float>, CalDet<double>, CalDet<bool>, CalDet<unsigned int>>;
 
-    CalibTreeDump() = default;
-    ~CalibTreeDump() = default;
+  CalibTreeDump() = default;
+  ~CalibTreeDump() = default;
 
-    /// Add CalDet object
-    template <typename T>
-    void add(const CalDet<T>& calDet) { mCalDetObjects.push_back(calDet); }
-    //void add(const CalDet<DataTypes>& calDet) { mCalDetObjects.push_back(calDet); }
+  /// Add CalDet object
+  template <typename T>
+  void add(const CalDet<T>& calDet)
+  {
+    mCalDetObjects.push_back(calDet);
+  }
+  //void add(const CalDet<DataTypes>& calDet) { mCalDetObjects.push_back(calDet); }
 
-    /// Add CalArray objects
-    template <typename T>
-    void add(const CalArray<T>& calArray) { mCalArrayObjects.push_back(calArray); }
+  /// Add CalArray objects
+  template <typename T>
+  void add(const CalArray<T>& calArray)
+  {
+    mCalArrayObjects.push_back(calArray);
+  }
 
-    /// Dump the registered calibration data to file
-    void dumpToFile(const std::string filename = "CalibTree.root");
-  private:
-    std::vector<DataTypes> mCalDetObjects;     ///< array of CalDet objects
-    std::vector<DataTypes> mCalArrayObjects; ///< array of CalArray objects
+  /// Set adding of FEE mapping to the tree
+  void setAddFEEInfo(bool add = true) { mAddFEEInfo = add; }
 
-    /// add default mapping like local, global x/y positions
-    void addDefaultMapping(TTree* tree);
+  /// Dump the registered calibration data to file
+  void dumpToFile(const std::string filename = "CalibTree.root");
 
-    /// add the values of the calDet objects
-    /// \todo still to be finalized
-    void addCalDetObjects(TTree* tree);
+ private:
+  std::vector<DataTypes> mCalDetObjects{};   ///< array of CalDet objects
+  std::vector<DataTypes> mCalArrayObjects{}; ///< array of CalArray objects
+  bool mAddFEEInfo{false};                   ///< add front end electronics mappings
+  std::vector<float> mTraceLengthIROC;       ///< trace lengths IROC
+  std::vector<float> mTraceLengthOROC;       ///< trace lengths OROC
 
-    /// forwarding visitor class, required to loop over the variant types
-    template<class Result, class Func>
-      struct forwarding_visitor : boost::static_visitor<Result>
+  /// add default mapping like local, global x/y positions
+  void addDefaultMapping(TTree* tree);
+
+  /// add FEE mapping like FEC id, SAMPA id, chip id
+  void addFEEMapping(TTree* tree);
+
+  /// add the values of the calDet objects
+  /// \todo still to be finalized
+  void addCalDetObjects(TTree* tree);
+
+  /// set default aliases
+  void setDefaultAliases(TTree* tree);
+
+  /// read trace lengths
+  void readTraceLengths(std::string_view mappingDir = "");
+
+  /// load trace lengths into vector
+  void setTraceLengths(std::string_view inputFile, std::vector<float>& length);
+
+  /// forwarding visitor class, required to loop over the variant types
+  template <class Result, class Func>
+  struct forwarding_visitor : boost::static_visitor<Result> {
+    Func func;
+    forwarding_visitor(const Func& f) : func(f) {}
+    forwarding_visitor(Func&& f) : func(std::move(f)) {}
+    template <class Arg>
+    Result operator()(Arg&& arg) const
     {
-      Func func;
-      forwarding_visitor(const Func& f):func(f){}
-      forwarding_visitor(Func&& f):func(std::move(f)){}
-      template<class Arg>
-        Result operator()(Arg && arg) const {
-          return func(std::forward<Arg>(arg));
-        }
-    };
+      return func(std::forward<Arg>(arg));
+    }
+  };
 
-    /// easy way to make a forwarding visitor
-    template<class Result, class Func>
-      forwarding_visitor<Result, std::decay_t<Func> > make_forwarding_visitor(Func && func) {
-        return {std::forward<Func>(func)};
-      }
-
+  /// easy way to make a forwarding visitor
+  template <class Result, class Func>
+  forwarding_visitor<Result, std::decay_t<Func>> make_forwarding_visitor(Func&& func)
+  {
+    return {std::forward<Func>(func)};
+  }
 };
 } // namespace tpc
 

@@ -34,7 +34,8 @@ class ConfigParamRegistry
 {
  public:
   ConfigParamRegistry(std::unique_ptr<ParamRetriever> retriever)
-  : mRetriever{std::move(retriever)} {
+    : mRetriever{std::move(retriever)}
+  {
   }
 
   template <typename T>
@@ -44,6 +45,8 @@ class ConfigParamRegistry
     try {
       if constexpr (std::is_same_v<T, int>) {
         return mRetriever->getInt(key);
+      } else if constexpr (std::is_same_v<T, int64_t>) {
+        return mRetriever->getInt64(key);
       } else if constexpr (std::is_same_v<T, float>) {
         return mRetriever->getFloat(key);
       } else if constexpr (std::is_same_v<T, double>) {
@@ -55,7 +58,7 @@ class ConfigParamRegistry
       } else if constexpr (std::is_same_v<T, boost::property_tree::ptree>) {
         return mRetriever->getPTree(key);
       } else if constexpr (std::is_constructible_v<T, boost::property_tree::ptree>) {
-        return T{ mRetriever->getPTree(key) };
+        return T{mRetriever->getPTree(key)};
       } else if constexpr (std::is_constructible_v<T, boost::property_tree::ptree> == false) {
         static_assert(std::is_constructible_v<T, boost::property_tree::ptree> == false,
                       "Not a basic type and no constructor from ptree provided");

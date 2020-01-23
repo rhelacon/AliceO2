@@ -27,7 +27,7 @@ int GPUChainTracking::PrepareProfile()
 #ifdef GPUCA_TRACKLET_CONSTRUCTOR_DO_PROFILE
   char* tmpMem = (char*)mRec->AllocateUnmanagedMemory(PROFILE_MAX_SIZE, GPUMemoryResource::MEMORY_GPU);
   processorsShadow()->tpcTrackers[0].mStageAtSync = tmpMem;
-  runKernel<GPUMemClean16>({ BlockCount(), ThreadCount(), -1 }, nullptr, krnlRunRangeNone, krnlEventNone, tmpMem, PROFILE_MAX_SIZE);
+  runKernel<GPUMemClean16>({BlockCount(), ThreadCount(), -1}, nullptr, krnlRunRangeNone, krnlEventNone, tmpMem, PROFILE_MAX_SIZE);
 #endif
   return 0;
 }
@@ -35,7 +35,7 @@ int GPUChainTracking::PrepareProfile()
 int GPUChainTracking::DoProfile()
 {
 #ifdef GPUCA_TRACKLET_CONSTRUCTOR_DO_PROFILE
-  std::unique_ptr<char[]> stageAtSync{ new char[PROFILE_MAX_SIZE] };
+  std::unique_ptr<char[]> stageAtSync{new char[PROFILE_MAX_SIZE]};
   mRec->GPUMemCpy(stageAtSync.get(), processorsShadow()->tpcTrackers[0].mStageAtSync, PROFILE_MAX_SIZE, -1, false);
 
   FILE* fp = fopen("profile.txt", "w+");
@@ -101,4 +101,62 @@ int GPUChainTracking::DoProfile()
   fclose(fp2);
 #endif
   return 0;
+}
+
+void GPUChainTracking::PrintMemoryStatistics()
+{
+  unsigned int nTracklets = 0, nMaxTracklets = 0;
+  unsigned int nSectorTracks = 0, nMaxSectorTracks = 0;
+  unsigned int nSectorTrackHits = 0, nMaxSectorTrackHits = 0;
+  for (int i = 0; i < NSLICES; i++) {
+    nMaxTracklets += processors()->tpcTrackers[i].NMaxTracklets();
+    nTracklets += *processors()->tpcTrackers[i].NTracklets();
+    nMaxSectorTracks += processors()->tpcTrackers[i].NMaxTracks();
+    nSectorTracks += *processors()->tpcTrackers[i].NTracks();
+    nMaxSectorTrackHits += processors()->tpcTrackers[i].NMaxTrackHits();
+    nSectorTrackHits += *processors()->tpcTrackers[i].NTrackHits();
+  }
+  unsigned int nTracks = processors()->tpcMerger.NOutputTracks();
+  unsigned int nMaxTracks = processors()->tpcMerger.NMaxTracks();
+  unsigned int nTrackHits = processors()->tpcMerger.NOutputTrackClusters();
+  unsigned int nMaxTrackHits = processors()->tpcMerger.NMaxOutputTrackClusters();
+
+  GPUInfo("Mem Usage Tracklets      : %7u / %7u (%3.0f%%)", nTracklets, nMaxTracklets, 100.f * nTracklets / nMaxTracklets);
+  GPUInfo("Mem Usage SectorTracks   : %7u / %7u (%3.0f%%)", nSectorTracks, nMaxSectorTracks, 100.f * nSectorTracks / nMaxSectorTracks);
+  GPUInfo("Mem Usage SectorTrackHits: %7u / %7u (%3.0f%%)", nSectorTrackHits, nMaxSectorTrackHits, 100.f * nSectorTrackHits / nMaxSectorTrackHits);
+  GPUInfo("Mem Usage Tracks         : %7u / %7u (%3.0f%%)", nTracks, nMaxTracks, 100.f * nTracks / nMaxTracks);
+  GPUInfo("Mem Usage TrackHits      : %7u / %7u (%3.0f%%)", nTrackHits, nMaxTrackHits, 100.f * nTrackHits / nMaxTrackHits);
+}
+
+void GPUChainTracking::PrintMemoryRelations()
+{
+  for (int i = 0; i < NSLICES; i++) {
+    GPUInfo("MEMREL Tracklets NCl %d NTrkl %d", processors()->tpcTrackers[i].NHitsTotal(), *processors()->tpcTrackers[i].NTracklets());
+    GPUInfo("MEMREL SectorTracks NCl %d NTrk %d", processors()->tpcTrackers[i].NHitsTotal(), *processors()->tpcTrackers[i].NTracks());
+    GPUInfo("MEMREL SectorTrackHits NCl %d NTrkH %d", processors()->tpcTrackers[i].NHitsTotal(), *processors()->tpcTrackers[i].NTrackHits());
+  }
+  GPUInfo("MEMREL Tracks NCl %d NTrk %d", processors()->tpcMerger.NMaxClusters(), processors()->tpcMerger.NOutputTracks());
+  GPUInfo("MEMREL TrackHitss NCl %d NTrkH %d", processors()->tpcMerger.NMaxClusters(), processors()->tpcMerger.NOutputTrackClusters());
+}
+
+void GPUChainTracking::PrepareDebugOutput()
+{
+#ifdef GPUCA_KERNEL_DEBUGGER_OUTPUT
+  const auto& threadContext = GetThreadContext();
+  if (mRec->IsGPU()) {
+    SetupGPUProcessor(&processors()->debugOutput, false);
+    WriteToConstantMemory(RecoStep::NoRecoStep, (char*)&processors()->debugOutput - (char*)processors(), &processorsShadow()->debugOutput, sizeof(processors()->debugOutput), -1);
+    memset(processors()->debugOutput.memory(), 0, processors()->debugOutput.memorySize() * sizeof(processors()->debugOutput.memory()[0]));
+  }
+  runKernel<GPUMemClean16>({BlockCount(), ThreadCount(), 0, RecoStep::TPCSliceTracking}, krnlRunRangeNone, {}, (mRec->IsGPU() ? processorsShadow() : processors())->debugOutput.memory(), processorsShadow()->debugOutput.memorySize() * sizeof(processors()->debugOutput.memory()[0]));
+#endif
+}
+
+void GPUChainTracking::PrintDebugOutput()
+{
+#ifdef GPUCA_KERNEL_DEBUGGER_OUTPUT
+  const auto& threadContext = GetThreadContext();
+  TransferMemoryResourcesToHost(RecoStep::NoRecoStep, &processors()->debugOutput, -1);
+  processors()->debugOutput.Print();
+#endif
 }

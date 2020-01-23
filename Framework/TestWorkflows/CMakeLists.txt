@@ -30,6 +30,11 @@ o2_add_executable(diamond-workflow
                   PUBLIC_LINK_LIBRARIES O2::Framework
                   COMPONENT_NAME TestWorkflows)
 
+o2_add_executable(output-wildcard-workflow
+                  SOURCES src/o2OutputWildcardWorkflow.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework
+                  COMPONENT_NAME TestWorkflows)
+
 o2_add_executable(parallel-workflow
                   SOURCES src/o2ParallelWorkflow.cxx
                   PUBLIC_LINK_LIBRARIES O2::Framework
@@ -101,6 +106,17 @@ o2_add_executable(datasampling-parallel
 o2_add_executable(datasampling-time-pipeline
                   SOURCES src/dataSamplingTimePipeline.cxx
                   PUBLIC_LINK_LIBRARIES O2::Framework
+                  COMPONENT_NAME TestWorkflows)
+
+o2_add_executable(ccdb-fetch-to-timeframe
+                  SOURCES src/test_CCDBFetchToTimeframe.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework
+                  COMPONENT_NAME TestWorkflows)
+
+# Detector specific dummy workflows
+o2_add_executable(tof-dummy-ccdb
+                  SOURCES src/tof-dummy-ccdb.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework O2::TOFReconstruction
                   COMPONENT_NAME TestWorkflows)
 
 if(BUILD_SIMULATION)

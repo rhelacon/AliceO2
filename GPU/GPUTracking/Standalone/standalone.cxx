@@ -14,6 +14,7 @@
 #include "utils/qconfig.h"
 #include "GPUReconstruction.h"
 #include "GPUReconstructionTimeframe.h"
+#include "GPUReconstructionConvert.h"
 #include "GPUChainTracking.h"
 #include "GPUTPCDef.h"
 #include "GPUQA.h"
@@ -27,7 +28,7 @@
 #include <chrono>
 #include <tuple>
 #include <algorithm>
-#ifdef GPUCA_HAVE_OPENMP
+#ifdef WITH_OPENMP
 #include <omp.h>
 #endif
 
@@ -43,6 +44,7 @@
 #include <sys/stat.h>
 #endif
 #include "utils/timer.h"
+#include "utils/qmaths_helpers.h"
 
 #include "TPCFastTransform.h"
 #include "GPUTPCGMMergedTrack.h"
@@ -55,7 +57,7 @@
 #include "GPUChainITS.h"
 #endif
 
-#ifdef BUILD_EVENT_DISPLAY
+#ifdef GPUCA_BUILD_EVENT_DISPLAY
 #ifdef _WIN32
 #include "GPUDisplayBackendWindows.h"
 #else
@@ -134,6 +136,9 @@ int ReadConfiguration(int argc, char** argv)
   if (configStandalone.fpe) {
     feenableexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW);
   }
+  if (configStandalone.flushDenormals) {
+    disable_denormals();
+  }
 
 #else
   if (configStandalone.affinity != -1) {
@@ -152,13 +157,13 @@ int ReadConfiguration(int argc, char** argv)
 #ifndef HAVE_O2HEADERS
   configStandalone.configRec.runTRD = configStandalone.configRec.rundEdx = configStandalone.configRec.runCompression = configStandalone.configRec.runTransformation = 0;
 #endif
-#ifndef BUILD_QA
+#ifndef GPUCA_BUILD_QA
   if (configStandalone.qa || configStandalone.eventGenerator) {
     printf("QA not enabled in build\n");
     return (1);
   }
 #endif
-#ifndef BUILD_EVENT_DISPLAY
+#ifndef GPUCA_BUILD_EVENT_DISPLAY
   if (configStandalone.eventDisplay) {
     printf("EventDisplay not enabled in build\n");
     return (1);
@@ -197,7 +202,7 @@ int ReadConfiguration(int argc, char** argv)
     configStandalone.OMPThreads = 1;
   }
 
-#ifdef GPUCA_HAVE_OPENMP
+#ifdef WITH_OPENMP
   if (configStandalone.OMPThreads != -1) {
     omp_set_num_threads(configStandalone.OMPThreads);
   } else {
@@ -277,35 +282,44 @@ int SetupReconstruction()
   recSet.SearchWindowDZDR = configStandalone.dzdr;
   recSet.GlobalTracking = configStandalone.configRec.globalTracking;
   recSet.DisableRefitAttachment = configStandalone.configRec.disableRefitAttachment;
+  recSet.ForceEarlyTPCTransform = configStandalone.configRec.ForceEarlyTPCTransform;
+  recSet.fwdTPCDigitsAsClusters = configStandalone.configRec.fwdTPCDigitsAsClusters;
   if (configStandalone.referenceX < 500.) {
     recSet.TrackReferenceX = configStandalone.referenceX;
   }
+  recSet.tpcZSthreshold = configStandalone.zsThreshold;
 
   if (configStandalone.OMPThreads != -1) {
     devProc.nThreads = configStandalone.OMPThreads;
   }
   devProc.deviceNum = configStandalone.cudaDevice;
+  devProc.forceMemoryPoolSize = configStandalone.forceMemorySize;
   devProc.debugLevel = configStandalone.DebugLevel;
+  devProc.deviceTimers = configStandalone.DeviceTiming;
   devProc.runQA = configStandalone.qa;
   devProc.runCompressionStatistics = configStandalone.compressionStat;
   if (configStandalone.eventDisplay) {
-#ifdef BUILD_EVENT_DISPLAY
+#ifdef GPUCA_BUILD_EVENT_DISPLAY
 #ifdef _WIN32
     if (configStandalone.eventDisplay == 1) {
+      printf("Enabling event display (windows backend)\n");
       eventDisplay.reset(new GPUDisplayBackendWindows);
     }
 
 #else
     if (configStandalone.eventDisplay == 1) {
       eventDisplay.reset(new GPUDisplayBackendX11);
+      printf("Enabling event display (X11 backend)\n");
     }
     if (configStandalone.eventDisplay == 3) {
       eventDisplay.reset(new GPUDisplayBackendGlfw);
+      printf("Enabling event display (GLFW backend)\n");
     }
 
 #endif
     else if (configStandalone.eventDisplay == 2) {
       eventDisplay.reset(new GPUDisplayBackendGlut);
+      printf("Enabling event display (GLUT backend)\n");
     }
 
 #endif
@@ -355,7 +369,22 @@ int SetupReconstruction()
     steps.steps.setBits(GPUReconstruction::RecoStep::TRDTracking, false);
   }
   steps.inputs.set(GPUDataTypes::InOutType::TPCClusters, GPUDataTypes::InOutType::TRDTracklets);
-  steps.outputs.set(GPUDataTypes::InOutType::TPCSectorTracks);
+  if (ev.needsClusterer) {
+    steps.inputs.setBits(GPUDataTypes::InOutType::TPCRaw, true);
+    steps.inputs.setBits(GPUDataTypes::InOutType::TPCClusters, false);
+  } else {
+    steps.steps.setBits(GPUReconstruction::RecoStep::TPCClusterFinding, false);
+  }
+
+  if (configStandalone.configProc.recoSteps >= 0) {
+    steps.steps &= configStandalone.configProc.recoSteps;
+  }
+  if (configStandalone.configProc.recoStepsGPU >= 0) {
+    steps.stepsGPUMask &= configStandalone.configProc.recoStepsGPU;
+  }
+
+  steps.outputs.clear();
+  steps.outputs.setBits(GPUDataTypes::InOutType::TPCSectorTracks, steps.steps.isSet(GPUReconstruction::RecoStep::TPCSliceTracking));
   steps.outputs.setBits(GPUDataTypes::InOutType::TPCMergedTracks, steps.steps.isSet(GPUReconstruction::RecoStep::TPCMerging));
   steps.outputs.setBits(GPUDataTypes::InOutType::TPCCompressedClusters, steps.steps.isSet(GPUReconstruction::RecoStep::TPCCompression));
   steps.outputs.setBits(GPUDataTypes::InOutType::TRDTracks, steps.steps.isSet(GPUReconstruction::RecoStep::TRDTracking));
@@ -401,10 +430,10 @@ int main(int argc, char** argv)
     printf("Error initializing GPUReconstruction\n");
     return (1);
   }
-  rec->SetDebugLevel(configStandalone.DebugLevel);
+  rec->SetDebugLevelTmp(configStandalone.DebugLevel);
   chainTracking = rec->AddChain<GPUChainTracking>();
 #ifdef HAVE_O2HEADERS
-  chainITS = rec->AddChain<GPUChainITS>();
+  chainITS = rec->AddChain<GPUChainITS>(0);
 #endif
 
   if (SetupReconstruction()) {
@@ -457,6 +486,7 @@ int main(int argc, char** argv)
 
     for (int j2 = 0; j2 < configStandalone.runs2; j2++) {
       if (configStandalone.configQA.inputHistogramsOnly) {
+        chainTracking->ForceInitQA();
         break;
       }
       if (configStandalone.runs2 > 1) {
@@ -485,6 +515,18 @@ int main(int argc, char** argv)
             break;
           }
         }
+        if (configStandalone.encodeZS || configStandalone.zsFilter) {
+          if (!chainTracking->mIOPtrs.tpcPackedDigits) {
+            printf("Need digit input to run ZS\n");
+            goto breakrun;
+          }
+          if (configStandalone.zsFilter) {
+            chainTracking->ConvertZSFilter(configStandalone.zs12bit);
+          }
+          if (configStandalone.encodeZS) {
+            chainTracking->ConvertZSEncoder(configStandalone.zs12bit);
+          }
+        }
         if (!configStandalone.configRec.runTransformation) {
           chainTracking->mIOPtrs.clustersNative = nullptr;
         } else {
@@ -499,6 +541,16 @@ int main(int argc, char** argv)
           }
         }
 
+        if (configStandalone.overrideMaxTimebin && (chainTracking->mIOPtrs.clustersNative || chainTracking->mIOPtrs.tpcPackedDigits)) {
+          GPUSettingsEvent ev = rec->GetEventSettings();
+          ev.continuousMaxTimeBin = chainTracking->mIOPtrs.tpcPackedDigits ? GPUReconstructionConvert::GetMaxTimeBin(*chainTracking->mIOPtrs.tpcPackedDigits) : GPUReconstructionConvert::GetMaxTimeBin(*chainTracking->mIOPtrs.clustersNative);
+          rec->UpdateEventSettings(&ev);
+        }
+        if (!rec->GetParam().earlyTpcTransform && chainTracking->mIOPtrs.clustersNative == nullptr && chainTracking->mIOPtrs.tpcPackedDigits == nullptr) {
+          printf("Need cluster native data for on-the-fly TPC transform\n");
+          goto breakrun;
+        }
+
         printf("Loading time: %'d us\n", (int)(1000000 * timerLoad.GetCurrentElapsedTime()));
 
         printf("Processing Event %d\n", iEvent);
@@ -509,12 +561,12 @@ int main(int argc, char** argv)
           if (configStandalone.outputcontrolmem) {
             rec->SetOutputControl(outputmemory.get(), configStandalone.outputcontrolmem);
           }
-          rec->SetResetTimers(j1 <= configStandalone.runsInit);
+          rec->SetResetTimers(j1 < configStandalone.runsInit);
 
           int tmpRetVal = rec->RunChains();
 
           if (tmpRetVal == 0 || tmpRetVal == 2) {
-            int nTracks = 0, nClusters = 0, nAttachedClusters = 0, nAttachedClustersFitted = 0;
+            int nTracks = 0, nClusters = 0, nAttachedClusters = 0, nAttachedClustersFitted = 0, nAdjacentClusters = 0;
             for (int k = 0; k < chainTracking->GetTPCMerger().NOutputTracks(); k++) {
               if (chainTracking->GetTPCMerger().OutputTracks()[k].OK()) {
                 nTracks++;
@@ -522,8 +574,15 @@ int main(int argc, char** argv)
                 nAttachedClustersFitted += chainTracking->GetTPCMerger().OutputTracks()[k].NClustersFitted();
               }
             }
+            for (int k = 0; k < chainTracking->GetTPCMerger().NMaxClusters(); k++) {
+              int attach = chainTracking->GetTPCMerger().ClusterAttachment()[k];
+              if (attach & GPUTPCGMMerger::attachFlagMask) {
+                nAdjacentClusters++;
+              }
+            }
+
             nClusters = chainTracking->GetTPCMerger().NClusters();
-            printf("Output Tracks: %d (%d/%d attached clusters)\n", nTracks, nAttachedClusters, nAttachedClustersFitted);
+            printf("Output Tracks: %d (%d / %d / %d / %d clusters (fitted / attached / adjacent / total))\n", nTracks, nAttachedClustersFitted, nAttachedClusters, nAdjacentClusters, chainTracking->GetTPCMerger().NMaxClusters());
             if (j1 == 0) {
               nTracksTotal += nTracks;
               nClustersTotal += nClusters;
@@ -538,6 +597,9 @@ int main(int argc, char** argv)
               }
               printf("TRD Tracker reconstructed %d tracks (%d tracklets)\n", chainTracking->GetTRDTracker()->NTracks(), nTracklets);
             }
+          }
+          if (configStandalone.memoryStat) {
+            rec->PrintMemoryStatistics();
           }
           rec->ClearAllocatedMemory();
 
@@ -560,19 +622,11 @@ int main(int argc, char** argv)
   }
 breakrun:
 
-  if (configStandalone.qa) {
 #ifndef _WIN32
-    if (configStandalone.fpe) {
-      fedisableexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW);
-    }
-
-#endif
-    if (chainTracking->GetQA() == nullptr) {
-      printf("QA Unavailable\n");
-      return 1;
-    }
-    chainTracking->GetQA()->DrawQAHistograms();
+  if (configStandalone.qa && configStandalone.fpe) {
+    fedisableexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW);
   }
+#endif
 
   rec->Finalize();
   rec->Exit();

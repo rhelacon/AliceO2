@@ -17,6 +17,7 @@
 #include "TOFSimulation/Strip.h"
 #include "SimulationDataFormat/MCTruthContainer.h"
 #include "TOFSimulation/MCLabel.h"
+#include "TOFCalibration/CalibTOFapi.h"
 
 namespace o2
 {
@@ -25,6 +26,8 @@ namespace tof
 
 class Digitizer
 {
+  using CalibApi = o2::tof::CalibTOFapi;
+
  public:
   Digitizer(Int_t mode = 0) : mMode(mode) { init(); };
   ~Digitizer() = default;
@@ -69,6 +72,8 @@ class Digitizer
 
   std::vector<std::vector<Digit>>* getDigitPerTimeFrame() { return &mDigitsPerTimeFrame; }
   std::vector<o2::dataformats::MCTruthContainer<o2::MCCompLabel>>* getMCTruthPerTimeFrame() { return &mMCTruthOutputContainerPerTimeFrame; }
+
+  void setCalibApi(CalibApi* calibApi) { mCalibApi = calibApi; }
 
  private:
   // parameters
@@ -124,6 +129,8 @@ class Digitizer
 
   o2::dataformats::MCTruthContainer<o2::tof::MCLabel> mFutureMCTruthContainer;
 
+  CalibApi* mCalibApi = nullptr; //! calib api to handle the TOF calibration
+
   void fillDigitsInStrip(std::vector<Strip>* strips, o2::dataformats::MCTruthContainer<o2::tof::MCLabel>* mcTruthContainer, int channel, int tdc, int tot, int nbc, UInt_t istrip, Int_t trackID, Int_t eventID, Int_t sourceID);
 
   Int_t processHit(const HitType& hit, Double_t event_time);
@@ -151,6 +158,6 @@ class Digitizer
 
   ClassDefNV(Digitizer, 1);
 };
-}
-}
+} // namespace tof
+} // namespace o2
 #endif
