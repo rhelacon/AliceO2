@@ -10,7 +10,7 @@
 
 # Preamble
 
-cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.17 FATAL_ERROR)
 
 # it's important to specify accurately the list of languages. for instance C and
 # C++ as we _do_ have some C files to compile explicitely as C (e.g. gl3w.c)
@@ -59,6 +59,7 @@ include(O2AddTestRootMacro)
 include(O2TargetRootDictionary)
 include(O2DataFile)
 include(O2TargetManPage)
+include(O2AddWorkflow)
 
 # Main targets of the project in various subdirectories. Order matters.
 add_subdirectory(Common)
@@ -73,6 +74,8 @@ add_subdirectory(EventVisualisation)
 add_subdirectory(Generators)
 add_subdirectory(Steer) # consider building this only for simulation ?
 add_subdirectory(prodtests)
+add_subdirectory(Analysis)
+add_subdirectory(scripts)
 
 if(BUILD_EXAMPLES)
   add_subdirectory(Examples)

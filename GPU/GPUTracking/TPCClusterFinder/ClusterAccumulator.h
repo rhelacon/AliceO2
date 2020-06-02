@@ -19,18 +19,26 @@
 
 namespace GPUCA_NAMESPACE
 {
+
+namespace tpc
+{
+struct ClusterNative;
+}
+
 namespace gpu
 {
+
+struct ChargePos;
 
 class ClusterAccumulator
 {
 
  public:
-  GPUd() Charge updateInner(PackedCharge, Delta, Delta);
-  GPUd() Charge updateOuter(PackedCharge, Delta, Delta);
+  GPUd() tpccf::Charge updateInner(PackedCharge, tpccf::Delta2);
+  GPUd() tpccf::Charge updateOuter(PackedCharge, tpccf::Delta2);
 
-  GPUd() void finalize(const deprecated::Digit&);
-  GPUd() void toNative(const deprecated::Digit&, deprecated::ClusterNative&) const;
+  GPUd() void finalize(const ChargePos&, tpccf::Charge, tpccf::TPCTime);
+  GPUd() void toNative(const ChargePos&, tpccf::Charge, tpc::ClusterNative&) const;
 
  private:
   float mQtot = 0;
@@ -41,7 +49,7 @@ class ClusterAccumulator
   uchar mSplitInTime = 0;
   uchar mSplitInPad = 0;
 
-  GPUd() void update(Charge, Delta, Delta);
+  GPUd() void update(tpccf::Charge, tpccf::Delta2);
 };
 
 } // namespace gpu

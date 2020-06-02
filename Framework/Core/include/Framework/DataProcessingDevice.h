@@ -19,7 +19,6 @@
 #include "Framework/DataProcessingStats.h"
 #include "Framework/ExpirationHandler.h"
 #include "Framework/MessageContext.h"
-#include "Framework/RootObjectContext.h"
 #include "Framework/ArrowContext.h"
 #include "Framework/StringContext.h"
 #include "Framework/RawBufferContext.h"
@@ -46,6 +45,7 @@ class DataProcessingDevice : public FairMQDevice
  public:
   DataProcessingDevice(DeviceSpec const& spec, ServiceRegistry&, DeviceState& state);
   void Init() final;
+  void InitTask() final;
   void PreRun() final;
   void PostRun() final;
   void Reset() final;
@@ -70,7 +70,6 @@ class DataProcessingDevice : public FairMQDevice
   ServiceRegistry& mServiceRegistry;
   TimingInfo mTimingInfo;
   MessageContext mFairMQContext;
-  RootObjectContext mRootContext;
   StringContext mStringContext;
   ArrowContext mDataFrameContext;
   RawBufferContext mRawBufferContext;
@@ -85,6 +84,8 @@ class DataProcessingDevice : public FairMQDevice
   uint64_t mLastMetricFlushedTimestamp = 0;  /// The timestamp of the last time we actually flushed metrics
   uint64_t mBeginIterationTimestamp = 0;     /// The timestamp of when the current ConditionalRun was started
   DataProcessingStats mStats;                /// Stats about the actual data processing.
+  int mCurrentBackoff = 0;                   /// The current exponential backoff value.
+  std::vector<FairMQRegionInfo> mPendingRegionInfos; /// A list of the region infos not yet notified.
 };
 
 } // namespace o2::framework

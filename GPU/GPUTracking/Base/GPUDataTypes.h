@@ -16,6 +16,8 @@
 
 #include "GPUCommonDef.h"
 
+// These are basic and non-comprex data types, which will also be visible on the GPU.
+// Please add complex data types required on the host but not GPU to GPUHostDataTypes.h and forward-declare!
 #ifndef __OPENCL__
 #include <cstddef>
 #endif
@@ -32,10 +34,8 @@ namespace o2
 namespace tpc
 {
 struct ClusterNativeAccess;
-template <class T>
-struct CompressedClustersPtrs_helper;
-struct CompressedClustersCounters;
-using CompressedClusters = CompressedClustersPtrs_helper<CompressedClustersCounters>;
+struct CompressedClustersFlat;
+class Digit;
 } // namespace tpc
 } // namespace o2
 #endif
@@ -62,18 +62,8 @@ namespace GPUCA_NAMESPACE
 {
 namespace gpu
 {
-namespace deprecated
-{
-struct PackedDigit;
-}
-} // namespace gpu
-} // namespace GPUCA_NAMESPACE
-
-namespace GPUCA_NAMESPACE
-{
-namespace gpu
-{
 class TPCFastTransform;
+class TPCdEdxCalibrationSplines;
 } // namespace gpu
 } // namespace GPUCA_NAMESPACE
 
@@ -103,6 +93,7 @@ class GPUTRDTrackletWord;
 class GPUTPCMCInfo;
 struct GPUTPCClusterData;
 struct GPUTRDTrackletLabels;
+struct GPUTPCDigitsMCInput;
 
 class GPUDataTypes
 {
@@ -168,6 +159,7 @@ struct GPUCalibObjectsTemplate {
   typename S<TPCFastTransform>::type* fastTransform = nullptr;
   typename S<o2::base::MatLayerCylSet>::type* matLUT = nullptr;
   typename S<o2::trd::TRDGeometryFlat>::type* trdGeometry = nullptr;
+  typename S<TPCdEdxCalibrationSplines>::type* dEdxSplines = nullptr;
 };
 typedef GPUCalibObjectsTemplate<DefaultPtr> GPUCalibObjects;
 typedef GPUCalibObjectsTemplate<ConstPtr> GPUCalibObjectsConst;
@@ -176,17 +168,25 @@ struct GPUTrackingInOutZS {
   static constexpr unsigned int NSLICES = GPUDataTypes::NSLICES;
   static constexpr unsigned int NENDPOINTS = 20;
   struct GPUTrackingInOutZSSlice {
-    void** zsPtr[NENDPOINTS];
-    unsigned int* nZSPtr[NENDPOINTS];
+    const void* const* zsPtr[NENDPOINTS];
+    const unsigned int* nZSPtr[NENDPOINTS];
     unsigned int count[NENDPOINTS];
+  };
+  struct GPUTrackingInOutZSCounts {
+    unsigned int count[NSLICES][NENDPOINTS] = {};
+  };
+  struct GPUTrackingInOutZSMeta {
+    void* ptr[NSLICES][NENDPOINTS];
+    unsigned int n[NSLICES][NENDPOINTS];
   };
   GPUTrackingInOutZSSlice slice[NSLICES];
 };
 
 struct GPUTrackingInOutDigits {
   static constexpr unsigned int NSLICES = GPUDataTypes::NSLICES;
-  const deprecated::PackedDigit* tpcDigits[NSLICES] = {nullptr};
+  const o2::tpc::Digit* tpcDigits[NSLICES] = {nullptr};
   size_t nTPCDigits[NSLICES] = {0};
+  GPUTPCDigitsMCInput* tpcDigitsMC;
 };
 
 struct GPUTrackingInOutPointers {
@@ -194,17 +194,17 @@ struct GPUTrackingInOutPointers {
   GPUTrackingInOutPointers(const GPUTrackingInOutPointers&) = default;
   static constexpr unsigned int NSLICES = GPUDataTypes::NSLICES;
 
-  GPUTrackingInOutZS* tpcZS = nullptr;
-  GPUTrackingInOutDigits* tpcPackedDigits = nullptr;
+  const GPUTrackingInOutZS* tpcZS = nullptr;
+  const GPUTrackingInOutDigits* tpcPackedDigits = nullptr;
   const GPUTPCClusterData* clusterData[NSLICES] = {nullptr};
   unsigned int nClusterData[NSLICES] = {0};
   const AliHLTTPCRawCluster* rawClusters[NSLICES] = {nullptr};
   unsigned int nRawClusters[NSLICES] = {0};
   const o2::tpc::ClusterNativeAccess* clustersNative = nullptr;
-  const GPUTPCTrack* sliceOutTracks[NSLICES] = {nullptr};
-  unsigned int nSliceOutTracks[NSLICES] = {0};
-  const GPUTPCHitId* sliceOutClusters[NSLICES] = {nullptr};
-  unsigned int nSliceOutClusters[NSLICES] = {0};
+  const GPUTPCTrack* sliceTracks[NSLICES] = {nullptr};
+  unsigned int nSliceTracks[NSLICES] = {0};
+  const GPUTPCHitId* sliceClusters[NSLICES] = {nullptr};
+  unsigned int nSliceClusters[NSLICES] = {0};
   const AliHLTTPCClusterMCLabel* mcLabelsTPC = nullptr;
   unsigned int nMCLabelsTPC = 0;
   const GPUTPCMCInfo* mcInfosTPC = nullptr;
@@ -213,12 +213,12 @@ struct GPUTrackingInOutPointers {
   unsigned int nMergedTracks = 0;
   const GPUTPCGMMergedTrackHit* mergedTrackHits = nullptr;
   unsigned int nMergedTrackHits = 0;
-  const o2::tpc::CompressedClusters* tpcCompressedClusters = nullptr;
+  const o2::tpc::CompressedClustersFlat* tpcCompressedClusters = nullptr;
   const GPUTRDTrackletWord* trdTracklets = nullptr;
   unsigned int nTRDTracklets = 0;
   const GPUTRDTrackletLabels* trdTrackletsMC = nullptr;
   unsigned int nTRDTrackletsMC = 0;
-  const GPUTRDTrack* trdTracks = nullptr;
+  const GPUTRDTrackGPU* trdTracks = nullptr;
   unsigned int nTRDTracks = 0;
 };
 #else

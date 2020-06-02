@@ -52,7 +52,7 @@ class Hit : public o2::BasicXYZEHit<Float_t, Float_t>
              Int_t particlePdg);
 
   // Entrance position getters
-  Point3D<Float_t> GetPosStart() const { return mPositionStart; }
+  Point3D<Float_t> const& GetPosStart() const { return mPositionStart; }
   Float_t GetStartX() const { return mPositionStart.X(); }
   Float_t GetStartY() const { return mPositionStart.Y(); }
   Float_t GetStartZ() const { return mPositionStart.Z(); }
@@ -65,13 +65,14 @@ class Hit : public o2::BasicXYZEHit<Float_t, Float_t>
   }
 
   // Momentum getters
-  Vector3D<Float_t> GetMomentum() const { return mMomentumStart; }
+  Vector3D<Float_t> const& GetMomentum() const { return mMomentumStart; }
   Vector3D<Float_t>& GetMomentum() { return mMomentumStart; }
   Float_t GetPx() const { return mMomentumStart.X(); }
   Float_t GetPy() const { return mMomentumStart.Y(); }
   Float_t GetPz() const { return mMomentumStart.Z(); }
   Float_t GetE() const { return mEnergyStart; }
   Float_t GetTotalEnergyAtEntrance() const { return GetE(); }
+  int GetParticlePdg() const { return mParticlePdg; }
 
   void Print(const Option_t* opt) const;
 
@@ -81,7 +82,7 @@ class Hit : public o2::BasicXYZEHit<Float_t, Float_t>
   float mEnergyStart;             ///< total energy at entrance
   int mParticlePdg;               ///< PDG code of the particle associated with this track
 
-  ClassDefNV(Hit, 1);
+  ClassDefNV(Hit, 2);
 };
 
 Hit::Hit(int trackID,

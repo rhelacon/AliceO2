@@ -1,3 +1,13 @@
+// Copyright CERN and copyright holders of ALICE O2. This software is
+// distributed under the terms of the GNU General Public License v3 (GPL
+// Version 3), copied verbatim in the file "COPYING".
+//
+// See http://alice-o2.web.cern.ch/license for full licensing information.
+//
+// In applying this license CERN does not waive the privileges and immunities
+// granted to it by virtue of its status as an Intergovernmental Organization
+// or submit itself to any jurisdiction.
+
 #include "Framework/AnalysisDataModel.h"
 #include "Framework/RootTableBuilderHelpers.h"
 #include "Framework/Logger.h"
@@ -12,7 +22,7 @@ using namespace o2::soa;
 template <typename T>
 void verifyTable(TFile* infile, const char* branchName)
 {
-  std::cout << "Table: " << o2::aod::MetadataTrait<T>::metadata::label() << std::endl;
+  std::cout << "Table: " << o2::aod::MetadataTrait<T>::metadata::tableLabel() << std::endl;
   std::unique_ptr<TTreeReader> reader = std::make_unique<TTreeReader>(branchName, infile);
   TableBuilder builder;
   RootTableBuilderHelpers::convertASoA<T>(builder, *reader);
@@ -33,7 +43,7 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  verifyTable<o2::aod::Collisions>(infile.get(), "O2events");
+  verifyTable<o2::aod::Collisions>(infile.get(), "O2collisions");
   verifyTable<o2::aod::Tracks>(infile.get(), "O2tracks");
   verifyTable<o2::aod::TracksCov>(infile.get(), "O2tracks");
   verifyTable<o2::aod::TracksExtra>(infile.get(), "O2tracks");

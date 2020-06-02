@@ -18,6 +18,6 @@
 #pragma link C++ class o2::utils::TreeStreamRedirector + ;
 #pragma link C++ class o2::utils::RootChain + ;
 #pragma link C++ class o2::utils::RngHelper;
-#pragma link C++ class o2::utils::HBFUtils + ;
+#pragma link C++ class o2::utils::MemFileHelper + ;
 
 #endif

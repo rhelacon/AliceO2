@@ -27,10 +27,13 @@
 #include <memory>
 #include <array>
 #include <vector>
+#include <functional>
+#include <gsl/gsl>
 #include "GPUSettings.h"
 #include "GPUDisplayConfig.h"
 #include "GPUQAConfig.h"
 #include "GPUDataTypes.h"
+#include "GPUHostDataTypes.h"
 #include "DataFormatsTPC/Constants.h"
 
 namespace o2
@@ -43,6 +46,23 @@ class Digit;
 namespace gpu
 {
 class TPCFastTransform;
+
+// This defines an output region. Ptr points to a memory buffer, which should have a proper alignment.
+// Since DPL does not respect the alignment of data types, we do not impose anything specic but just use a char data type, but it should be >= 64 bytes ideally.
+// The size defines the maximum possible buffer size when GPUReconstruction is called, and returns the number of filled bytes when it returns.
+// If ptr == nullptr, there is no region defined and GPUReconstruction will write its output to an internal buffer.
+// If allocator is set, it is called as a callback to provide a ptr to the memory.
+struct GPUInterfaceOutputRegion {
+  void* ptr = nullptr;
+  size_t size = 0;
+  std::function<void*(size_t)> allocator = nullptr;
+};
+
+struct GPUInterfaceOutputs {
+  GPUInterfaceOutputRegion compressedClusters;
+  GPUInterfaceOutputRegion clustersNative;
+};
+
 // Full configuration structure with all available settings of GPU...
 struct GPUO2InterfaceConfiguration {
   GPUO2InterfaceConfiguration() = default;
@@ -52,6 +72,7 @@ struct GPUO2InterfaceConfiguration {
   // Settings for the Interface class
   struct GPUInterfaceSettings {
     bool dumpEvents = false;
+    bool outputToExternalBuffers = false;
     // These constants affect GPU memory allocation and do not limit the CPU processing
     unsigned int maxTPCHits = 1024 * 1024 * 1024;
     unsigned int maxTRDTracklets = 128 * 1024;
@@ -79,9 +100,11 @@ struct GPUO2InterfaceConfiguration {
 // value of the pointer is overridden. GPUCATracking will try to place the output in the "void* outputBuffer"
 // location if it is not a nullptr.
 struct GPUO2InterfaceIOPtrs {
-  // Input: TPC clusters in cluster native format, or digits, const as it can only be input
+  // Input: TPC clusters in cluster native format, or digits, or list of ZS pages -  const as it can only be input
   const o2::tpc::ClusterNativeAccess* clusters = nullptr;
-  const std::array<std::vector<o2::tpc::Digit>, o2::tpc::Constants::MAXSECTOR>* o2Digits = nullptr;
+  const std::array<gsl::span<const o2::tpc::Digit>, o2::tpc::Constants::MAXSECTOR>* o2Digits = nullptr;
+  std::array<std::unique_ptr<const o2::dataformats::MCTruthContainer<o2::MCCompLabel>>, o2::tpc::Constants::MAXSECTOR>* o2DigitsMC = nullptr;
+  const o2::gpu::GPUTrackingInOutZS* tpcZS = nullptr;
 
   // Input / Output for Merged TPC tracks, two ptrs, for the tracks themselves, and for the MC labels.
   std::vector<o2::tpc::TrackTPC>* outputTracks = nullptr;
@@ -89,7 +112,7 @@ struct GPUO2InterfaceIOPtrs {
   o2::dataformats::MCTruthContainer<o2::MCCompLabel>* outputTracksMCTruth = nullptr;
 
   // Output for entropy-reduced clusters of TPC compression
-  const o2::tpc::CompressedClusters* compressedClusters;
+  const o2::tpc::CompressedClustersFlat* compressedClusters;
 
   // Hint for GPUCATracking to place its output in this buffer if possible.
   // This enables to create the output directly in a shared memory segment of the framework.

@@ -10,6 +10,7 @@
 
 /// @file   RecoWorkflow.cxx
 
+#include <TTree.h>
 #include "MFTWorkflow/RecoWorkflow.h"
 
 #include "MFTWorkflow/DigitReaderSpec.h"
@@ -17,6 +18,7 @@
 #include "MFTWorkflow/ClusterWriterSpec.h"
 #include "MFTWorkflow/ClusterReaderSpec.h"
 #include "MFTWorkflow/TrackerSpec.h"
+#include "MFTWorkflow/TrackFitterSpec.h"
 #include "MFTWorkflow/TrackWriterSpec.h"
 
 namespace o2
@@ -35,8 +37,8 @@ framework::WorkflowSpec getWorkflow(bool useMC)
   specs.emplace_back(o2::mft::getClustererSpec(useMC));
   specs.emplace_back(o2::mft::getClusterWriterSpec(useMC));
 
-  //specs.emplace_back(o2::mft::getClusterReaderSpec(useMC));
   specs.emplace_back(o2::mft::getTrackerSpec(useMC));
+  specs.emplace_back(o2::mft::getTrackFitterSpec(useMC));
   specs.emplace_back(o2::mft::getTrackWriterSpec(useMC));
 
   return specs;

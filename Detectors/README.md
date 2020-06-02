@@ -9,11 +9,15 @@ There is no module description yet.
 <!-- doxy
 This module contains the following submodules:
 
+* \subpage refDetectorsRaw
+* \subpage refDetectorsBase
 * \subpage refDetectorsBasetest
+* \subpage refDetectorsGlobalTracking
+* \subpage refDetectorsVertexing
+* \subpage refDetectorsCalibration
 * \subpage refDetectorsEMCAL
 * \subpage refDetectorsFIT
 * \subpage refDetectorsGeometry
-* \subpage refDetectorsGlobalTracking
 * \subpage refDetectorsHMPID
 * \subpage refDetectorsITSMFT
 * \subpage refDetectorsMUON

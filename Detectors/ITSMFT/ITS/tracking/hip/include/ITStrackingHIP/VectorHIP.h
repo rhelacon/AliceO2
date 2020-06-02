@@ -15,7 +15,7 @@
 #ifndef O2_ITS_TRACKING_INCLUDE_VECTOR_HIP_H_
 #define O2_ITS_TRACKING_INCLUDE_VECTOR_HIP_H_
 
-#include <assert.h>
+#include <cassert>
 #include <new>
 #include <type_traits>
 #include <vector>
@@ -123,7 +123,7 @@ VectorHIP<T>::VectorHIP(const T* const source, const int size, const int initial
 }
 
 template <typename T>
-VectorHIP<T>::VectorHIP(const VectorHIP& other, const bool isWeak)
+GPUhdi() VectorHIP<T>::VectorHIP(const VectorHIP& other, const bool isWeak)
   : mArrayPointer{other.mArrayPointer},
     mDeviceSize{other.mDeviceSize},
     mCapacity{other.mCapacity},

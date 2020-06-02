@@ -89,13 +89,13 @@ o2_add_test(HwClusterer
 
 # The FastTransform  test seems really slow in Debug mode, so use it only in
 # release mode (use CONFIGURATIONS keyword)
+# update: currently it is fast, switch the test on also for debug
 o2_add_test(FastTransform
             COMPONENT_NAME tpc
             LABELS tpc
             PUBLIC_LINK_LIBRARIES O2::TPCReconstruction
             SOURCES test/testTPCFastTransform.cxx
-            ENVIRONMENT O2_ROOT=${CMAKE_BINARY_DIR}/stage CONFIGURATIONS
-                        RelWithDebInfo)
+            ENVIRONMENT O2_ROOT=${CMAKE_BINARY_DIR}/stage) # CONFIGURATIONS RelWithDebInfo)
 
 # FIXME: should be moved to TPCCalibration as it requires O2::TPCCalibration
 # which is built after TPCReconstruction
@@ -110,6 +110,15 @@ o2_add_test_root_macro(macro/readClusters.C
 o2_add_test_root_macro(macro/testRawRead.C
                        PUBLIC_LINK_LIBRARIES O2::TPCReconstruction
                        LABELS tpc)
+
+o2_add_test_root_macro(macro/createTPCSpaceChargeCorrection.C
+                       COMPILE_ONLY
+                       PUBLIC_LINK_LIBRARIES O2::TPCReconstruction
+                                             O2::CommonConstants
+                                             O2::CommonUtils
+                                             O2::TPCSpaceChargeBase
+                       LABELS tpc)
+
 
 # FIXME: should be moved to TPCSimulation as it requires O2::TPCSimulation
 # target which is built after reconstruction

@@ -1,6 +1,8 @@
 #if !defined(__CLING__) || defined(__ROOTCLING__)
 #include <sstream>
+#include <iostream>
 
+#include "TROOT.h"
 #include <TStopwatch.h>
 #include "TCanvas.h"
 #include "TH2.h"
@@ -13,9 +15,8 @@
 #include "FairSystemInfo.h"
 #include "SimulationDataFormat/MCCompLabel.h"
 
-#include "CPVBase/Digit.h"
+#include "DataFormatsCPV/Digit.h"
 #include "CPVBase/Geometry.h"
-#include "CPVSimulation/DigitizerTask.h"
 #endif
 
 void plot_dig_cpv(int ievent = 0, std::string inputfile = "o2dig.root")
@@ -30,7 +31,7 @@ void plot_dig_cpv(int ievent = 0, std::string inputfile = "o2dig.root")
   hitTree->SetBranchAddress("CPVDigit", &mDigitsArray);
 
   if (!mDigitsArray) {
-    cout << "CPV digits not found in the file. Exiting ..." << endl;
+    std::cout << "CPV digits not found in the file. Exiting ..." << std::endl;
     return;
   }
   hitTree->GetEvent(ievent);
@@ -41,16 +42,14 @@ void plot_dig_cpv(int ievent = 0, std::string inputfile = "o2dig.root")
     for (int j = 0; j < 100; j++)
       primLabels[mod][j] = -1;
 
-  o2::cpv::Geometry* geom = new o2::cpv::Geometry("CPVRun3");
-
   std::vector<o2::cpv::Digit>::const_iterator it;
-  int relId[3];
+  short relId[3];
 
   for (it = mDigitsArray->begin(); it != mDigitsArray->end(); it++) {
-    int absId = (*it).getAbsId();
-    double en = (*it).getAmplitude();
+    short absId = (*it).getAbsId();
+    float en = (*it).getAmplitude();
     int lab = (*it).getLabel(); //TODO
-    geom->AbsToRelNumbering(absId, relId);
+    o2::cpv::Geometry::absToRelNumbering(absId, relId);
     // check, if this label already exist
     int j = 0;
     bool found = false;

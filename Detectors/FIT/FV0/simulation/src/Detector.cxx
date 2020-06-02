@@ -222,7 +222,7 @@ void Detector::createMaterials()
   Int_t fieldType;
   Float_t maxField;
   o2::base::Detector::initFieldTrackingParams(fieldType, maxField);
-  LOG(INFO) << "FV0 Detector::createMaterials(): fieldType " << fieldType << ", maxField " << maxField;
+  LOG(INFO) << "FV0: createMaterials(): fieldType " << fieldType << ", maxField " << maxField;
 
   // TODO: Comment out two lines below once tested that the above function assigns field type and max correctly
   fieldType = 2;
@@ -267,7 +267,7 @@ void Detector::ConstructGeometry()
 {
   LOG(INFO) << "FV0: Constructing geometry";
   createMaterials();
-  mGeometry = new Geometry(Geometry::eFull);
+  mGeometry = Geometry::instance(Geometry::eFull);
   // mGeometry->enableComponent(Geometry::eScintillator, false);
   // mGeometry->enableComponent(Geometry::ePlastics, false);
   // mGeometry->enableComponent(Geometry::eFibers, false);

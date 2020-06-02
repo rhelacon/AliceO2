@@ -25,8 +25,8 @@ using namespace o2::passive;
 
 Hall::~Hall() = default;
 
-Hall::Hall() : FairModule("Hall", "") {}
-Hall::Hall(const char* name, const char* Title) : FairModule(name, Title) {}
+Hall::Hall() : PassiveBase("HALL", "") {}
+Hall::Hall(const char* name, const char* Title) : PassiveBase(name, Title) {}
 Hall::Hall(const Hall& rhs) = default;
 
 Hall& Hall::operator=(const Hall& rhs)
@@ -36,7 +36,7 @@ Hall& Hall::operator=(const Hall& rhs)
     return *this;
 
   // base class assignment
-  FairModule::operator=(rhs);
+  PassiveBase::operator=(rhs);
 
   return *this;
 }
@@ -104,30 +104,6 @@ void Hall::createMaterials()
   matmgr.Medium("HALL", kFE_C2, "FE_C2", kFE_C2, 0, isxfld, sxmgmx, tmaxfd, stemax, deemax, epsil, stmin);
 }
 
-void Hall::SetSpecialPhysicsCuts()
-{
-
-  using namespace o2::base;
-  // MaterialManager used to set physics cuts
-  auto& matmgr = MaterialManager::Instance();
-
-  // \note ported from AliRoot. People responsible for the HALL implementation must judge and modify cuts if required.
-  auto& hp = HallSimParam::Instance();
-  const auto cutgam = hp.mCUTGAM;
-  const auto cutele = hp.mCUTELE;
-  const auto cutneu = hp.mCUTNEU;
-  const auto cuthad = hp.mCUTHAD;
-
-  matmgr.SpecialCuts(
-    "HALL", kSTST_C2,
-    {{ECut::kCUTGAM, cutgam}, {ECut::kCUTELE, cutele}, {ECut::kCUTNEU, cutneu}, {ECut::kCUTHAD, cuthad}});
-  matmgr.SpecialCuts(
-    "HALL", kAIR_C2,
-    {{ECut::kCUTGAM, cutgam}, {ECut::kCUTELE, cutele}, {ECut::kCUTNEU, cutneu}, {ECut::kCUTHAD, cuthad}});
-  matmgr.SpecialCuts(
-    "HALL", kCC_C2,
-    {{ECut::kCUTGAM, cutgam}, {ECut::kCUTELE, cutele}, {ECut::kCUTNEU, cutneu}, {ECut::kCUTHAD, cuthad}});
-}
 
 void Hall::ConstructGeometry()
 {

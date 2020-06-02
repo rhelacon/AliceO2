@@ -21,6 +21,12 @@
 using namespace GPUCA_NAMESPACE::gpu;
 using namespace o2::tpc;
 
+int TPCClusterDecompressor::decompress(const CompressedClustersFlat* clustersCompressed, o2::tpc::ClusterNativeAccess& clustersNative, std::vector<o2::tpc::ClusterNative>& clusterBuffer, const GPUParam& param)
+{
+  CompressedClusters c = *clustersCompressed;
+  return decompress(&c, clustersNative, clusterBuffer, param);
+}
+
 int TPCClusterDecompressor::decompress(const CompressedClusters* clustersCompressed, o2::tpc::ClusterNativeAccess& clustersNative, std::vector<o2::tpc::ClusterNative>& clusterBuffer, const GPUParam& param)
 {
   std::vector<ClusterNative> clusters[NSLICES][GPUCA_ROW_COUNT];
@@ -51,17 +57,20 @@ int TPCClusterDecompressor::decompress(const CompressedClusters* clustersCompres
           row = clustersCompressed->rowDiffA[offset - i - 1];
         }
         if (changeLeg && track.Mirror()) {
+          offset += clustersCompressed->nTrackClusters[i] - j;
           break;
         }
         if (track.Propagate(param.tpcGeometry.Row2X(row), param.SliceParam[slice].Alpha)) {
+          offset += clustersCompressed->nTrackClusters[i] - j;
           break;
         }
         unsigned int timeTmp = clustersCompressed->timeResA[offset - i - 1];
         if (timeTmp & 800000) {
           timeTmp |= 0xFF000000;
         }
-        time = timeTmp + ClusterNative::packTime(param.tpcGeometry.LinearZ2Time(slice, track.Z()));
-        pad = clustersCompressed->padResA[offset - i - 1] + ClusterNative::packPad(param.tpcGeometry.LinearY2Pad(slice, row, track.Y()));
+        time = timeTmp + ClusterNative::packTime(CAMath::Max(0.f, param.tpcGeometry.LinearZ2Time(slice, track.Z())));
+        float tmpPad = CAMath::Max(0.f, CAMath::Min((float)param.tpcGeometry.NPads(GPUCA_ROW_COUNT - 1), param.tpcGeometry.LinearY2Pad(slice, row, track.Y())));
+        pad = clustersCompressed->padResA[offset - i - 1] + ClusterNative::packPad(tmpPad);
       } else {
         time = clustersCompressed->timeA[i];
         pad = clustersCompressed->padA[i];
@@ -74,41 +83,48 @@ int TPCClusterDecompressor::decompress(const CompressedClusters* clustersCompres
         track.Init(param.tpcGeometry.Row2X(row), y, z, param.SliceParam[slice].Alpha, clustersCompressed->qPtA[i], param);
       }
       if (j + 1 < clustersCompressed->nTrackClusters[i] && track.Filter(y, z, row)) {
+        offset += clustersCompressed->nTrackClusters[i] - j;
         break;
       }
       offset++;
     }
   }
   clusterBuffer.resize(clustersCompressed->nAttachedClusters + clustersCompressed->nUnattachedClusters);
+  unsigned int offsets[NSLICES][GPUCA_ROW_COUNT];
+  offset = 0;
   for (unsigned int i = 0; i < NSLICES; i++) {
     for (unsigned int j = 0; j < GPUCA_ROW_COUNT; j++) {
       clustersNative.nClusters[i][j] = clusters[i][j].size() + clustersCompressed->nSliceRowClusters[i * GPUCA_ROW_COUNT + j];
+      offsets[i][j] = offset;
+      offset += clustersCompressed->nSliceRowClusters[i * GPUCA_ROW_COUNT + j];
     }
   }
   clustersNative.clustersLinear = clusterBuffer.data();
   clustersNative.setOffsetPtrs();
-  offset = 0;
+  GPUCA_OPENMP(parallel for)
   for (unsigned int i = 0; i < NSLICES; i++) {
     for (unsigned int j = 0; j < GPUCA_ROW_COUNT; j++) {
+      int offset2 = offsets[i][j];
       ClusterNative* buffer = &clusterBuffer[clustersNative.clusterOffset[i][j]];
-      memcpy((void*)buffer, (const void*)clusters[i][j].data(), clusters[i][j].size() * sizeof(clusterBuffer[0]));
+      if (clusters[i][j].size()) {
+        memcpy((void*)buffer, (const void*)clusters[i][j].data(), clusters[i][j].size() * sizeof(clusterBuffer[0]));
+      }
       unsigned int time = 0;
       unsigned short pad = 0;
       ClusterNative* cl = buffer + clusters[i][j].size();
       for (unsigned int k = 0; k < clustersCompressed->nSliceRowClusters[i * GPUCA_ROW_COUNT + j]; k++) {
         if (clustersCompressed->nComppressionModes & 2) {
-          unsigned int timeTmp = clustersCompressed->timeDiffU[offset];
+          unsigned int timeTmp = clustersCompressed->timeDiffU[offset2];
           if (timeTmp & 800000) {
             timeTmp |= 0xFF000000;
           }
           time += timeTmp;
-          pad += clustersCompressed->padDiffU[offset];
+          pad += clustersCompressed->padDiffU[offset2];
         } else {
-          time = clustersCompressed->timeDiffU[offset];
-          pad = clustersCompressed->padDiffU[offset];
+          time = clustersCompressed->timeDiffU[offset2];
+          pad = clustersCompressed->padDiffU[offset2];
         }
-        *(cl++) = ClusterNative(time, clustersCompressed->flagsU[offset], pad, clustersCompressed->sigmaTimeU[offset], clustersCompressed->sigmaPadU[offset], clustersCompressed->qMaxU[offset], clustersCompressed->qTotU[offset]);
-        offset++;
+        *(cl++) = ClusterNative(time, clustersCompressed->flagsU[offset2], pad, clustersCompressed->sigmaTimeU[offset2], clustersCompressed->sigmaPadU[offset2], clustersCompressed->qMaxU[offset2], clustersCompressed->qTotU[offset2]);
       }
       std::sort(buffer, buffer + clustersNative.nClusters[i][j]);
     }

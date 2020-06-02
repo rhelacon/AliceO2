@@ -16,13 +16,12 @@
 #include "Framework/Lifetime.h"
 #include "Headers/DataHeader.h"
 #include "TStopwatch.h"
-#include "Steer/HitProcessingManager.h" // for RunContext
+#include "Steer/HitProcessingManager.h" // for DigitizationContext
 #include "TChain.h"
 
 #include "CommonDataFormat/EvIndex.h"
 #include "DataFormatsParameters/GRPObject.h"
 #include "DataFormatsEMCAL/TriggerRecord.h"
-#include "DetectorsBase/GeometryManager.h"
 
 using namespace o2::framework;
 using SubSpecificationType = o2::framework::DataAllocator::SubSpecificationType;
@@ -32,24 +31,10 @@ namespace o2
 namespace emcal
 {
 
-void DigitizerSpec::init(framework::InitContext& ctx)
+void DigitizerSpec::initDigitizerTask(framework::InitContext& ctx)
 {
-  // setup the input chain for the hits
-  mSimChains.emplace_back(new TChain("o2sim"));
-
-  // add the main (background) file
-  mSimChains.back()->AddFile(ctx.options().get<std::string>("simFile").c_str());
-
-  // maybe add a particular signal file
-  auto signalfilename = ctx.options().get<std::string>("simFileS");
-  if (signalfilename.size() > 0) {
-    mSimChains.emplace_back(new TChain("o2sim"));
-    mSimChains.back()->AddFile(signalfilename.c_str());
-  }
-
-  // make sure that the geometry is loaded (TODO will this be done centrally?)
   if (!gGeoManager) {
-    o2::base::GeometryManager::loadGeometry();
+    LOG(ERROR) << "Geometry needs to be loaded before";
   }
   // run 3 geometry == run 2 geometry for EMCAL
   // to be adapted with run numbers at a later stage
@@ -67,7 +52,8 @@ void DigitizerSpec::run(framework::ProcessingContext& ctx)
     return;
 
   // read collision context from input
-  auto context = ctx.inputs().get<o2::steer::RunContext*>("collisioncontext");
+  auto context = ctx.inputs().get<o2::steer::DigitizationContext*>("collisioncontext");
+  context->initSimChains(o2::detectors::DetID::EMC, mSimChains);
   auto& timesview = context->getEventRecords();
   LOG(DEBUG) << "GOT " << timesview.size() << " COLLISSION TIMES";
 
@@ -79,16 +65,40 @@ void DigitizerSpec::run(framework::ProcessingContext& ctx)
   timer.Start();
 
   LOG(INFO) << " CALLING EMCAL DIGITIZATION ";
-  o2::dataformats::MCTruthContainer<o2::MCCompLabel> labelAccum;
+  o2::dataformats::MCTruthContainer<o2::emcal::MCLabel> labelAccum;
   std::vector<TriggerRecord> triggers;
 
   auto& eventParts = context->getEventParts();
+  mDigitizer.clear();
   mAccumulatedDigits.clear();
+  int trigID = 0;
   int indexStart = mAccumulatedDigits.size();
   // loop over all composite collisions given from context
   // (aka loop over all the interaction records)
   for (int collID = 0; collID < timesview.size(); ++collID) {
+    if (!mDigitizer.isEmpty() && (o2::emcal::SimParam::Instance().isDisablePileup() || !mDigitizer.isLive(timesview[collID].timeNS))) {
+      // copy digits into accumulator
+      mDigits.clear();
+      mLabels.clear();
+      mDigitizer.fillOutputContainer(mDigits, mLabels);
+      std::copy(mDigits.begin(), mDigits.end(), std::back_inserter(mAccumulatedDigits));
+      labelAccum.mergeAtBack(mLabels);
+      LOG(INFO) << "Have " << mAccumulatedDigits.size() << " digits ";
+      triggers.emplace_back(timesview[trigID], indexStart, mDigits.size());
+      indexStart = mAccumulatedDigits.size();
+      mDigits.clear();
+      mLabels.clear();
+    }
+
     mDigitizer.setEventTime(timesview[collID].timeNS);
+
+    if (!mDigitizer.isLive())
+      continue;
+
+    if (mDigitizer.isEmpty()) {
+      mDigitizer.initCycle();
+      trigID = collID;
+    }
 
     // for each collision, loop over the constituents event and source IDs
     // (background signal merging is basically taking place here)
@@ -98,28 +108,36 @@ void DigitizerSpec::run(framework::ProcessingContext& ctx)
 
       // get the hits for this event and this source
       mHits.clear();
-      retrieveHits(mSimChains, "EMCHit", part.sourceID, part.entryID, &mHits);
+      context->retrieveHits(mSimChains, "EMCHit", part.sourceID, part.entryID, &mHits);
 
       LOG(INFO) << "For collision " << collID << " eventID " << part.entryID << " found " << mHits.size() << " hits ";
 
       // call actual digitization procedure
-      mLabels.clear();
-      mDigits.clear();
-      mDigitizer.process(mHits, mDigits);
-      // copy digits into accumulator
-      std::copy(mDigits.begin(), mDigits.end(), std::back_inserter(mAccumulatedDigits));
-      labelAccum.mergeAtBack(mLabels);
-      // Add trigger record
-      triggers.emplace_back(timesview[collID], indexStart, mDigits.size());
-      indexStart = mAccumulatedDigits.size();
-      LOG(INFO) << "Have " << mDigits.size() << " digits ";
+      mDigitizer.process(mHits);
     }
   }
+
+  if (!mDigitizer.isEmpty()) {
+    // copy digits into accumulator
+    mDigits.clear();
+    mLabels.clear();
+    mDigitizer.fillOutputContainer(mDigits, mLabels);
+    std::copy(mDigits.begin(), mDigits.end(), std::back_inserter(mAccumulatedDigits));
+    labelAccum.mergeAtBack(mLabels);
+    LOG(INFO) << "Have " << mAccumulatedDigits.size() << " digits ";
+    triggers.emplace_back(timesview[trigID], indexStart, mDigits.size());
+    indexStart = mAccumulatedDigits.size();
+    mDigits.clear();
+    mLabels.clear();
+  }
+
   LOG(INFO) << "Have " << labelAccum.getNElements() << " EMCAL labels ";
   // here we have all digits and we can send them to consumer (aka snapshot it onto output)
   ctx.outputs().snapshot(Output{"EMC", "DIGITS", 0, Lifetime::Timeframe}, mAccumulatedDigits);
   ctx.outputs().snapshot(Output{"EMC", "TRGRDIG", 0, Lifetime::Timeframe}, triggers);
-  ctx.outputs().snapshot(Output{"EMC", "DIGITSMCTR", 0, Lifetime::Timeframe}, labelAccum);
+  if (ctx.outputs().isAllowed({"EMC", "DIGITSMCTR", 0})) {
+    ctx.outputs().snapshot(Output{"EMC", "DIGITSMCTR", 0, Lifetime::Timeframe}, labelAccum);
+  }
   // EMCAL is always a triggering detector
   const o2::parameters::GRPObject::ROMode roMode = o2::parameters::GRPObject::TRIGGERING;
   LOG(INFO) << "EMCAL: Sending ROMode= " << roMode << " to GRPUpdater";
@@ -132,38 +150,26 @@ void DigitizerSpec::run(framework::ProcessingContext& ctx)
   mFinished = true;
 }
 
-void DigitizerSpec::retrieveHits(std::vector<TChain*> const& chains,
-                                 const char* brname,
-                                 int sourceID,
-                                 int entryID,
-                                 std::vector<Hit>* hits)
-{
-  auto br = chains[sourceID]->GetBranch(brname);
-  if (!br) {
-    LOG(ERROR) << "No branch found";
-    return;
-  }
-  br->SetAddress(&hits);
-  br->GetEntry(entryID);
-}
-
-DataProcessorSpec getEMCALDigitizerSpec(int channel)
+DataProcessorSpec getEMCALDigitizerSpec(int channel, bool mctruth)
 {
   // create the full data processor spec using
   //  a name identifier
   //  input description
   //  algorithmic description (here a lambda getting called once to setup the actual processing function)
   //  options that can be used for this processor (here: input file names where to take the hits)
+  std::vector<OutputSpec> outputs;
+  outputs.emplace_back("EMC", "DIGITS", 0, Lifetime::Timeframe);
+  outputs.emplace_back("EMC", "TRGRDIG", 0, Lifetime::Timeframe);
+  if (mctruth) {
+    outputs.emplace_back("EMC", "DIGITSMCTR", 0, Lifetime::Timeframe);
+  }
+  outputs.emplace_back("EMC", "ROMode", 0, Lifetime::Timeframe);
+
   return DataProcessorSpec{
     "EMCALDigitizer", Inputs{InputSpec{"collisioncontext", "SIM", "COLLISIONCONTEXT", static_cast<SubSpecificationType>(channel), Lifetime::Timeframe}},
-    Outputs{OutputSpec{"EMC", "DIGITS", 0, Lifetime::Timeframe},
-            OutputSpec{"EMC", "TRGRDIG", 0, Lifetime::Timeframe},
-            OutputSpec{"EMC", "DIGITSMCTR", 0, Lifetime::Timeframe},
-            OutputSpec{"EMC", "ROMode", 0, Lifetime::Timeframe}},
+    outputs,
     AlgorithmSpec{o2::framework::adaptFromTask<DigitizerSpec>()},
-    Options{{"simFile", VariantType::String, "o2sim.root", {"Sim (background) input filename"}},
-            {"simFileS", VariantType::String, "", {"Sim (signal) input filename"}},
-            {"pileup", VariantType::Int, 1, {"whether to run in continuous time mode"}}}
+    Options{{"pileup", VariantType::Int, 1, {"whether to run in continuous time mode"}}}
     // I can't use VariantType::Bool as it seems to have a problem
   };
 }

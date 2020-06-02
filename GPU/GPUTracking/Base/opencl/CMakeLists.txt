@@ -55,10 +55,11 @@ add_custom_command(
           -I${GPUDIR}/Base
           -I${GPUDIR}/Merger
           -I${GPUDIR}/SliceTracker
+          -I${GPUDIR}/TRDTracking
           -DGPUCA_GPULIBRARY=OCL1
           -x clc++
   MAIN_DEPENDENCY ${CL_SRC}
-  IMPLICIT_DEPENDS cxx ${CL_SRC}
+  IMPLICIT_DEPENDS CXX ${CL_SRC}
   COMMAND_EXPAND_LISTS)
 
 # cmake-format: off

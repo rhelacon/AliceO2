@@ -8,7 +8,7 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 #include "Framework/ConfigParamSpec.h"
-#include "Framework/CompletionPolicy.h"
+#include "Framework/CompletionPolicyHelpers.h"
 #include "Framework/DeviceSpec.h"
 #include <InfoLogger/InfoLogger.hxx>
 
@@ -32,13 +32,7 @@ void customize(std::vector<ConfigParamSpec>& options)
 // will process an InputRecord which had any of its constituent updated.
 void customize(std::vector<CompletionPolicy>& policies)
 {
-  auto matcher = [](DeviceSpec const& device) -> bool {
-    return device.name == "D";
-  };
-  auto policy = [](gsl::span<PartRef const> const& inputs) -> CompletionPolicy::CompletionOp {
-    return CompletionPolicy::CompletionOp::Process;
-  };
-  policies.push_back({CompletionPolicy{"process-any", matcher, policy}});
+  policies.push_back(CompletionPolicyHelpers::defineByName("D", CompletionPolicy::CompletionOp::Process));
 }
 
 #include "Framework/runDataProcessing.h"
@@ -68,7 +62,8 @@ WorkflowSpec defineDataProcessing(ConfigContext const& specs)
          auto& aData = outputs.make<int>(OutputRef{"a1"}, 1);
          auto& bData = outputs.make<int>(OutputRef{"a2"}, 1);
          logger.log("This goes to infologger");
-       })}},
+       })},
+     {ConfigParamSpec{"some-device-param", VariantType::Int, 1, {"Some device parameter"}}}},
     {"B",
      {InputSpec{"x", "TST", "A1"}},
      {OutputSpec{{"b1"}, "TST", "B1"}},

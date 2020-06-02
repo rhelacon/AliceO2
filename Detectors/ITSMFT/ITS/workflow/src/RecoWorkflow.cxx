@@ -27,24 +27,32 @@ namespace its
 namespace reco_workflow
 {
 
-framework::WorkflowSpec getWorkflow(bool useMC, bool useCAtracker)
+framework::WorkflowSpec getWorkflow(bool useMC, bool useCAtracker, o2::gpu::GPUDataTypes::DeviceType dtype,
+                                    bool upstreamDigits, bool upstreamClusters, bool disableRootOutput)
 {
   framework::WorkflowSpec specs;
 
-  specs.emplace_back(o2::its::getDigitReaderSpec(useMC));
-  specs.emplace_back(o2::its::getClustererSpec(useMC));
-  specs.emplace_back(o2::its::getClusterWriterSpec(useMC));
+  if (!(upstreamDigits || upstreamClusters)) {
+    specs.emplace_back(o2::its::getDigitReaderSpec(useMC));
+  }
+
+  if (!upstreamClusters) {
+    specs.emplace_back(o2::its::getClustererSpec(useMC));
+  }
+  if (!disableRootOutput) {
+    specs.emplace_back(o2::its::getClusterWriterSpec(useMC));
+  }
   if (useCAtracker) {
-    specs.emplace_back(o2::its::getTrackerSpec(useMC));
+    specs.emplace_back(o2::its::getTrackerSpec(useMC, dtype));
   } else {
     specs.emplace_back(o2::its::getCookedTrackerSpec(useMC));
   }
-  specs.emplace_back(o2::its::getTrackWriterSpec(useMC));
-
+  if (!disableRootOutput) {
+    specs.emplace_back(o2::its::getTrackWriterSpec(useMC));
+  }
   return specs;
 }
 
 } // namespace reco_workflow
-
 } // namespace its
 } // namespace o2

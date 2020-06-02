@@ -15,138 +15,119 @@
 #define O2_GPU_ARRAY2D_H
 
 #include "clusterFinderDefs.h"
+#include "ChargePos.h"
 
 namespace GPUCA_NAMESPACE
 {
 namespace gpu
 {
 
-class Array2D
+template <typename T, typename Layout>
+class AbstractArray2D
 {
 
  public:
-  // Maps the position of a pad given as row and index in that row to a unique
-  // index between 0 and TPC_NUM_OF_PADS.
-  static GPUdi() GlobalPad tpcGlobalPadIdx(Row row, Pad pad)
+  GPUdi() explicit AbstractArray2D(T* d) : data(d) {}
+
+  GPUdi() T& operator[](const ChargePos& p) { return data[Layout::idx(p)]; }
+  GPUdi() const T& operator[](const ChargePos& p) const { return data[Layout::idx(p)]; }
+
+  GPUdi() void safeWrite(const ChargePos& p, const T& v)
   {
-    return TPC_PADS_PER_ROW_PADDED * row + pad + PADDING_PAD;
+    if (data != nullptr) {
+      (*this)[p] = v;
+    }
   }
 
-  static GPUdi() size_t idxSquareTiling(GlobalPad gpad, Timestamp time, size_t N)
-  {
-    /* time += PADDING; */
-
-    /* const size_t C = TPC_NUM_OF_PADS + N - 1; */
-
-    /* const size_t inTilePad = gpad % N; */
-    /* const size_t inTileTime = time % N; */
-
-    /* return N * (time * C + gpad + inTileTime) + inTilePad; */
-
-    time += PADDING_TIME;
-
-    const size_t tileW = N;
-    const size_t tileH = N;
-    const size_t widthInTiles = (TPC_NUM_OF_PADS + tileW - 1) / tileW;
-
-    const size_t tilePad = gpad / tileW;
-    const size_t tileTime = time / tileH;
-
-    const size_t inTilePad = gpad % tileW;
-    const size_t inTileTime = time % tileH;
-
-    return (tileTime * widthInTiles + tilePad) * (tileW * tileH) + inTileTime * tileW + inTilePad;
-  }
-
-  static GPUdi() size_t idxTiling4x4(GlobalPad gpad, Timestamp time)
-  {
-    return idxSquareTiling(gpad, time, 4);
-  }
-
-  static GPUdi() size_t idxTiling8x8(GlobalPad gpad, Timestamp time)
-  {
-    return idxSquareTiling(gpad, time, 8);
-  }
-
-  static GPUdi() size_t chargemapIdx(GlobalPad gpad, Timestamp time)
-  {
-
-#if defined(CHARGEMAP_4x4_TILING_LAYOUT) || defined(CHARGEMAP_4x8_TILING_LAYOUT) || defined(CHARGEMAP_8x4_TILING_LAYOUT)
-#define CHARGEMAP_TILING_LAYOUT
-#endif
-
-#if defined(CHARGEMAP_4x4_TILING_LAYOUT)
-
-    return idxTiling4x4(gpad, time);
-
-#elif defined(CHARGEMAP_4x8_TILING_LAYOUT)
-#define TILE_WIDTH 4
-#define TILE_HEIGHT 8
-
-    time += PADDING_TIME;
-
-    const size_t tileW = TILE_WIDTH;
-    const size_t tileH = TILE_HEIGHT;
-    const size_t widthInTiles = (TPC_NUM_OF_PADS + tileW - 1) / tileW;
-
-    const size_t tilePad = gpad / tileW;
-    const size_t tileTime = time / tileH;
-
-    const size_t inTilePad = gpad % tileW;
-    const size_t inTileTime = time % tileH;
-
-    return (tileTime * widthInTiles + tilePad) * (tileW * tileH) + inTileTime * tileW + inTilePad;
-
-#undef TILE_WIDTH
-#undef TILE_HEIGHT
-
-#elif defined(CHARGEMAP_8x4_TILING_LAYOUT)
-#define TILE_WIDTH 8
-#define TILE_HEIGHT 4
-
-    time += PADDING_TIME;
-
-    const size_t tileW = TILE_WIDTH;
-    const size_t tileH = TILE_HEIGHT;
-    const size_t widthInTiles = (TPC_NUM_OF_PADS + tileW - 1) / tileW;
-
-    const size_t tilePad = gpad / tileW;
-    const size_t tileTime = time / tileH;
-
-    const size_t inTilePad = gpad % tileW;
-    const size_t inTileTime = time % tileH;
-
-    return (tileTime * widthInTiles + tilePad) * (tileW * tileH) + inTileTime * tileW + inTilePad;
-
-#undef TILE_WIDTH
-#undef TILE_HEIGHT
-
-#elif defined(CHARGEMAP_PAD_MAJOR_LAYOUT)
-
-    time += PADDING_TIME;
-    return TPC_MAX_TIME_PADDED * gpad + time;
-
-#else // Use row time-major layout
-
-    time += PADDING_TIME;
-    return TPC_NUM_OF_PADS * time + gpad;
-
-#endif
-  }
+ private:
+  T* data;
 };
+
+template <typename Grid>
+class TilingLayout
+{
+ public:
+  enum {
+    Height = Grid::Height,
+    Width = Grid::Width,
+  };
+
+  GPUhdi() static size_t idx(const ChargePos& p)
+  {
+    const size_t widthInTiles = (TPC_NUM_OF_PADS + Width - 1) / Width;
+
+    const size_t tilePad = p.gpad / Width;
+    const size_t tileTime = p.timePadded / Height;
+
+    const size_t inTilePad = p.gpad % Width;
+    const size_t inTileTime = p.timePadded % Height;
+
+    return (tileTime * widthInTiles + tilePad) * (Width * Height) + inTileTime * Width + inTilePad;
+  }
+
+#if !defined(__OPENCL__)
+  GPUh() static size_t items()
+  {
+    return (TPC_NUM_OF_PADS + Width - 1) / Width * Width * (TPC_MAX_FRAGMENT_LEN_PADDED + Height - 1) / Height * Height;
+  }
+#endif
+};
+
+class LinearLayout
+{
+ public:
+  GPUdi() static size_t idx(const ChargePos& p)
+  {
+    return TPC_NUM_OF_PADS * p.timePadded + p.gpad;
+  }
+
+#if !defined(__OPENCL__)
+  GPUh() static size_t items()
+  {
+    return TPC_NUM_OF_PADS * TPC_MAX_FRAGMENT_LEN_PADDED;
+  }
+#endif
+};
+
+template <size_t S>
+struct GridSize;
+
+template <>
+struct GridSize<1> {
+  enum {
+    Width = 8,
+    Height = 8,
+  };
+};
+
+template <>
+struct GridSize<2> {
+  enum {
+    Width = 4,
+    Height = 4,
+  };
+};
+
+template <>
+struct GridSize<4> {
+  enum {
+    Width = 4,
+    Height = 4,
+  };
+};
+
+#if defined(CHARGEMAP_TILING_LAYOUT)
+template <typename T>
+using TPCMapMemoryLayout = TilingLayout<GridSize<sizeof(T)>>;
+#else
+template <typename T>
+using TPCMapMemoryLayout = LinearLayout;
+#endif
+
+template <typename T>
+using Array2D = AbstractArray2D<T, TPCMapMemoryLayout<T>>;
 
 } // namespace gpu
 } // namespace GPUCA_NAMESPACE
-
-#define ACCESS_2D(map, idxFunc, gpad, time) map[idxFunc(gpad, time)]
-
-#define CHARGE(map, gpad, time) ACCESS_2D(map, Array2D::chargemapIdx, gpad, time)
-
-#if defined(CHARGEMAP_TILING_LAYOUT)
-/* #if 0 */
-#define IS_PEAK(map, gpad, time) ACCESS_2D(map, Array2D::idxTiling8x8, gpad, time)
-#else
-#define IS_PEAK(map, gpad, time) ACCESS_2D(map, Array2D::chargemapIdx, gpad, time)
-#endif
 
 #endif
