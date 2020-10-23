@@ -17,9 +17,11 @@
 #include "TTree.h"
 #include "Framework/ControlService.h"
 #include "Framework/ConfigParamRegistry.h"
+#include "Framework/Logger.h"
 #include "DataFormatsITSMFT/Digit.h"
 #include "SimulationDataFormat/MCCompLabel.h"
-#include "SimulationDataFormat/MCTruthContainer.h"
+#include "SimulationDataFormat/ConstMCTruthContainer.h"
+#include "SimulationDataFormat/IOMCTruthContainerView.h"
 #include "DataFormatsITSMFT/ROFRecord.h"
 
 using namespace o2::framework;
@@ -57,7 +59,7 @@ void DigitReader::run(ProcessingContext& pc)
     std::vector<ROFRecord> rofs, *profs = &rofs;
     treeDig->SetBranchAddress("MFTDigitROF", &profs);
 
-    o2::dataformats::MCTruthContainer<o2::MCCompLabel> labels, *plabels = &labels;
+    o2::dataformats::IOMCTruthContainerView* plabels = nullptr;
     std::vector<MC2ROFRecord> mc2rofs, *pmc2rofs = &mc2rofs;
     if (mUseMC) {
       treeDig->SetBranchAddress("MFTDigitMCTruth", &plabels);
@@ -69,10 +71,12 @@ void DigitReader::run(ProcessingContext& pc)
               << profs->size() << " RO frames";
 
     pc.outputs().snapshot(Output{"MFT", "DIGITS", 0, Lifetime::Timeframe}, digits);
-    pc.outputs().snapshot(Output{"MFT", "MFTDigitROF", 0, Lifetime::Timeframe}, *profs);
+    pc.outputs().snapshot(Output{"MFT", "DIGITSROF", 0, Lifetime::Timeframe}, *profs);
     if (mUseMC) {
-      pc.outputs().snapshot(Output{"MFT", "DIGITSMCTR", 0, Lifetime::Timeframe}, labels);
-      pc.outputs().snapshot(Output{"MFT", "MFTDigitMC2ROF", 0, Lifetime::Timeframe}, *pmc2rofs);
+      auto& sharedlabels = pc.outputs().make<o2::dataformats::ConstMCTruthContainer<o2::MCCompLabel>>(Output{"MFT", "DIGITSMCTR", 0, Lifetime::Timeframe});
+      plabels->copyandflatten(sharedlabels);
+      delete plabels;
+      pc.outputs().snapshot(Output{"MFT", "DIGITSMC2ROF", 0, Lifetime::Timeframe}, *pmc2rofs);
     }
   } else {
     LOG(ERROR) << "Cannot read the MFT digits !";
@@ -87,10 +91,10 @@ DataProcessorSpec getDigitReaderSpec(bool useMC)
 {
   std::vector<OutputSpec> outputs;
   outputs.emplace_back("MFT", "DIGITS", 0, Lifetime::Timeframe);
-  outputs.emplace_back("MFT", "MFTDigitROF", 0, Lifetime::Timeframe);
+  outputs.emplace_back("MFT", "DIGITSROF", 0, Lifetime::Timeframe);
   if (useMC) {
     outputs.emplace_back("MFT", "DIGITSMCTR", 0, Lifetime::Timeframe);
-    outputs.emplace_back("MFT", "MFTDigitMC2ROF", 0, Lifetime::Timeframe);
+    outputs.emplace_back("MFT", "DIGITSMC2ROF", 0, Lifetime::Timeframe);
   }
   return DataProcessorSpec{
     "mft-digit-reader",

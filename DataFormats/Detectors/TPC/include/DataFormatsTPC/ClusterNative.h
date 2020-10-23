@@ -13,9 +13,10 @@
 /// \author David Rohr
 #ifndef ALICEO2_DATAFORMATSTPC_CLUSTERNATIVE_H
 #define ALICEO2_DATAFORMATSTPC_CLUSTERNATIVE_H
-#ifndef __OPENCL__
+#ifndef GPUCA_GPUCODE_DEVICE
 #include <cstdint>
 #include <cstddef> // for size_t
+#include <utility>
 #endif
 #include "DataFormatsTPC/Constants.h"
 #include "GPUCommonDef.h"
@@ -26,7 +27,9 @@ class MCCompLabel;
 namespace dataformats
 {
 template <class T>
-class MCTruthContainer;
+class ConstMCTruthContainer;
+template <class T>
+class ConstMCTruthContainerView;
 }
 } // namespace o2
 
@@ -156,22 +159,28 @@ struct ClusterNative {
 // the data inside a buffer.
 struct ClusterNativeAccess {
   const ClusterNative* clustersLinear;
-  const ClusterNative* clusters[Constants::MAXSECTOR][Constants::MAXGLOBALPADROW];
-  const o2::dataformats::MCTruthContainer<o2::MCCompLabel>* clustersMCTruth;
-  unsigned int nClusters[Constants::MAXSECTOR][Constants::MAXGLOBALPADROW];
-  unsigned int nClustersSector[Constants::MAXSECTOR];
-  unsigned int clusterOffset[Constants::MAXSECTOR][Constants::MAXGLOBALPADROW];
+  const ClusterNative* clusters[constants::MAXSECTOR][constants::MAXGLOBALPADROW];
+  const o2::dataformats::ConstMCTruthContainerView<o2::MCCompLabel>* clustersMCTruth;
+  unsigned int nClusters[constants::MAXSECTOR][constants::MAXGLOBALPADROW];
+  unsigned int nClustersSector[constants::MAXSECTOR];
+  unsigned int clusterOffset[constants::MAXSECTOR][constants::MAXGLOBALPADROW];
   unsigned int nClustersTotal;
 
   void setOffsetPtrs();
+
+#ifndef GPUCA_GPUCODE
+  using ConstMCLabelContainer = o2::dataformats::ConstMCTruthContainer<o2::MCCompLabel>;
+  using ConstMCLabelContainerView = o2::dataformats::ConstMCTruthContainerView<o2::MCCompLabel>;
+  using ConstMCLabelContainerViewWithBuffer = std::pair<ConstMCLabelContainer, ConstMCLabelContainerView>;
+#endif
 };
 
 inline void ClusterNativeAccess::setOffsetPtrs()
 {
   int offset = 0;
-  for (unsigned int i = 0; i < Constants::MAXSECTOR; i++) {
+  for (unsigned int i = 0; i < constants::MAXSECTOR; i++) {
     nClustersSector[i] = 0;
-    for (unsigned int j = 0; j < Constants::MAXGLOBALPADROW; j++) {
+    for (unsigned int j = 0; j < constants::MAXGLOBALPADROW; j++) {
       clusterOffset[i][j] = offset;
       clusters[i][j] = &clustersLinear[offset];
       nClustersSector[i] += nClusters[i][j];

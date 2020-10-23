@@ -60,15 +60,15 @@ std::unique_ptr<VisualisationEvent> DataInterpreterTPC::interpretDataForType(TOb
 
     auto access = std::make_unique<o2::tpc::ClusterNativeAccess>();
     std::unique_ptr<tpc::ClusterNative[]> clusterBuffer;
-    tpc::MCLabelContainer clusterMCBuffer;
+    tpc::ClusterNativeHelper::ConstMCLabelContainerViewWithBuffer clusterMCBuffer;
 
     reader->fillIndex(*access, clusterBuffer, clusterMCBuffer);
 
     const auto& mapper = tpc::Mapper::instance();
     const auto& clusterRefs = access->clusters;
 
-    for (int sector = 0; sector < o2::tpc::Constants::MAXSECTOR; sector++) {
-      for (int row = 0; row < o2::tpc::Constants::MAXGLOBALPADROW; row++) {
+    for (int sector = 0; sector < o2::tpc::constants::MAXSECTOR; sector++) {
+      for (int row = 0; row < o2::tpc::constants::MAXGLOBALPADROW; row++) {
         const auto& c = clusterRefs[sector][row];
 
         const auto pad = mapper.globalPadNumber(tpc::PadPos(row, c->getPad()));

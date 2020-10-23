@@ -9,6 +9,7 @@
 // or submit itself to any jurisdiction.
 
 ///
+///
 /// \file    DatDecoderSpec.cxx
 /// \author  Andrea Ferrero
 ///
@@ -19,6 +20,9 @@
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
+#include <array>
+#include <functional>
+
 #include "Framework/CallbackService.h"
 #include "Framework/ConfigParamRegistry.h"
 #include "Framework/ControlService.h"
@@ -32,17 +36,12 @@
 #include "MCHBase/Digit.h"
 #include "Headers/RAWDataHeader.h"
 #include "MCHRawCommon/DataFormats.h"
+#include "MCHRawDecoder/OrbitInfo.h"
 #include "MCHRawDecoder/PageDecoder.h"
 #include "MCHRawElecMap/Mapper.h"
 #include "MCHMappingInterface/Segmentation.h"
 #include "MCHWorkflow/DataDecoderSpec.h"
-#include <array>
 #include "DetectorsRaw/RDHUtils.h"
-
-namespace o2::header
-{
-extern std::ostream& operator<<(std::ostream&, const o2::header::RAWDataHeaderV4&);
-}
 
 namespace o2
 {
@@ -54,7 +53,7 @@ namespace raw
 using namespace o2;
 using namespace o2::framework;
 using namespace o2::mch::mapping;
-using RDHv4 = o2::header::RAWDataHeaderV4;
+using RDH = o2::header::RDHAny;
 
 std::array<int, 64> refManu2ds_st345 = {
   63, 62, 61, 60, 59, 57, 56, 53, 51, 50, 47, 45, 44, 41, 38, 35,
@@ -72,6 +71,14 @@ int ds2manu(int i)
 {
   return refDs2manu_st345[i];
 }
+
+// custom hash can be a standalone function object:
+struct OrbitInfoHash {
+  std::size_t operator()(OrbitInfo const& info) const noexcept
+  {
+    return std::hash<uint64_t>{}(info.get());
+  }
+};
 
 //=======================
 // Data decoder
@@ -91,12 +98,15 @@ class DataDecoderTask
       if (mPrint) {
         auto s = asString(dsElecId);
         auto ch = fmt::format("{}-CH{}", s, channel);
-        std::cout << ch << std::endl;
+        std::cout << "dsElecId: " << ch << std::endl;
       }
-      double digitadc(0);
-      //for (auto d = 0; d < sc.nofSamples(); d++) {
-      for (auto d = 0; d < sc.samples.size(); d++) {
-        digitadc += sc.samples[d];
+      uint32_t digitadc(0);
+      if (sc.isClusterSum()) {
+        digitadc = sc.chargeSum;
+      } else {
+        for (auto& s : sc.samples) {
+          digitadc += s;
+        }
       }
 
       int deId{-1};
@@ -105,6 +115,13 @@ class DataDecoderTask
         DsDetId dsDetId = opt.value();
         dsIddet = dsDetId.dsId();
         deId = dsDetId.deId();
+      }
+      if (mPrint) {
+        std::cout << "deId " << deId << "  dsIddet " << dsIddet << "  channel " << (int)channel << std::endl;
+      }
+
+      if (deId < 0 || dsIddet < 0) {
+        return;
       }
 
       int padId = -1;
@@ -124,32 +141,39 @@ class DataDecoderTask
       time.bunchCrossing = sc.bunchCrossing;
       time.orbit = orbit;
 
-      digits.emplace_back(o2::mch::Digit(deId, padId, digitadc, time));
+      digits.emplace_back(o2::mch::Digit(deId, padId, digitadc, time, sc.nofSamples()));
 
-      if (mPrint)
+      if (mPrint) {
         std::cout << "DIGIT STORED:\nADC " << digits.back().getADC() << " DE# " << digits.back().getDetID() << " PadId " << digits.back().getPadID() << " time " << digits.back().getTime().sampaTime << std::endl;
+      }
       ++ndigits;
     };
 
     const auto patchPage = [&](gsl::span<const std::byte> rdhBuffer) {
-      auto rdhPtr = const_cast<void*>(reinterpret_cast<const void*>(rdhBuffer.data()));
+      auto& rdhAny = *reinterpret_cast<RDH*>(const_cast<std::byte*>(&(rdhBuffer[0])));
       mNrdhs++;
-      auto cruId = o2::raw::RDHUtils::getCRUID(rdhPtr);
-      auto endpoint = o2::raw::RDHUtils::getEndPointID(rdhPtr);
-      o2::raw::RDHUtils::setFEEID(rdhPtr, cruId * 2 + endpoint);
-      orbit = o2::raw::RDHUtils::getHeartBeatOrbit(rdhPtr);
+      auto cruId = o2::raw::RDHUtils::getCRUID(rdhAny) & 0xFF;
+      auto flags = o2::raw::RDHUtils::getCRUID(rdhAny) & 0xFF00;
+      auto endpoint = o2::raw::RDHUtils::getEndPointID(rdhAny);
+      auto feeId = cruId * 2 + endpoint + flags;
+      auto linkId = o2::raw::RDHUtils::getLinkID(rdhAny);
+      o2::raw::RDHUtils::setFEEID(rdhAny, feeId);
+      orbit = o2::raw::RDHUtils::getHeartBeatOrbit(rdhAny);
       if (mPrint) {
         std::cout << mNrdhs << "--\n";
-        o2::raw::RDHUtils::printRDH(rdhPtr);
+        o2::raw::RDHUtils::printRDH(rdhAny);
       }
     };
+
+    patchPage(page);
+
+    // add orbit to vector if not present yet
+    mOrbits.emplace(page);
 
     if (!mDecoder) {
       mDecoder = mFee2Solar ? o2::mch::raw::createPageDecoder(page, channelHandler, mFee2Solar)
                             : o2::mch::raw::createPageDecoder(page, channelHandler);
     }
-
-    patchPage(page);
     mDecoder(page);
   }
 
@@ -221,18 +245,14 @@ class DataDecoderTask
     DPLRawParser parser(inputs, o2::framework::select("TF:MCH/RAWDATA"));
 
     for (auto it = parser.begin(), end = parser.end(); it != end; ++it) {
-      // retrieving RDH v4
-      auto const* rdh = it.get_if<o2::header::RAWDataHeaderV4>();
-      // retrieving the raw pointer of the page
+      auto const* rdh = it.get_if<RDH>();
       auto const* raw = it.raw();
-      // size of payload
       size_t payloadSize = it.size();
-
       if (payloadSize == 0) {
         continue;
       }
 
-      gsl::span<const std::byte> buffer(reinterpret_cast<const std::byte*>(raw), sizeof(o2::header::RAWDataHeaderV4) + payloadSize);
+      gsl::span<const std::byte> buffer(reinterpret_cast<const std::byte*>(raw), sizeof(RDH) + payloadSize);
       decodeBuffer(buffer, digits);
     }
   }
@@ -272,6 +292,8 @@ class DataDecoderTask
   {
     std::vector<o2::mch::Digit> digits;
 
+    mOrbits.clear();
+
     decodeTF(pc, digits);
     for (auto&& input : pc.inputs()) {
       if (input.spec->binding == "readout")
@@ -284,16 +306,32 @@ class DataDecoderTask
       }
     }
 
-    const size_t OUT_SIZE = sizeof(o2::mch::Digit) * digits.size();
+    auto createBuffer = [&](auto& vec, size_t& size) {
+      size = vec.empty() ? 0 : sizeof(*(vec.begin())) * vec.size();
+      char* buf = nullptr;
+      if (size > 0) {
+        buf = (char*)malloc(size);
+        if (buf) {
+          char* p = buf;
+          size_t sizeofElement = sizeof(*(vec.begin()));
+          for (auto& element : vec) {
+            memcpy(p, &element, sizeofElement);
+            p += sizeofElement;
+          }
+        }
+      }
+      return buf;
+    };
 
     // send the output buffer via DPL
-    char* outbuffer = nullptr;
-    outbuffer = (char*)realloc(outbuffer, OUT_SIZE);
-    memcpy(outbuffer, digits.data(), OUT_SIZE);
+    size_t digitsSize, orbitsSize;
+    char* digitsBuffer = createBuffer(digits, digitsSize);
+    char* orbitsBuffer = createBuffer(mOrbits, orbitsSize);
 
     // create the output message
     auto freefct = [](void* data, void*) { free(data); };
-    pc.outputs().adoptChunk(Output{"MCH", "DIGITS", 0}, outbuffer, OUT_SIZE, freefct, nullptr);
+    pc.outputs().adoptChunk(Output{"MCH", "DIGITS", 0}, digitsBuffer, digitsSize, freefct, nullptr);
+    pc.outputs().adoptChunk(Output{"MCH", "ORBITS", 0}, orbitsBuffer, orbitsSize, freefct, nullptr);
   }
 
  private:
@@ -301,6 +339,7 @@ class DataDecoderTask
   FeeLink2SolarMapper mFee2Solar{nullptr};
   o2::mch::raw::PageDecoder mDecoder;
   size_t mNrdhs{0};
+  std::unordered_set<OrbitInfo, OrbitInfoHash> mOrbits; ///< list of orbits in the processed buffer
 
   std::ifstream mInputFile{}; ///< input file
   bool mDs2manu = false;      ///< print convert channel numbering from Run3 to Run1-2 order
@@ -308,13 +347,12 @@ class DataDecoderTask
 };                            // namespace raw
 
 //_________________________________________________________________________________________________
-o2::framework::DataProcessorSpec getDecodingSpec()
+o2::framework::DataProcessorSpec getDecodingSpec(std::string inputSpec)
 {
   return DataProcessorSpec{
     "DataDecoder",
-    //o2::framework::select("TF:MCH/RAWDATA, re:ROUT/RAWDATA"),
-    o2::framework::select("readout:ROUT/RAWDATA"),
-    Outputs{OutputSpec{"MCH", "DIGITS", 0, Lifetime::Timeframe}},
+    o2::framework::select(inputSpec.c_str()),
+    Outputs{OutputSpec{"MCH", "DIGITS", 0, Lifetime::Timeframe}, OutputSpec{"MCH", "ORBITS", 0, Lifetime::Timeframe}},
     AlgorithmSpec{adaptFromTask<DataDecoderTask>()},
     Options{{"print", VariantType::Bool, false, {"print digits"}},
             {"cru-map", VariantType::String, "", {"custom CRU mapping"}},

@@ -17,6 +17,7 @@ o2_add_library(TPCWorkflow
                        src/ClusterDecoderRawSpec.cxx
                        src/CATrackerSpec.cxx
                        src/EntropyEncoderSpec.cxx
+                       src/EntropyDecoderSpec.cxx
                        src/TrackReaderSpec.cxx
                        src/RawToDigitsSpec.cxx
                        src/LinkZSToDigitsSpec.cxx
@@ -25,8 +26,7 @@ o2_add_library(TPCWorkflow
                TARGETVARNAME targetName
                PUBLIC_LINK_LIBRARIES O2::Framework O2::DataFormatsTPC
                                      O2::DPLUtils O2::TPCReconstruction
-                                     O2::TPCCalibration O2::TPCSimulation 
-                                     O2::TPCEntropyCoding)
+                                     O2::TPCCalibration O2::TPCSimulation)
 
 o2_add_executable(reco-workflow
                   COMPONENT_NAME tpc
@@ -46,7 +46,7 @@ o2_add_test(workflow
             ENVIRONMENT O2_ROOT=${CMAKE_BINARY_DIR}/stage)
 
 if(GPUCA_EVENT_DISPLAY OR
-                       (OPENGL_FOUND AND GLFW_FOUND AND GLEW_FOUND AND OPENGL_GLU_FOUND
+                       (OPENGL_FOUND AND GLFW_FOUND AND TARGET AliceO2::DebugGUI AND OPENGL_GLU_FOUND
                        AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin"))
     target_compile_definitions(${targetName} PRIVATE GPUCA_BUILD_EVENT_DISPLAY)
 endif()

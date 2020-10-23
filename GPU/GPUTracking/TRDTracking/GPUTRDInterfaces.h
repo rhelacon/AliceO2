@@ -80,6 +80,7 @@ class trackInterface<AliExternalTrackParam> : public AliExternalTrackParam
 
   const My_Float* getPar() const { return GetParameter(); }
   const My_Float* getCov() const { return GetCovariance(); }
+  float getTime() const { return -1.f; }
   bool CheckNumericalQuality() const { return true; }
 
   // parameter manipulation
@@ -102,7 +103,7 @@ class propagatorInterface<AliTrackerBase> : public AliTrackerBase
   propagatorInterface<AliTrackerBase>& operator=(const propagatorInterface<AliTrackerBase>&) CON_DELETE;
 
   bool propagateToX(float x, float maxSnp, float maxStep) { return PropagateTrackToBxByBz(mParam, x, 0.13957, maxStep, false, maxSnp); }
-  int getPropagatedYZ(My_Float x, My_Float& projY, My_Float& projZ)
+  int getPropagatedYZ(float x, float& projY, float& projZ)
   {
     Double_t yz[2] = {0.};
     mParam->GetYZAt(x, GetBz(), yz);
@@ -128,7 +129,7 @@ class propagatorInterface<AliTrackerBase> : public AliTrackerBase
 
 #if (defined(GPUCA_O2_LIB) || defined(GPUCA_O2_INTERFACE)) && !defined(GPUCA_GPUCODE) // Interface for O2, build only with O2
 
-#include "ReconstructionDataFormats/Track.h"
+#include "ReconstructionDataFormats/TrackTPCITS.h"
 #include "DetectorsBase/Propagator.h"
 
 namespace GPUCA_NAMESPACE
@@ -138,13 +139,13 @@ namespace gpu
 {
 
 template <>
-class trackInterface<o2::track::TrackParCov> : public o2::track::TrackParCov
+class trackInterface<o2::dataformats::TrackTPCITS> : public o2::dataformats::TrackTPCITS
 {
  public:
-  trackInterface<o2::track::TrackParCov>() = default;
-  trackInterface<o2::track::TrackParCov>(const trackInterface<o2::track::TrackParCov>& param) = default;
-  trackInterface<o2::track::TrackParCov>(const o2::track::TrackParCov& param) = delete;
-  trackInterface<o2::track::TrackParCov>(const GPUTPCGMMergedTrack& trk)
+  trackInterface<o2::dataformats::TrackTPCITS>() = default;
+  trackInterface<o2::dataformats::TrackTPCITS>(const trackInterface<o2::dataformats::TrackTPCITS>& param) = default;
+  trackInterface<o2::dataformats::TrackTPCITS>(const o2::dataformats::TrackTPCITS& param) = delete;
+  trackInterface<o2::dataformats::TrackTPCITS>(const GPUTPCGMMergedTrack& trk)
   {
     setX(trk.OuterParam().X);
     setAlpha(trk.OuterParam().alpha);
@@ -155,7 +156,7 @@ class trackInterface<o2::track::TrackParCov> : public o2::track::TrackParCov
       setCov(trk.OuterParam().C[i], i);
     }
   }
-  trackInterface<o2::track::TrackParCov>(const GPUTPCGMTrackParam::GPUTPCOuterParam& param)
+  trackInterface<o2::dataformats::TrackTPCITS>(const GPUTPCGMTrackParam::GPUTPCOuterParam& param)
   {
     setX(param.X);
     setAlpha(param.alpha);
@@ -179,11 +180,16 @@ class trackInterface<o2::track::TrackParCov> : public o2::track::TrackParCov
     }
   }
 
-  const float* getPar() { return getParams(); }
+  const float* getPar() const { return getParams(); }
+  float getTime() const { return mTime; }
+  void setTime(float t) { mTime = t; }
 
   bool CheckNumericalQuality() const { return true; }
 
-  typedef o2::track::TrackParCov baseClass;
+  typedef o2::dataformats::TrackTPCITS baseClass;
+
+ private:
+  float mTime;
 };
 
 template <>
@@ -195,9 +201,9 @@ class propagatorInterface<o2::base::Propagator>
   propagatorInterface<o2::base::Propagator>& operator=(const propagatorInterface<o2::base::Propagator>&) = delete;
 
   bool propagateToX(float x, float maxSnp, float maxStep) { return mProp->PropagateToXBxByBz(*mParam, x, 0.13957, maxSnp, maxStep); }
-  int getPropagatedYZ(My_Float x, My_Float& projY, My_Float& projZ) { return static_cast<int>(mParam->getYZAt(x, mProp->getNominalBz(), projY, projZ)); }
+  int getPropagatedYZ(float x, float& projY, float& projZ) { return static_cast<int>(mParam->getYZAt(x, mProp->getNominalBz(), projY, projZ)); }
 
-  void setTrack(trackInterface<o2::track::TrackParCov>* trk) { mParam = trk; }
+  void setTrack(trackInterface<o2::dataformats::TrackTPCITS>* trk) { mParam = trk; }
   void setFitInProjections(bool flag) {}
 
   float getAlpha() { return (mParam) ? mParam->getAlpha() : 99999.f; }
@@ -223,7 +229,7 @@ class propagatorInterface<o2::base::Propagator>
   }
   bool rotate(float alpha) { return (mParam) ? mParam->rotate(alpha) : false; }
 
-  trackInterface<o2::track::TrackParCov>* mParam{nullptr};
+  trackInterface<o2::dataformats::TrackTPCITS>* mParam{nullptr};
   o2::base::Propagator* mProp{o2::base::Propagator::Instance()};
 };
 
@@ -294,6 +300,7 @@ class trackInterface<GPUTPCGMTrackParam> : public GPUTPCGMTrackParam
 
   GPUd() const float* getPar() const { return GetPar(); }
   GPUd() const float* getCov() const { return GetCov(); }
+  GPUd() float getTime() const { return -1.f; }
 
   GPUd() void setAlpha(float alpha) { mAlpha = alpha; }
   GPUd() void set(float x, float alpha, const float param[5], const float cov[15])
@@ -338,7 +345,6 @@ class propagatorInterface<GPUTPCGMPropagator> : public GPUTPCGMPropagator
   {
     //bool ok = PropagateToXAlpha(x, GetAlpha(), true) == 0 ? true : false;
     int retVal = PropagateToXAlpha(x, GetAlpha(), true);
-    printf("Return value of PropagateToXAlpha: %i\n", retVal);
     bool ok = (retVal == 0) ? true : false;
     ok = mTrack->CheckNumericalQuality();
     return ok;

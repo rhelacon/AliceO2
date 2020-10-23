@@ -14,6 +14,7 @@
 /// @brief  Processor spec for running TPC CA tracking
 
 #include "Framework/DataProcessorSpec.h"
+#include "RecoWorkflow.h"
 #include <utility> // std::forward
 
 namespace o2
@@ -31,6 +32,8 @@ namespace ca
 // The CA tracker is now a wrapper to not only the actual tracking on GPU but
 // also the decoding of the zero-suppressed raw format and the clusterer.
 enum struct Operation {
+  DecompressTPC,          // run cluster decompressor
+  DecompressTPCFromROOT,  // the cluster decompressor input is a root object not flat
   CAClusterer,            // run the CA clusterer
   ZSDecoder,              // run the ZS raw data decoder
   ZSOnTheFly,             // use zs on the fly
@@ -39,6 +42,7 @@ enum struct Operation {
   OutputCompClusters,     // publish CompClusters container
   OutputCompClustersFlat, // publish CompClusters container
   ProcessMC,              // process MC labels
+  SendClustersPerSector,  // Send clusters and clusters mc labels per sector
   Noop,                   // skip argument on the constructor
 };
 
@@ -57,6 +61,12 @@ struct Config {
   void init(Operation const& op, Args&&... args)
   {
     switch (op) {
+      case Operation::DecompressTPC:
+        decompressTPC = true;
+        break;
+      case Operation::DecompressTPCFromROOT:
+        decompressTPCFromROOT = true;
+        break;
       case Operation::CAClusterer:
         caClusterer = true;
         break;
@@ -81,6 +91,9 @@ struct Config {
       case Operation::ProcessMC:
         processMC = true;
         break;
+      case Operation::SendClustersPerSector:
+        sendClustersPerSector = true;
+        break;
       case Operation::Noop:
         break;
       default:
@@ -94,6 +107,8 @@ struct Config {
   // Cannot specialize constructor to create proper copy constructor directly --> must overload init
   void init(const Config& x) { *this = x; }
 
+  bool decompressTPC = false;
+  bool decompressTPCFromROOT = false;
   bool caClusterer = false;
   bool zsDecoder = false;
   bool zsOnTheFly = false;
@@ -102,6 +117,7 @@ struct Config {
   bool outputCompClustersFlat = false;
   bool outputCAClusters = false;
   bool processMC = false;
+  bool sendClustersPerSector = false;
 };
 
 } // namespace ca
@@ -122,7 +138,7 @@ struct Config {
 ///
 /// @param specconfig configuration options for the processor spec
 /// @param tpcsectors list of sector numbers
-framework::DataProcessorSpec getCATrackerSpec(ca::Config const& specconfig, std::vector<int> const& tpcsectors);
+framework::DataProcessorSpec getCATrackerSpec(o2::tpc::reco_workflow::CompletionPolicyData* policyData, ca::Config const& specconfig, std::vector<int> const& tpcsectors);
 
 o2::framework::CompletionPolicy getCATrackerCompletionPolicy();
 } // end namespace tpc

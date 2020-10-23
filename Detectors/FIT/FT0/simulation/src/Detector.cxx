@@ -211,10 +211,10 @@ void Detector::ConstructGeometry()
     stlinC->AddNode(ins, itr, ph);
   }
 
-  TGeoVolume* alice = gGeoManager->GetVolume("cave");
-  alice->AddNode(stlinA, 1, new TGeoTranslation(0, 0, zdetA));
+  TGeoVolume* alice = gGeoManager->GetVolume("barrel");
+  alice->AddNode(stlinA, 1, new TGeoTranslation(0, 30., zdetA));
   TGeoRotation* rotC = new TGeoRotation("rotC", 90., 0., 90., 90., 180., 0.);
-  alice->AddNode(stlinC, 1, new TGeoCombiTrans(0., 0., -zdetC, rotC));
+  alice->AddNode(stlinC, 1, new TGeoCombiTrans(0., 30., -zdetC, rotC));
 
   // MCP + 4 x wrapped radiator + 4xphotocathod + MCP + Al top in front of radiators
   SetOneMCP(ins);
@@ -360,10 +360,6 @@ Bool_t Detector::ProcessHits(FairVolume* v)
       AddHit(x, y, z, time, 10, trackID, detID);
     }
     if (iPart == 50000050) { // If particles is photon then ...
-      if (etot > 7.46e-9 || etot < 2.4e-9) {
-        fMC->StopTrack();
-        return kFALSE;
-      }
       if (volname.Contains("0TOP")) {
         if (!RegisterPhotoE(etot)) {
           fMC->StopTrack();
@@ -536,7 +532,7 @@ void Detector::DefineOpticalProperties()
   TVirtualMC::GetMC()->DefineOpSurface("surFrontWindow", kUnified, kDielectric_dielectric, kPolishedbackpainted, 0.);
   //TVirtualMC::GetMC()->SetMaterialProperty("surFrontWindow", "EFFICIENCY", nBins, &(mPhotonEnergyD[0]), &(mEfficAll[0]));
   TVirtualMC::GetMC()->SetMaterialProperty("surFrontWindow", "REFLECTIVITY", nBins, &(mPhotonEnergyD[0]), &(mReflBlackPaper[0]));
-  TVirtualMC::GetMC()->SetBorderSurface("surBorderFrontWindow", "0TOP", 1, "0MT0", 1, "surFrontWindow");
+  TVirtualMC::GetMC()->SetBorderSurface("surBorderFrontWindow", "0TOP", 1, "0MTO", 1, "surFrontWindow");
 }
 
 void Detector::FillOtherOptProperties()

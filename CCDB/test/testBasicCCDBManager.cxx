@@ -49,7 +49,7 @@ BOOST_AUTO_TEST_CASE(TestBasicCCDBManager)
   auto& cdb = o2::ccdb::BasicCCDBManager::instance();
   cdb.setURL(uri);
   cdb.setTimestamp((start + stop) / 2);
-  cdb.setCachingEnabled(true);
+  cdb.setCaching(true);
 
   auto* objA = cdb.get<std::string>(pathA); // will be loaded from scratch and fill the cache
   LOG(INFO) << "1st reading of A: " << *objA;
@@ -99,8 +99,20 @@ BOOST_AUTO_TEST_CASE(TestBasicCCDBManager)
   LOG(INFO) << "Reading B after cleaning cache completely: " << *objB;
   BOOST_CHECK(objB && (*objB) == ccdbObjO); // make sure correct object is loaded
 
+  // get object in TimeMachine mode in the past
+  cdb.setCreatedNotAfter(1);          // set upper object validity
+  objA = cdb.get<std::string>(pathA); // should not be loaded
+  BOOST_CHECK(!objA);                 // make sure correct object is not loaded
+  cdb.resetCreatedNotAfter();         // resetting upper validity limit
+
+  // get object in TimeMachine mode in the future
+  cdb.setCreatedNotBefore(4108971600000); // set upper object validity
+  objA = cdb.get<std::string>(pathA);     // should not be loaded
+  BOOST_CHECK(!objA);                     // make sure correct object is not loaded
+  cdb.resetCreatedNotBefore();            // resetting upper validity limit
+
   // disable cache at all (will also clean it)
-  cdb.setCachingEnabled(false);
+  cdb.setCaching(false);
   objA = cdb.get<std::string>(pathA); // will be loaded from scratch, w/o filling the cache
   LOG(INFO) << "Reading A after disabling the cache: " << *objA;
   BOOST_CHECK(objA && (*objA) == ccdbObjO); // make sure correct object is loaded

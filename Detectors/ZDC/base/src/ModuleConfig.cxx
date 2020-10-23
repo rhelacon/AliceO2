@@ -14,21 +14,33 @@
 
 using namespace o2::zdc;
 
-void Module::print() const
+void Module::printCh() const
 {
   printf("Module %d [ChID/LinkID R:T ]", id);
   for (int ic = 0; ic < MaxChannels; ic++) {
-    printf("[%s{%2d}/L%02d %c:%c ]", channelName(channelID[ic]), channelID[ic], linkID[ic], readChannel[ic] ? '+' : '-', trigChannel[ic] ? '+' : '-');
+    printf("[%s{%2d}/L%02d %c:%c ]", channelName(channelID[ic]), channelID[ic], linkID[ic], readChannel[ic] ? 'R' : ' ', trigChannel[ic] ? 'T' : ' ');
   }
   printf("\n");
-  printf("Trigger conf: ");
+}
+
+void Module::printTrig() const
+{
+  printf("Trigger conf %d: ", id);
   for (int ic = 0; ic < MaxChannels; ic++) {
+    const auto& cnf = trigChannelConf[ic];
     if (trigChannel[ic]) {
-      const auto& cnf = trigChannelConf[ic];
-      printf("[%s: F:%2d L:%2d S:%2d T:%2d] ", channelName(channelID[ic]), cnf.first, cnf.last, cnf.shift, cnf.threshold);
+      printf("[TRIG %s: F:%2d L:%2d S:%2d T:%2d] ", channelName(channelID[ic]), cnf.first, cnf.last, cnf.shift, cnf.threshold);
+    } else if (cnf.shift > 0 && cnf.threshold > 0) {
+      printf("[DISC %s: F:%2d L:%2d S:%2d T:%2d] ", channelName(channelID[ic]), cnf.first, cnf.last, cnf.shift, cnf.threshold);
     }
   }
   printf("\n");
+}
+
+void Module::print() const
+{
+  printCh();
+  printTrig();
 }
 
 void ModuleConfig::print() const
@@ -36,7 +48,12 @@ void ModuleConfig::print() const
   printf("Modules configuration:\n");
   for (const auto& md : modules) {
     if (md.id >= 0) {
-      md.print();
+      md.printCh();
+    }
+  }
+  for (const auto& md : modules) {
+    if (md.id >= 0) {
+      md.printTrig();
     }
   }
 }
@@ -70,8 +87,11 @@ void Module::setChannel(int slot, int8_t chID, int16_t lID, bool read, bool trig
   linkID[slot] = lID;
   channelID[slot] = chID;
   readChannel[slot] = read;
+  // In the 2020 firmware implementation, autotrigger bits are computed for each channel
+  // Therefore we put the trig flag just for the triggering channels
+  // Discriminator parameters are stored for all modules
   trigChannel[slot] = trig;
-  if (trig) {
+  if (tS > 0 && tT > 0) {
     if (tL + tS + 1 >= NTimeBinsPerBC) {
       LOG(FATAL) << "Sum of Last and Shift trigger parameters exceed allowed range";
     }

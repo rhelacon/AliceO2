@@ -13,35 +13,38 @@
 
 #include "CommonUtils/ConfigurableParam.h"
 #include "CommonUtils/ConfigurableParamHelper.h"
+#include "CommonConstants/PhysicsConstants.h"
 
 namespace o2
 {
 namespace fv0
 {
 // parameters of FV0 digitization / transport simulation
-
 struct FV0DigParam : public o2::conf::ConfigurableParamHelper<FV0DigParam> {
   float intrinsicTimeRes = 0.91;       // time resolution
   float photoCathodeEfficiency = 0.23; // quantum efficiency = nOfPhotoE_emitted_by_photocathode / nIncidentPhotons
-  float lightYield = 0.1;              // light collection efficiency to be tuned using collision data
+  float lightYield = 0.01;             // light collection efficiency to be tuned using collision data [1%]
   float pmtGain = 5e4;                 // value for PMT R5924-70 at default FV0 gain
   float pmtTransitTime = 9.5;          // PMT response time (corresponds to 1.9 ns rise time)
   float pmtTransparency = 0.25;        // Transparency of the first dynode of the PMT
-  float pmtNbOfSecElec = 9.0;          // Number of secondary electrons emitted from first dynode (per ph.e.)
-  float shapeConst = 0.029;            // Crystal ball const parameter
-  float shapeMean = 10.2;              // Crystal ball mean  parameter
-  float shapeAlpha = -0.34;            // Crystal ball alpha parameter
-  float shapeN = 7.6e06;               // Crystal ball N     parameter
-  float shapeSigma = 3.013;            // Crystal ball sigma parameter
-  float timeShiftCfd = 3.3;            // TODO: adjust after PM design for FV0 is fixed
-  int photoelMin = 0;                  // integration lower limit
-  int photoelMax = 30;                 // integration upper limit
+  float shapeConst = 1.18059e-14;      // Crystal ball const parameter
+  float shapeMean = 9.5;               // Crystal ball mean  parameter
+  float shapeAlpha = -6.56586e-01;     // Crystal ball alpha parameter
+  float shapeN = 2.36408e+00;          // Crystal ball N     parameter
+  float shapeSigma = 3.55445;          // Crystal ball sigma parameter
+  //float timeShiftCfd = 3.3;          // From the cosmic measurements of FV0 [keep it for reference]
+  float timeShiftCfd = 5.3;            // TODO: adjust after FV0 with FEE measurements are done
   float singleMipThreshold = 3.0;      // in [MeV] of deposited energy
-  float waveformNbins = 2000;          // number of bins for the analog pulse waveform
-  float waveformBinWidth = 0.09765625; // number of bins for the analog (25.0 / 256.0)
-
-  //Optimization-related, derived constants
-  float oneOverPmtTransitTime2 = 1.0 / (pmtTransitTime * pmtTransitTime);
+  float singleHitTimeThreshold = 120.0; // in [ns] to skip very slow particles
+  float waveformNbins = 10000;         // number of bins for the analog pulse waveform
+  float waveformBinWidth = 0.01302;    // number of bins for the analog
+  float avgCfdTimeForMip = 8.63;       // in ns to shift the CFD time to zero TODO do ring wise
+  int chargeIntBinMin = (avgCfdTimeForMip - 6.0) / waveformBinWidth;          //Charge integration offset (cfd mean time - 6 ns)
+  int chargeIntBinMax = (avgCfdTimeForMip + 14.0) / waveformBinWidth;         //Charge integration offset (cfd mean time + 14 ns)
+  bool isIntegrateFull = false;                                               // Full charge integration widow in 25 ns
+  float cfdCheckWindow = 2.5;                                                 // time window for the cfd in ns to trigger the charge integration
+  int avgNumberPhElectronPerMip = 201;                                        // avg number of photo-electrons per MIP
+  float globalTimeOfFlight = 315.0 / o2::constants::physics::LightSpeedCm2NS; //TODO check the correct value for distance of FV0 to IP
 
   O2ParamDef(FV0DigParam, "FV0DigParam");
 };

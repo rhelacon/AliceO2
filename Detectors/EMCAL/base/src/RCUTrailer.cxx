@@ -36,19 +36,22 @@ void RCUTrailer::reset()
 void RCUTrailer::constructFromRawPayload(const gsl::span<const uint32_t> payloadwords)
 {
   reset();
-  int index = payloadwords.size() - 1;
-  auto word = payloadwords[index];
-  if ((word >> 30) != 3)
+  int index = payloadwords.size();
+  auto word = payloadwords[--index];
+  if ((word >> 30) != 3) {
     throw Error(Error::ErrorType_t::DECODING_INVALID, "Last RCU trailer word not found!");
+  }
   mFirmwareVersion = (word >> 16) & 0xFF;
 
   mRCUId = (int)((word >> 7) & 0x1FF);
   int trailerSize = (word & 0x7F);
 
-  if (trailerSize < 2)
+  if (trailerSize < 2) {
     throw Error(Error::ErrorType_t::SIZE_INVALID, fmt::format("Invalid trailer size found (%d bytes) !", trailerSize * 4).data());
+  }
   mTrailerSize = trailerSize;
 
+  trailerSize -= 2; // Cut first and last trailer words as they are handled separately
   for (; trailerSize > 0; trailerSize--) {
     word = payloadwords[--index];
     if ((word >> 30) != 2) {
@@ -123,14 +126,15 @@ double RCUTrailer::getTimeSample() const
 void RCUTrailer::setTimeSample(double timesample)
 {
   int fq = 0;
-  if (std::abs(timesample - 50) < DBL_EPSILON)
+  if (std::abs(timesample - 50) < DBL_EPSILON) {
     fq = 0;
-  else if (std::abs(timesample - 100) < DBL_EPSILON)
+  } else if (std::abs(timesample - 100) < DBL_EPSILON) {
     fq = 1;
-  else if (std::abs(timesample - 200) < DBL_EPSILON)
+  } else if (std::abs(timesample - 200) < DBL_EPSILON) {
     fq = 2;
-  else
+  } else {
     throw Error(Error::ErrorType_t::SAMPLINGFREQ_INVALID, fmt::format("invalid time sample: %f", timesample).data());
+  }
   mAltroCFG2 = (mAltroCFG2 & 0x1F) | fq << 5;
 }
 
@@ -153,15 +157,16 @@ void RCUTrailer::setL1Phase(double l1phase)
 std::vector<uint32_t> RCUTrailer::encode() const
 {
   std::vector<uint32_t> encoded;
-  encoded.emplace_back(mAltroCFG2 | 7 << 26);
-  encoded.emplace_back(mAltroCFG1 | 6 << 26);
-  encoded.emplace_back(mActiveFECsB | 5 << 26);
-  encoded.emplace_back(mActiveFECsA | 4 << 26);
-  encoded.emplace_back(mERRREG3 | 3 << 26);
-  encoded.emplace_back(mERRREG2 | 2 << 26);
-  encoded.emplace_back(mFECERRB >> 7 | (mFECERRA >> 7) << 13 | 1 << 26);
+  encoded.emplace_back(mPayloadSize | 2 << 30);
+  encoded.emplace_back(mAltroCFG2 | 7 << 26 | 2 << 30);
+  encoded.emplace_back(mAltroCFG1 | 6 << 26 | 2 << 30);
+  encoded.emplace_back(mActiveFECsB | 5 << 26 | 2 << 30);
+  encoded.emplace_back(mActiveFECsA | 4 << 26 | 2 << 30);
+  encoded.emplace_back(mERRREG3 | 3 << 26 | 2 << 30);
+  encoded.emplace_back(mERRREG2 | 2 << 26 | 2 << 30);
+  encoded.emplace_back(mFECERRB >> 7 | (mFECERRA >> 7) << 13 | 1 << 26 | 2 << 30);
 
-  uint32_t lasttrailerword = 3 << 30 | mFirmwareVersion << 16 | mRCUId << 7 | encoded.size();
+  uint32_t lasttrailerword = 3 << 30 | mFirmwareVersion << 16 | mRCUId << 7 | (encoded.size() + 1);
   encoded.emplace_back(lasttrailerword);
 
   return encoded;

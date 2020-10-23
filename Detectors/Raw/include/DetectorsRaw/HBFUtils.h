@@ -54,10 +54,10 @@ struct HBFUtils : public o2::conf::ConfigurableParamHelper<HBFUtils> {
   IR getIRTF(uint32_t tf) const { return getIRHBF(tf * nHBFPerTF); }
 
   ///< get HBF ID corresponding to this IR
-  int64_t getHBF(const IR& rec) const;
+  uint32_t getHBF(const IR& rec) const;
 
   ///< get TF ID corresponding to this IR
-  int64_t getTF(const IR& rec) const { return getHBF(rec) / nHBFPerTF; }
+  uint32_t getTF(const IR& rec) const { return getHBF(rec) / nHBFPerTF; }
 
   ///< get TF and HB (within TF) for this IR
   std::pair<int, int> getTFandHBinTF(const IR& rec) const
@@ -65,6 +65,9 @@ struct HBFUtils : public o2::conf::ConfigurableParamHelper<HBFUtils> {
     auto hbf = getHBF(rec);
     return std::pair<int, int>(hbf / nHBFPerTF, hbf % nHBFPerTF);
   }
+
+  ///< get 1st IR of the TF corresponding to provided interaction record
+  IR getFirstIRofTF(const IR& rec) const { return getIRTF(getTF(rec)); }
 
   ///< get TF and HB (abs) for this IR
   std::pair<int, int> getTFandHB(const IR& rec) const
@@ -75,11 +78,11 @@ struct HBFUtils : public o2::conf::ConfigurableParamHelper<HBFUtils> {
 
   ///< create RDH for given IR
   template <typename H>
-  H createRDH(const IR& rec) const;
+  H createRDH(const IR& rec, bool setHBTF = true) const;
 
   ///< update RDH for with given IR info
   template <typename H>
-  void updateRDH(H& rdh, const IR& rec) const;
+  void updateRDH(H& rdh, const IR& rec, bool setHBTF = true) const;
 
   /*//-------------------------------------------------------------------------------------
     Fill provided vector (cleaned) by interaction records (bc/orbit) for HBFs, considering 
@@ -129,31 +132,32 @@ struct HBFUtils : public o2::conf::ConfigurableParamHelper<HBFUtils> {
 
 //_________________________________________________
 template <typename H>
-void HBFUtils::updateRDH(H& rdh, const IR& rec) const
+void HBFUtils::updateRDH(H& rdh, const IR& rec, bool setHBTF) const
 {
-  auto tfhb = getTFandHBinTF(rec);
-  RDHUtils::setHeartBeatBC(rdh, bcFirst);
-  RDHUtils::setHeartBeatOrbit(rdh, rec.orbit);
-  if (RDHUtils::getVersion(rdh) < 5) { // v3,4 have separate fields for trigger IR
-    RDHUtils::setTriggerBC(rdh, bcFirst);
-    RDHUtils::setTriggerOrbit(rdh, rec.orbit);
-  }
+  RDHUtils::setTriggerBC(rdh, rec.bc); // for RDH>4 the trigger and HB IR is the same!
+  RDHUtils::setTriggerOrbit(rdh, rec.orbit);
 
-  if (rec.bc == bcFirst) { // if we are starting new HB, set the HB trigger flag
-    auto trg = RDHUtils::getTriggerType(rdh) | (o2::trigger::ORBIT | o2::trigger::HB);
-    if (tfhb.second == 0) { // if we are starting new TF, set the TF trigger flag
-      trg |= o2::trigger::TF;
+  if (setHBTF) { // need to set the HBF IR and HB / TF trigger flags
+    auto tfhb = getTFandHBinTF(rec);
+    RDHUtils::setHeartBeatBC(rdh, bcFirst);
+    RDHUtils::setHeartBeatOrbit(rdh, rec.orbit);
+
+    if (rec.bc == bcFirst) { // if we are starting new HB, set the HB trigger flag
+      auto trg = RDHUtils::getTriggerType(rdh) | (o2::trigger::ORBIT | o2::trigger::HB);
+      if (tfhb.second == 0) { // if we are starting new TF, set the TF trigger flag
+        trg |= o2::trigger::TF;
+      }
+      RDHUtils::setTriggerType(rdh, trg);
     }
-    RDHUtils::setTriggerType(rdh, trg);
   }
 }
 
 //_________________________________________________
 template <typename H>
-inline H HBFUtils::createRDH(const o2::InteractionRecord& rec) const
+inline H HBFUtils::createRDH(const o2::InteractionRecord& rec, bool setHBTF) const
 {
   H rdh;
-  updateRDH(rdh, rec);
+  updateRDH(rdh, rec, setHBTF);
   return rdh;
 }
 

@@ -26,7 +26,7 @@ namespace itsmft
 {
 ClusterTopology::ClusterTopology() : mPattern{}, mHash{0} {}
 
-ClusterTopology::ClusterTopology(int nRow, int nCol, const unsigned char patt[Cluster::kMaxPatternBytes]) : mHash{0}
+ClusterTopology::ClusterTopology(int nRow, int nCol, const unsigned char patt[ClusterPattern::MaxPatternBytes]) : mHash{0}
 {
   setPattern(nRow, nCol, patt);
 }
@@ -36,7 +36,7 @@ ClusterTopology::ClusterTopology(const ClusterPattern& patt)
   setPattern(patt);
 }
 
-void ClusterTopology::setPattern(int nRow, int nCol, const unsigned char patt[Cluster::kMaxPatternBytes])
+void ClusterTopology::setPattern(int nRow, int nCol, const unsigned char patt[ClusterPattern::MaxPatternBytes])
 {
   mPattern.setPattern(nRow, nCol, patt);
   mHash = getCompleteHash(*this);
@@ -90,15 +90,16 @@ unsigned int ClusterTopology::hashFunction(const void* key, int len)
 }
 
 unsigned long ClusterTopology::getCompleteHash(int nRow, int nCol,
-                                               const unsigned char patt[Cluster::kMaxPatternBytes])
+                                               const unsigned char patt[ClusterPattern::MaxPatternBytes])
 {
   unsigned char extended_pattern[ClusterPattern::kExtendedPatternBytes] = {0};
   extended_pattern[0] = (unsigned char)nRow;
   extended_pattern[1] = (unsigned char)nCol;
   int nBits = nRow * nCol;
   int nBytes = nBits / 8;
-  if (nBits % 8 != 0)
+  if (nBits % 8 != 0) {
     nBytes++;
+  }
   memcpy(&extended_pattern[2], patt, nBytes);
 
   unsigned long partialHash = (unsigned long)hashFunction(extended_pattern, nBytes);
@@ -147,6 +148,11 @@ unsigned long ClusterTopology::getCompleteHash(const ClusterTopology& topology)
     throw std::runtime_error("No fired pixels in small topology");
   }
   return completeHash;
+}
+
+void ClusterTopology::print() const
+{
+  std::cout << (*this) << "\n";
 }
 
 std::ostream& operator<<(std::ostream& os, const ClusterTopology& topology)

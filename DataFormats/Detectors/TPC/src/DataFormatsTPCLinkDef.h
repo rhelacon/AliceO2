@@ -45,6 +45,9 @@
 #pragma link C++ class o2::tpc::CompressedClustersPtrs + ;
 #pragma link C++ class o2::tpc::CompressedClusters + ;
 #pragma link C++ class o2::tpc::CompressedClustersROOT - ;
+#pragma link C++ class o2::tpc::CTF + ;
+#pragma link C++ class o2::tpc::CTFHeader + ;
+#pragma link C++ class o2::ctf::EncodedBlocks < o2::tpc::CTFHeader, 23, uint32_t> + ;
 #pragma link C++ enum o2::tpc::StatisticsType;
 
 #endif

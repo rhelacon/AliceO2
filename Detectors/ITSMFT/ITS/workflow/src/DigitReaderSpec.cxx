@@ -16,11 +16,14 @@
 
 #include "Framework/ConfigParamRegistry.h"
 #include "Framework/ControlService.h"
+#include "Framework/Logger.h"
 #include "ITSWorkflow/DigitReaderSpec.h"
 #include "DataFormatsITSMFT/Digit.h"
 #include "SimulationDataFormat/MCCompLabel.h"
-#include "SimulationDataFormat/MCTruthContainer.h"
+#include "SimulationDataFormat/ConstMCTruthContainer.h"
+#include "SimulationDataFormat/IOMCTruthContainerView.h"
 #include "DataFormatsITSMFT/ROFRecord.h"
+#include <cmath>
 
 using namespace o2::framework;
 using namespace o2::itsmft;
@@ -58,7 +61,8 @@ void DigitReader::run(ProcessingContext& pc)
     std::vector<ROFRecord> rofs, *profs = &rofs;
     treeDig->SetBranchAddress("ITSDigitROF", &profs);
 
-    o2::dataformats::MCTruthContainer<o2::MCCompLabel> labels, *plabels = &labels;
+    o2::dataformats::IOMCTruthContainerView* plabels = nullptr;
+
     std::vector<MC2ROFRecord> mc2rofs, *pmc2rofs = &mc2rofs;
     if (mUseMC) {
       treeDig->SetBranchAddress("ITSDigitMCTruth", &plabels);
@@ -70,10 +74,12 @@ void DigitReader::run(ProcessingContext& pc)
               << profs->size() << " RO frames";
 
     pc.outputs().snapshot(Output{"ITS", "DIGITS", 0, Lifetime::Timeframe}, digits);
-    pc.outputs().snapshot(Output{"ITS", "ITSDigitROF", 0, Lifetime::Timeframe}, *profs);
+    pc.outputs().snapshot(Output{"ITS", "DIGITSROF", 0, Lifetime::Timeframe}, *profs);
     if (mUseMC) {
-      pc.outputs().snapshot(Output{"ITS", "DIGITSMCTR", 0, Lifetime::Timeframe}, labels);
-      pc.outputs().snapshot(Output{"ITS", "ITSDigitMC2ROF", 0, Lifetime::Timeframe}, *pmc2rofs);
+      auto& sharedlabels = pc.outputs().make<o2::dataformats::ConstMCTruthContainer<o2::MCCompLabel>>(Output{"ITS", "DIGITSMCTR", 0, Lifetime::Timeframe});
+      plabels->copyandflatten(sharedlabels);
+      delete plabels;
+      pc.outputs().snapshot(Output{"ITS", "DIGITSMC2ROF", 0, Lifetime::Timeframe}, *pmc2rofs);
     }
   } else {
     LOG(ERROR) << "Cannot read the ITS digits !";
@@ -88,10 +94,10 @@ DataProcessorSpec getDigitReaderSpec(bool useMC)
 {
   std::vector<OutputSpec> outputs;
   outputs.emplace_back("ITS", "DIGITS", 0, Lifetime::Timeframe);
-  outputs.emplace_back("ITS", "ITSDigitROF", 0, Lifetime::Timeframe);
+  outputs.emplace_back("ITS", "DIGITSROF", 0, Lifetime::Timeframe);
   if (useMC) {
     outputs.emplace_back("ITS", "DIGITSMCTR", 0, Lifetime::Timeframe);
-    outputs.emplace_back("ITS", "ITSDigitMC2ROF", 0, Lifetime::Timeframe);
+    outputs.emplace_back("ITS", "DIGITSMC2ROF", 0, Lifetime::Timeframe);
   }
 
   return DataProcessorSpec{

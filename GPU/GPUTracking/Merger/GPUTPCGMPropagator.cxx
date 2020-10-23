@@ -17,10 +17,7 @@
 #include "GPUTPCGMMergedTrackHit.h"
 #include "GPUO2DataTypes.h"
 #include "GPUParam.inc"
-
-#ifndef __OPENCL__
-#include <cmath>
-#endif
+#include "GPUTPCGMMergerTypes.h"
 
 #if defined(GPUCA_GM_USE_FULL_FIELD)
 #include "AliTracker.h"
@@ -290,6 +287,10 @@ GPUd() int GPUTPCGMPropagator::PropagateToXAlpha(float posX, float posAlpha, boo
       return -2;
     }
   }
+  if (CAMath::Abs(posX - mT->X()) < 1.e-7f) {
+    mT->SetX(posX);
+    return 0;
+  }
 
   float B[3];
   GetBxByBz(mT0.X(), mT0.Y(), mT0.Z(), B);
@@ -315,6 +316,10 @@ GPUd() int GPUTPCGMPropagator::PropagateToXAlphaBz(float posX, float posAlpha, b
     if (RotateToAlpha(posAlpha) != 0) {
       return -2;
     }
+  }
+  if (CAMath::Abs(posX - mT->X()) < 1.e-7f) {
+    mT->SetX(posX);
+    return 0;
   }
 
   float Bz = GetBz(mT0.X(), mT0.Y(), mT0.Z());
@@ -380,14 +385,7 @@ GPUd() int GPUTPCGMPropagator::FollowLinearization(const GPUTPCGMPhysicalTrackMo
   }
 
   if (mMatLUT) {
-    float xyz1[3] = {getGlobalX(mT0.GetX(), mT0.GetY()), getGlobalY(mT0.GetX(), mT0.GetY()), mT0.GetZ()};
-    float xyz2[3] = {getGlobalX(t0e.GetX(), t0e.GetY()), getGlobalY(t0e.GetX(), t0e.GetY()), t0e.GetZ()};
-    o2::base::MatBudget mat = getMatBudget(xyz1, xyz2);
-    if (mat.meanX2X0 > 1.e-8) {
-      SetMaterial(mat.length / mat.meanX2X0, mat.meanRho);
-    } else {
-      SetMaterialTPC();
-    }
+    UpdateMaterial(t0e);
   }
 
   mT0 = t0e;
@@ -629,7 +627,7 @@ GPUd() float GPUTPCGMPropagator::PredictChi2(float posY, float posZ, float err2Y
   }
 }
 
-GPUd() int GPUTPCGMPropagator::Update(float posY, float posZ, int iRow, const GPUParam& GPUrestrict() param, short clusterState, char rejectChi2, GPUTPCGMMergerTypes::InterpolationErrorHit* inter, bool refit)
+GPUd() int GPUTPCGMPropagator::Update(float posY, float posZ, int iRow, const GPUParam& GPUrestrict() param, short clusterState, char rejectChi2, gputpcgmmergertypes::InterpolationErrorHit* inter, bool refit)
 {
   float err2Y, err2Z;
   GetErr2(err2Y, err2Z, param, posZ, iRow, clusterState);
@@ -665,7 +663,7 @@ GPUd() int GPUTPCGMPropagator::Update(float posY, float posZ, int iRow, const GP
   return Update(posY, posZ, clusterState, rejectChi2 == 1, err2Y, err2Z);
 }
 
-GPUd() int GPUTPCGMPropagator::InterpolateReject(float posY, float posZ, short clusterState, char rejectChi2, GPUTPCGMMergerTypes::InterpolationErrorHit* inter, float err2Y, float err2Z)
+GPUd() int GPUTPCGMPropagator::InterpolateReject(float posY, float posZ, short clusterState, char rejectChi2, gputpcgmmergertypes::InterpolationErrorHit* inter, float err2Y, float err2Z)
 {
   float* GPUrestrict() mC = mT->Cov();
   float* GPUrestrict() mP = mT->Par();
@@ -1059,5 +1057,19 @@ GPUd() o2::base::MatBudget GPUTPCGMPropagator::getMatBudget(const float* p1, con
   return mMatLUT->getMatBudget(p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]);
 #else
   return o2::base::MatBudget();
+#endif
+}
+
+GPUdic(0, 1) void GPUTPCGMPropagator::UpdateMaterial(const GPUTPCGMPhysicalTrackModel& GPUrestrict() t0e)
+{
+#ifdef HAVE_O2HEADERS
+  float xyz1[3] = {getGlobalX(mT0.GetX(), mT0.GetY()), getGlobalY(mT0.GetX(), mT0.GetY()), mT0.GetZ()};
+  float xyz2[3] = {getGlobalX(t0e.GetX(), t0e.GetY()), getGlobalY(t0e.GetX(), t0e.GetY()), t0e.GetZ()};
+  o2::base::MatBudget mat = getMatBudget(xyz1, xyz2);
+  if (mat.meanX2X0 > 1.e-8) {
+    SetMaterial(mat.length / mat.meanX2X0, mat.meanRho);
+  } else {
+    SetMaterialTPC();
+  }
 #endif
 }

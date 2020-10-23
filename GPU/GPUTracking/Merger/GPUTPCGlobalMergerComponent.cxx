@@ -120,7 +120,7 @@ void GPUTPCGlobalMergerComponent::SetDefaultConfiguration()
 
   fSolenoidBz = -5.00668;
   fClusterErrorCorrectionY = 0;
-  fClusterErrorCorrectionZ = 1.1;
+  fClusterErrorCorrectionZ = 0;
   fNWays = 1;
   fNWaysOuter = 0;
   fNoClear = false;
@@ -292,7 +292,7 @@ int GPUTPCGlobalMergerComponent::Configure(const char* cdbEntry, const char* cha
 
   GPUSettingsEvent ev;
   GPUSettingsRec rec;
-  GPUSettingsDeviceProcessing devProc;
+  GPUSettingsProcessing devProc;
   ev.solenoidBz = fSolenoidBz;
   if (fClusterErrorCorrectionY > 1.e-4) {
     rec.ClusterError2CorrectionY = fClusterErrorCorrectionY * fClusterErrorCorrectionY;
@@ -305,6 +305,8 @@ int GPUTPCGlobalMergerComponent::Configure(const char* cdbEntry, const char* cha
   rec.mergerInterpolateErrors = false;
   rec.NonConsecutiveIDs = true;
   rec.mergerReadFromTrackerDirectly = false;
+  devProc.ompThreads = 1;
+  devProc.ompKernels = false;
 
   GPURecoStepConfiguration steps;
   steps.steps.set(GPUDataTypes::RecoStep::TPCMerging);
@@ -409,6 +411,9 @@ int GPUTPCGlobalMergerComponent::DoEvent(const AliHLTComponentEventData& evtData
   }
   fBenchmark.Start(1);
   fChain->RunTPCTrackingMerger();
+  if (fChain->CheckErrorCodes()) {
+    return (-EINVAL);
+  }
   fBenchmark.Stop(1);
 
   // Fill output

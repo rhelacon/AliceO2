@@ -30,7 +30,7 @@ namespace tof
 namespace compressed
 {
 
-template <typename RAWDataHeader>
+template <typename RDH>
 class DecoderBaseT
 {
 
@@ -41,6 +41,14 @@ class DecoderBaseT
   inline bool run()
   {
     rewind();
+    if (mDecoderCONET) {
+      mDecoderPointerMax = reinterpret_cast<const uint32_t*>(mDecoderBuffer + mDecoderBufferSize);
+      while (mDecoderPointer < mDecoderPointerMax) {
+        if (processDRM())
+          return false;
+      }
+      return false;
+    }
     while (!processHBF())
       ;
     return false;
@@ -54,24 +62,20 @@ class DecoderBaseT
   void setDecoderVerbose(bool val) { mDecoderVerbose = val; };
   void setDecoderBuffer(const char* val) { mDecoderBuffer = val; };
   void setDecoderBufferSize(long val) { mDecoderBufferSize = val; };
+  void setDecoderCONET(bool val) { mDecoderCONET = val; };
 
  private:
   /** handlers **/
 
-  virtual void rdhHandler(const RAWDataHeader* rdh){};
-  virtual void headerHandler(const CrateHeader_t* crateHeader, const CrateOrbit_t* crateOrbit){};
+  virtual void rdhHandler(const RDH* rdh) = 0;
+  virtual void headerHandler(const CrateHeader_t* crateHeader, const CrateOrbit_t* crateOrbit) = 0;
 
   virtual void frameHandler(const CrateHeader_t* crateHeader, const CrateOrbit_t* crateOrbit,
-                            const FrameHeader_t* frameHeader, const PackedHit_t* packedHits){};
+                            const FrameHeader_t* frameHeader, const PackedHit_t* packedHits) = 0;
 
   virtual void trailerHandler(const CrateHeader_t* crateHeader, const CrateOrbit_t* crateOrbit,
                               const CrateTrailer_t* crateTrailer, const Diagnostic_t* diagnostics,
-                              const Error_t* errors){};
-
-  /** old API, deprecated **/
-
-  virtual void trailerHandler(const CrateHeader_t* crateHeader, const CrateOrbit_t* crateOrbit,
-                              const CrateTrailer_t* crateTrailer, const Diagnostic_t* diagnostics){};
+                              const Error_t* errors) = 0;
 
   bool processHBF();
   bool processDRM();
@@ -84,10 +88,11 @@ class DecoderBaseT
   const uint32_t* mDecoderPointer = nullptr;
   const uint32_t* mDecoderPointerMax = nullptr;
   const uint32_t* mDecoderPointerNext = nullptr;
-  const RAWDataHeader* mDecoderRDH;
+  const RDH* mDecoderRDH;
   bool mDecoderVerbose = false;
   bool mDecoderError = false;
   bool mDecoderFatal = false;
+  bool mDecoderCONET = false;
   char mDecoderSaveBuffer[1048576];
   uint32_t mDecoderSaveBufferDataSize = 0;
   uint32_t mDecoderSaveBufferDataLeft = 0;
@@ -95,7 +100,7 @@ class DecoderBaseT
 
 typedef DecoderBaseT<o2::header::RAWDataHeaderV4> DecoderBaseV4;
 typedef DecoderBaseT<o2::header::RAWDataHeaderV6> DecoderBaseV6;
-using DecoderBase = DecoderBaseV4;
+using DecoderBase = DecoderBaseT<o2::header::RAWDataHeader>;
 
 } // namespace compressed
 } // namespace tof

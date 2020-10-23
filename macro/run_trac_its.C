@@ -15,7 +15,6 @@
 #include <FairMCEventHeader.h>
 
 #include "DetectorsCommonDataFormats/DetID.h"
-#include "DataFormatsITSMFT/Cluster.h"
 #include "DataFormatsITSMFT/CompCluster.h"
 #include "DataFormatsITSMFT/TopologyDictionary.h"
 #include "DataFormatsITSMFT/ROFRecord.h"
@@ -32,12 +31,14 @@
 #include "DetectorsCommonDataFormats/NameConf.h"
 #endif
 
+#include "ReconstructionDataFormats/PrimaryVertex.h" // hack to silence JIT compiler
 #include "ITStracking/ROframe.h"
 #include "ITStracking/IOUtils.h"
 #include "ITStracking/Vertexer.h"
 #include "ITStracking/VertexerTraits.h"
 
 using MCLabCont = o2::dataformats::MCTruthContainer<o2::MCCompLabel>;
+using MCLabContTr = std::vector<o2::MCCompLabel>;
 using Vertex = o2::dataformats::Vertex<o2::dataformats::TimeStamp<int>>;
 
 void run_trac_its(std::string path = "./", std::string outputfile = "o2trac_its.root",
@@ -73,7 +74,7 @@ void run_trac_its(std::string path = "./", std::string outputfile = "o2trac_its.
 
   o2::base::GeometryManager::loadGeometry(inputGeom);
   auto gman = o2::its::GeometryTGeo::Instance();
-  gman->fillMatrixCache(o2::utils::bit2Mask(o2::TransformType::T2GRot)); // request cached transforms
+  gman->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2GRot)); // request cached transforms
 
   o2::base::Propagator::initFieldFromGRP(grp);
   auto field = static_cast<o2::field::MagneticField*>(TGeoGlobalMagField::Instance()->GetField());
@@ -84,12 +85,6 @@ void run_trac_its(std::string path = "./", std::string outputfile = "o2trac_its.
   //>>>---------- attach input data --------------->>>
   TChain itsClusters("o2sim");
   itsClusters.AddFile((path + inputClustersITS).data());
-
-  if (!itsClusters.GetBranch("ITSCluster")) {
-    LOG(FATAL) << "Did not find ITS clusters branch ITSCluster in the input tree";
-  }
-  std::vector<o2::itsmft::Cluster>* clusters = nullptr;
-  itsClusters.SetBranchAddress("ITSCluster", &clusters);
 
   if (!itsClusters.GetBranch("ITSClusterComp")) {
     LOG(FATAL) << "Did not find ITS clusters branch ITSClusterComp in the input tree";
@@ -147,7 +142,7 @@ void run_trac_its(std::string path = "./", std::string outputfile = "o2trac_its.
   std::vector<o2::itsmft::ROFRecord> vertROFvec, *vertROFvecPtr = &vertROFvec;
   std::vector<Vertex> vertices, *verticesPtr = &vertices;
 
-  MCLabCont trackLabels, *trackLabelsPtr = &trackLabels;
+  MCLabContTr trackLabels, *trackLabelsPtr = &trackLabels;
   outTree.Branch("ITSTrack", &tracksITSPtr);
   outTree.Branch("ITSTrackClusIdx", &trackClIdxPtr);
   outTree.Branch("ITSTrackMCTruth", &trackLabelsPtr);

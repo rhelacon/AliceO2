@@ -39,7 +39,7 @@ Tracker::Tracker(o2::its::TrackerTraits* traits)
   /// Initialise standard configuration with 1 iteration
   mTrkParams.resize(1);
   mMemParams.resize(1);
-  assert(mTracks != nullptr);
+  assert(traits != nullptr);
   mTraits = traits;
   mPrimaryVertexContext = mTraits->getPrimaryVertexContext();
 }
@@ -69,10 +69,10 @@ void Tracker::clustersToTracks(const ROframe& event, std::ostream& timeBenchmark
       total += evaluateTask(&Tracker::findRoads, "Road finding", timeBenchmarkOutputStream, iteration);
       total += evaluateTask(&Tracker::findTracks, "Track finding", timeBenchmarkOutputStream, event);
     }
-
-    if (constants::DoTimeBenchmarks)
+    if (constants::DoTimeBenchmarks && fair::Logger::Logging(fair::Severity::info)) {
       timeBenchmarkOutputStream << std::setw(2) << " - "
                                 << "Vertex processing completed in: " << total << "ms" << std::endl;
+    }
   }
   if (event.hasMCinformation()) {
     computeTracksMClabels(event);
@@ -246,7 +246,7 @@ void Tracker::findTracks(const ROframe& event)
       }
     }
 
-    assert(nClusters >= mTrkParams[0].MinTrackLength);
+    CA_DEBUGGER(assert(nClusters >= mTrkParams[0].MinTrackLength));
     CA_DEBUGGER(roadCounters[nClusters - 4]++);
 
     if (lastCellLevel == constants::its::UnusedIndex)
@@ -285,9 +285,8 @@ void Tracker::findTracks(const ROframe& event)
     if (!fitSuccess)
       continue;
     CA_DEBUGGER(refitCounters[nClusters - 4]++);
-    temporaryTrack.setROFrame(mROFrame);
     tracks.emplace_back(temporaryTrack);
-    assert(nClusters == temporaryTrack.getNumberOfClusters());
+    CA_DEBUGGER(assert(nClusters == temporaryTrack.getNumberOfClusters()));
   }
   //mTraits->refitTracks(event.getTrackingFrameInfo(), tracks);
 
@@ -402,7 +401,7 @@ bool Tracker::fitTrack(const ROframe& event, TrackITSExt& track, int start, int 
 
     track.setChi2(track.getChi2() +
                   track.getPredictedChi2(trackingHit.positionTrackingFrame, trackingHit.covarianceTrackingFrame));
-    if (!track.TrackParCov::update(trackingHit.positionTrackingFrame, trackingHit.covarianceTrackingFrame))
+    if (!track.o2::track::TrackParCov::update(trackingHit.positionTrackingFrame, trackingHit.covarianceTrackingFrame))
       return false;
 
     const float xx0 = (iLayer > 2) ? 0.008f : 0.003f; // Rough layer thickness
@@ -421,8 +420,7 @@ void Tracker::traverseCellsTree(const int currentCellId, const int currentLayerI
 
   mPrimaryVertexContext->getRoads().back().addCell(currentLayerId, currentCellId);
 
-  if (currentLayerId > 0) {
-
+  if (currentLayerId > 0 && currentCellLevel > 1) {
     const int cellNeighboursNum{static_cast<int>(
       mPrimaryVertexContext->getCellsNeighbours()[currentLayerId - 1][currentCellId].size())};
     bool isFirstValidNeighbour = true;
@@ -568,7 +566,7 @@ void Tracker::computeTracksMClabels(const ROframe& event)
     if (isFakeTrack) {
       maxOccurrencesValue.setFakeFlag();
     }
-    mTrackLabels.addElement(mTrackLabels.getIndexedSize(), maxOccurrencesValue);
+    mTrackLabels.emplace_back(maxOccurrencesValue);
   }
 }
 

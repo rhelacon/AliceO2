@@ -75,8 +75,8 @@ std::vector<DataProcessorSpec> defineDataProcessing(ConfigContext const& config)
 
   // use the OutputChannelSpec as a tool to create the default configuration for the out-of-band channel
   OutputChannelSpec externalChannelSpec;
-  // Note: the name has to match the binding of the input spec
-  externalChannelSpec.name = "external";
+  // Note: the name is hardcoded for now
+  externalChannelSpec.name = "downstream";
   externalChannelSpec.type = ChannelType::Push;
   externalChannelSpec.method = ChannelMethod::Bind;
   externalChannelSpec.hostname = "localhost";
@@ -133,11 +133,15 @@ std::vector<DataProcessorSpec> defineDataProcessing(ConfigContext const& config)
       LOG(ERROR) << "data on input " << msgidx << " does not follow the O2 data model, DataHeader missing";
       return;
     }
-
+    auto dph = o2::header::get<DataProcessingHeader*>(inputs.At(msgidx)->GetData());
+    if (!dph) {
+      LOG(ERROR) << "data on input " << msgidx << " does not follow the O2 data model, DataProcessingHeader missing";
+      return;
+    }
     // Note: we want to run both the output and input proxy in the same workflow and thus we need
     // different data identifiers and change the data origin in the forwarding
     OutputSpec query{"PRX", dh->dataDescription, dh->subSpecification};
-    auto channelName = channelRetriever(query);
+    auto channelName = channelRetriever(query, dph->startTime);
     ASSERT_ERROR(!channelName.empty());
     LOG(DEBUG) << "using channel '" << channelName << "' for " << DataSpecUtils::describe(OutputSpec{dh->dataOrigin, dh->dataDescription, dh->subSpecification});
     if (channelName.empty()) {

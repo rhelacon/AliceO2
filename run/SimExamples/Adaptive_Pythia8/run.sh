@@ -11,7 +11,7 @@ set -x
 
 # PART a)
 NBGR=5
-o2-sim -j 20 -n ${NBGR} -g pythia8hi -m PIPE ITS -o bkg --configKeyValue \
+o2-sim -j 20 -n ${NBGR} -g pythia8hi -m PIPE ITS -o bkg --configKeyValues \
        "Diamond.position[2]=0.1;Diamond.width[2]=0.05"
 
 # PART b)
@@ -22,6 +22,6 @@ o2-sim -j 20 -n ${NBGR} -g pythia8hi -m PIPE ITS -o bkg --configKeyValue \
 # of subsequent actions. In this case, the number of pythia8 events to be embedded is calculated according
 # to a formula that uses the number of primary particles of the background events
 NSGN=10
-o2-sim -j 20 -n ${NSGN} extgen -m PIPE ITS \
-       -g extgen --extGenFile pythia8_adaptive.macro --extGenFunc "pythia8_adaptive(\"0.002 * x\")" \
+o2-sim -j 20 -n ${NSGN} -m PIPE ITS \
+       -g external --configKeyValues 'GeneratorExternal.fileName=adaptive_pythia8.macro;GeneratorExternal.funcName=adaptive_pythia8("0.002 * x")' \
        --embedIntoFile bkg_Kine.root -o sgn > logsgn 2>&1

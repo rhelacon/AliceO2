@@ -15,7 +15,7 @@
 /// @since  2017-11-22
 /// @brief  Definition of the RAW Data Header
 
-#ifndef __OPENCL__
+#ifndef GPUCA_GPUCODE_DEVICE
 #include <cstdint>
 #endif
 
@@ -424,7 +424,7 @@ struct RAWDataHeaderV2 {
   };
 };
 
-using RAWDataHeader = RAWDataHeaderV4; // default version
+using RAWDataHeader = RAWDataHeaderV6; // default version
 using RDHLowest = RAWDataHeaderV4;     // link this to lowest version
 using RDHHighest = RAWDataHeaderV6;    // link this to highest version
 

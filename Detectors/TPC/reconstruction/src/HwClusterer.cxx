@@ -35,7 +35,9 @@ HwClusterer::HwClusterer(
     mCurrentMcContainerInBuffer(0),
     mSplittingMode(0),
     mClusterSector(sectorid),
-    mLastTimebin(-1),
+    mPreviousTimebin(-1),
+    mFirstTimebin(0),
+    mLastTimebin(200000),
     mLastHB(0),
     mPeakChargeThreshold(2),
     mContributionChargeThreshold(0),
@@ -117,6 +119,8 @@ void HwClusterer::init()
 
   mPeakChargeThreshold = param.peakChargeThreshold;
   mContributionChargeThreshold = param.contributionChargeThreshold;
+  mFirstTimebin = param.firstTimeBin;
+  mLastTimebin = param.lastTimeBin;
   mSplittingMode = param.splittingMode;
   mIsContinuousReadout = param.isContinuousReadout;
   mRejectSinglePadClusters = param.rejectSinglePadClusters;
@@ -125,7 +129,7 @@ void HwClusterer::init()
 }
 
 //______________________________________________________________________________
-void HwClusterer::process(gsl::span<o2::tpc::Digit const> const& digits, MCLabelContainer const* mcDigitTruth, bool clearContainerFirst)
+void HwClusterer::process(gsl::span<o2::tpc::Digit const> const& digits, ConstMCLabelContainerView const& mcDigitTruth, bool clearContainerFirst)
 {
   if (clearContainerFirst) {
     if (mClusterArray)
@@ -158,14 +162,22 @@ void HwClusterer::process(gsl::span<o2::tpc::Digit const> const& digits, MCLabel
      * already done.
      */
 
-    if (digit.getTimeStamp() != mLastTimebin) {
+    const auto timeBin = digit.getTimeStamp();
+
+    if (timeBin < mFirstTimebin) {
+      continue;
+    } else if (timeBin > mLastTimebin) {
+      break;
+    }
+
+    if (timeBin != mPreviousTimebin) {
       /*
        * If the timebin changes, it could change by more then just 1 (not every
        * timebin has digits). Since the tmp storage covers mTimebinsInBuffer,
        * at most mTimebinsInBuffer new timebins need to be prepared and checked
        * for clusters.
        */
-      for (int i = mLastTimebin; (i < digit.getTimeStamp()) && (i - mLastTimebin < mTimebinsInBuffer); ++i) {
+      for (int i = mPreviousTimebin; (i < timeBin) && (i - mPreviousTimebin < mTimebinsInBuffer); ++i) {
 
         /*
          * If the HB of the cluster which will be found in a few lines, NOT the
@@ -190,7 +202,7 @@ void HwClusterer::process(gsl::span<o2::tpc::Digit const> const& digits, MCLabel
          * doens't matter.
          *
          * If mTimebinsInBuffer would be 5 and i 5 is the new digit timebin (4
-         * would be mLastTimebin), then 0 is the oldest one timebin and will to
+         * would be mPreviousTimebin), then 0 is the oldest one timebin and will to
          * be replaced by the new arriving one. The cluster which could be
          * found, would then range from timebin 0 to 4 and has its center at
          * timebin 2. Threrefore we are looking in (i - 2) for clusters and
@@ -214,49 +226,55 @@ void HwClusterer::process(gsl::span<o2::tpc::Digit const> const& digits, MCLabel
       // we have to copy the MC truth container because we need the information
       // maybe only in the next events (we store permanently 5 timebins), where
       // the original pointer could already point to the next container.
-      if (mcDigitTruth) {
-        if (mCurrentMcContainerInBuffer == 0)
-          mMCtruth[mapTimeInRange(digit.getTimeStamp())] = std::make_shared<MCLabelContainer const>(*mcDigitTruth);
-        else
-          mMCtruth[mapTimeInRange(digit.getTimeStamp())] = std::shared_ptr<MCLabelContainer const>(mMCtruth[getFirstSetBitOfField()]);
-
-        mCurrentMcContainerInBuffer |= (0x1 << (mapTimeInRange(digit.getTimeStamp())));
+      if (mcDigitTruth.getBuffer().size()) {
+        if (mCurrentMcContainerInBuffer == 0) {
+          auto tmp = std::make_shared<MCLabelContainer>();
+          tmp->restore_from(mcDigitTruth.getBuffer().data(), mcDigitTruth.getBuffer().size());
+          mMCtruth[mapTimeInRange(timeBin)] = tmp;
+        } else {
+          mMCtruth[mapTimeInRange(timeBin)] = std::shared_ptr<MCLabelContainer const>(mMCtruth[getFirstSetBitOfField()]);
+        }
+        mCurrentMcContainerInBuffer |= (0x1 << (mapTimeInRange(timeBin)));
       }
     }
 
     /*
      * add current digit to storage
      */
-    index = mapTimeInRange(digit.getTimeStamp()) * mPadsPerRowSet[mGlobalRowToRowSet[digit.getRow()]] + (digit.getPad() + 2);
+    const auto row = digit.getRow();
+    const auto pad = digit.getPad();
+    index = mapTimeInRange(timeBin) * mPadsPerRowSet[mGlobalRowToRowSet[row]] + (pad + 2);
     // offset of digit pad because of 2 empty pads on both sides
 
     float charge = digit.getChargeFloat();
 
     // TODO: fill noise here as well if necessary
     if (mPedestalObject) {
-      charge -= mPedestalObject->getValue(CRU(digit.getCRU()), digit.getRow(), digit.getPad());
+      charge -= mPedestalObject->getValue(CRU(digit.getCRU()), row, pad);
     }
     /*
      * charge could be smaller than 0 due to pedestal subtraction, if so set it to zero
      * noise thresholds for zero suppression could also be done here ...
      */
-    mDataBuffer[mGlobalRowToRowSet[digit.getRow()]][index][mGlobalRowToVcIndex[digit.getRow()]] =
+    mDataBuffer[mGlobalRowToRowSet[row]][index][mGlobalRowToVcIndex[row]] =
       charge < 0 ? 0 : ((charge < float(0x3FFF) / (1 << 4)) ? (charge * (1 << 4)) : 0x3FFF);
 
-    mIndexBuffer[mGlobalRowToRowSet[digit.getRow()]][index][mGlobalRowToVcIndex[digit.getRow()]] = digitIndex++;
+    mIndexBuffer[mGlobalRowToRowSet[row]][index][mGlobalRowToVcIndex[row]] = digitIndex++;
 
-    mLastTimebin = digit.getTimeStamp();
+    mPreviousTimebin = timeBin;
   }
 
-  if (!mIsContinuousReadout)
+  if (!mIsContinuousReadout) {
     finishFrame(true);
+  }
 
-  if (digits.size() != 0)
+  if (digits.size() != 0) {
     LOG(DEBUG) << "Event ranged from time bin " << digits[0].getTimeStamp() << " to " << digits[digits.size() - 1].getTimeStamp() << ".";
+  }
 }
 
 //______________________________________________________________________________
-void HwClusterer::finishProcess(gsl::span<o2::tpc::Digit const> const& digits, MCLabelContainer const* mcDigitTruth, bool clearContainerFirst)
+void HwClusterer::finishProcess(gsl::span<o2::tpc::Digit const> const& digits, ConstMCLabelContainerView const& mcDigitTruth, bool clearContainerFirst)
 {
   // Process the last digits (if there are any)
   process(digits, mcDigitTruth, clearContainerFirst);
@@ -808,7 +826,7 @@ void HwClusterer::finishFrame(bool clear)
 {
   unsigned HB;
   // Search in last remaining timebins for clusters
-  for (int i = mLastTimebin; i - mLastTimebin < mTimebinsInBuffer; ++i) {
+  for (int i = mPreviousTimebin; i - mPreviousTimebin < mTimebinsInBuffer; ++i) {
     HB = i < 3 ? 0 : (i - 3) / 447; // integer division on purpose
     if (HB != mLastHB) {
       writeOutputWithTimeOffset(mLastHB * 447);

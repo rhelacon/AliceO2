@@ -14,14 +14,22 @@
 #ifndef GPUCOMMONALGORITHMTHRUST_H
 #define GPUCOMMONALGORITHMTHRUST_H
 
+#ifndef GPUCA_GPUCODE_GENRTC
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
 #include <thrust/device_ptr.h>
 #pragma GCC diagnostic pop
+#endif
 
 #include "GPUCommonDef.h"
+
+#ifdef __CUDACC__
+#define GPUCA_THRUST_NAMESPACE thrust::cuda
+#else
+#define GPUCA_THRUST_NAMESPACE thrust::hip
+#endif
 
 namespace GPUCA_NAMESPACE
 {
@@ -69,11 +77,7 @@ GPUdi() void GPUCommonAlgorithm::sortDeviceDynamic(T* begin, T* end)
 {
   thrust::device_ptr<T> thrustBegin(begin);
   thrust::device_ptr<T> thrustEnd(end);
-#if defined(__CUDACC__)
-  thrust::sort(thrust::cuda::par, thrustBegin, thrustEnd);
-#elif defined(__HIPCC__)
-  thrust::sort(thrust::hip::par, thrustBegin, thrustEnd);
-#endif
+  thrust::sort(GPUCA_THRUST_NAMESPACE::par, thrustBegin, thrustEnd);
 }
 
 template <class T, class S>
@@ -81,11 +85,7 @@ GPUdi() void GPUCommonAlgorithm::sortDeviceDynamic(T* begin, T* end, const S& co
 {
   thrust::device_ptr<T> thrustBegin(begin);
   thrust::device_ptr<T> thrustEnd(end);
-#if defined(__CUDACC__)
-  thrust::sort(thrust::cuda::par, thrustBegin, thrustEnd, comp);
-#elif defined(__HIPCC__)
-  thrust::sort(thrust::hip::par, thrustBegin, thrustEnd, comp);
-#endif
+  thrust::sort(GPUCA_THRUST_NAMESPACE::par, thrustBegin, thrustEnd, comp);
 }
 
 } // namespace gpu

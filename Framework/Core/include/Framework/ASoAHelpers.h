@@ -13,9 +13,8 @@
 
 #include "Framework/ASoA.h"
 #include "Framework/Kernels.h"
+#include "Framework/RuntimeError.h"
 #include <arrow/table.h>
-
-#include <arrow/compute/context.h>
 
 #include <iterator>
 #include <tuple>
@@ -124,7 +123,7 @@ auto groupTable(const T& table, const std::string& categoryColumnName, int minCa
     return doGroupTable<float, arrow::FloatArray>(arrowTable, categoryColumnName, minCatSize, outsider);
   }
   // FIXME: Should we support other types as well?
-  throw std::runtime_error("Combinations: category column must be of integral type");
+  throw o2::framework::runtime_error("Combinations: category column must be of integral type");
 }
 
 // Synchronize categories so as groupedIndices contain elements only of categories common to all tables
@@ -926,6 +925,18 @@ auto selfCombinations(const char* categoryColumnName, int categoryNeighbours, co
   return CombinationsGenerator<CombinationsBlockStrictlyUpperSameIndexPolicy<T1, T2, T2s...>>(CombinationsBlockStrictlyUpperSameIndexPolicy(categoryColumnName, categoryNeighbours, outsider, table, tables...));
 }
 
+template <typename T1, typename T2>
+auto selfPairCombinations(const char* categoryColumnName, int categoryNeighbours, const T1& outsider, const T2& table)
+{
+  return CombinationsGenerator<CombinationsBlockStrictlyUpperSameIndexPolicy<T1, T2, T2>>(CombinationsBlockStrictlyUpperSameIndexPolicy(categoryColumnName, categoryNeighbours, outsider, table, table));
+}
+
+template <typename T1, typename T2>
+auto selfTripleCombinations(const char* categoryColumnName, int categoryNeighbours, const T1& outsider, const T2& table)
+{
+  return CombinationsGenerator<CombinationsBlockStrictlyUpperSameIndexPolicy<T1, T2, T2, T2>>(CombinationsBlockStrictlyUpperSameIndexPolicy(categoryColumnName, categoryNeighbours, outsider, table, table, table));
+}
+
 template <typename T1, typename T2, typename... T2s>
 auto combinations(const char* categoryColumnName, int categoryNeighbours, const T1& outsider, const T2& table, const T2s&... tables)
 {
@@ -954,6 +965,18 @@ auto combinations(const T2& table, const T2s&... tables)
   } else {
     return CombinationsGenerator<CombinationsUpperIndexPolicy<T2, T2s...>>(CombinationsUpperIndexPolicy(table, tables...));
   }
+}
+
+template <typename T2>
+auto pairCombinations(const T2& table)
+{
+  return CombinationsGenerator<CombinationsStrictlyUpperIndexPolicy<T2, T2>>(CombinationsStrictlyUpperIndexPolicy(table, table));
+}
+
+template <typename T2>
+auto tripleCombinations(const T2& table)
+{
+  return CombinationsGenerator<CombinationsStrictlyUpperIndexPolicy<T2, T2, T2>>(CombinationsStrictlyUpperIndexPolicy(table, table, table));
 }
 
 template <typename T2, typename... T2s>

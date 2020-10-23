@@ -42,7 +42,7 @@
 #include "GPUO2DataTypes.h"
 #include "GPUParam.inc"
 #ifdef GPUCA_O2_LIB
-#include "SimulationDataFormat/MCTruthContainer.h"
+#include "SimulationDataFormat/ConstMCTruthContainer.h"
 #include "SimulationDataFormat/MCCompLabel.h"
 #include "SimulationDataFormat/MCTrack.h"
 #include "SimulationDataFormat/TrackReference.h"
@@ -68,7 +68,7 @@ using namespace GPUCA_NAMESPACE::gpu;
   if (!unattached && mTrackMCLabels[id].isValid()) {   \
     int mcLabel = mTrackMCLabels[id].getTrackID());    \
     if (mTrackMCLabelsReverse[mcLabel] != id) {        \
-      attach &= (~GPUTPCGMMergerTypes::attachGoodLeg); \
+      attach &= (~gputpcgmmergertypes::attachGoodLeg); \
     }                                                  \
   }
 #else
@@ -80,7 +80,7 @@ using namespace GPUCA_NAMESPACE::gpu;
   float qpt = 0;                                                \
   bool lowPt = false;                                           \
   bool mev200 = false;                                          \
-  int id = attach & GPUTPCGMMergerTypes::attachTrackMask;       \
+  int id = attach & gputpcgmmergertypes::attachTrackMask;       \
   if (!unattached) {                                            \
     qpt = fabsf(merger.OutputTracks()[id].GetParam().GetQPt()); \
     lowPt = qpt > 20;                                           \
@@ -96,16 +96,16 @@ using namespace GPUCA_NAMESPACE::gpu;
   if (unattached) {                                                  \
   } else if (lowPt) {                                                \
     mNRecClustersLowPt++;                                            \
-  } else if ((attach & GPUTPCGMMergerTypes::attachGoodLeg) == 0) {   \
+  } else if ((attach & gputpcgmmergertypes::attachGoodLeg) == 0) {   \
     mNRecClustersLoopers++;                                          \
-  } else if ((attach & GPUTPCGMMergerTypes::attachTube) && mev200) { \
+  } else if ((attach & gputpcgmmergertypes::attachTube) && mev200) { \
     mNRecClustersTube200++;                                          \
-  } else if (attach & GPUTPCGMMergerTypes::attachHighIncl) {         \
+  } else if (attach & gputpcgmmergertypes::attachHighIncl) {         \
     mNRecClustersHighIncl++;                                         \
-  } else if (attach & GPUTPCGMMergerTypes::attachTube) {             \
+  } else if (attach & gputpcgmmergertypes::attachTube) {             \
     protect = true;                                                  \
     mNRecClustersTube++;                                             \
-  } else if ((attach & GPUTPCGMMergerTypes::attachGood) == 0) {      \
+  } else if ((attach & gputpcgmmergertypes::attachGood) == 0) {      \
     protect = true;                                                  \
     mNRecClustersRejected++;                                         \
   } else {                                                           \
@@ -115,12 +115,12 @@ using namespace GPUCA_NAMESPACE::gpu;
 #define CHECK_CLUSTER_STATE_CHK_NOCOUNT()                            \
   if (unattached) {                                                  \
   } else if (lowPt) {                                                \
-  } else if ((attach & GPUTPCGMMergerTypes::attachGoodLeg) == 0) {   \
-  } else if ((attach & GPUTPCGMMergerTypes::attachTube) && mev200) { \
-  } else if (attach & GPUTPCGMMergerTypes::attachHighIncl) {         \
-  } else if (attach & GPUTPCGMMergerTypes::attachTube) {             \
+  } else if ((attach & gputpcgmmergertypes::attachGoodLeg) == 0) {   \
+  } else if ((attach & gputpcgmmergertypes::attachTube) && mev200) { \
+  } else if (attach & gputpcgmmergertypes::attachHighIncl) {         \
+  } else if (attach & gputpcgmmergertypes::attachTube) {             \
     protect = true;                                                  \
-  } else if ((attach & GPUTPCGMMergerTypes::attachGood) == 0) {      \
+  } else if ((attach & gputpcgmmergertypes::attachGood) == 0) {      \
     protect = true;                                                  \
   } else {                                                           \
     physics = true;                                                  \
@@ -136,6 +136,12 @@ using namespace GPUCA_NAMESPACE::gpu;
   CHECK_CLUSTER_STATE_CHK_NOCOUNT() //Fill state variables, do not increase counters
 // clang-format on
 
+#ifdef GPUCA_STANDALONE
+namespace GPUCA_NAMESPACE::gpu
+{
+extern GPUSettingsStandalone configStandalone;
+}
+#endif
 static const GPUQA::configQA& GPUQA_GetConfig(GPUChainTracking* rec)
 {
 #if !defined(GPUCA_STANDALONE)
@@ -147,34 +153,34 @@ static const GPUQA::configQA& GPUQA_GetConfig(GPUChainTracking* rec)
   }
 
 #else
-  return configStandalone.configQA;
+  return configStandalone.QA;
 #endif
 }
 
 #ifdef GPUCA_TPC_GEOMETRY_O2
 #include "SimulationDataFormat/MCCompLabel.h"
-#include "SimulationDataFormat/MCTruthContainer.h"
+#include "SimulationDataFormat/ConstMCTruthContainer.h"
 
 inline unsigned int GPUQA::GetNMCCollissions()
 {
   return mNColTracks.size();
 }
 inline unsigned int GPUQA::GetNMCTracks(int iCol) { return mNColTracks[iCol]; }
-inline unsigned int GPUQA::GetNMCLabels() { return mTracking->GetClusterNativeAccess()->clustersMCTruth ? mTracking->GetClusterNativeAccess()->clustersMCTruth->getIndexedSize() : 0; }
+inline unsigned int GPUQA::GetNMCLabels() { return mTracking->mIOPtrs.clustersNative->clustersMCTruth ? mTracking->mIOPtrs.clustersNative->clustersMCTruth->getIndexedSize() : 0; }
 inline const GPUQA::mcInfo_t& GPUQA::GetMCTrack(unsigned int iTrk, unsigned int iCol) { return mMCInfos[iCol][iTrk]; }
 inline const GPUQA::mcInfo_t& GPUQA::GetMCTrack(const mcLabel_t& label) { return mMCInfos[label.getEventID()][label.getTrackID()]; }
-inline GPUQA::mcLabels_t GPUQA::GetMCLabel(unsigned int i) { return mTracking->GetClusterNativeAccess()->clustersMCTruth->getLabels(i); }
+inline GPUQA::mcLabels_t GPUQA::GetMCLabel(unsigned int i) { return mTracking->mIOPtrs.clustersNative->clustersMCTruth->getLabels(i); }
 inline int GPUQA::GetMCLabelNID(const mcLabels_t& label) { return label.size(); }
-inline int GPUQA::GetMCLabelNID(unsigned int i) { return mTracking->GetClusterNativeAccess()->clustersMCTruth->getLabels(i).size(); }
-inline GPUQA::mcLabel_t GPUQA::GetMCLabel(unsigned int i, unsigned int j) { return mTracking->GetClusterNativeAccess()->clustersMCTruth->getLabels(i)[j]; }
-inline int GPUQA::GetMCLabelID(unsigned int i, unsigned int j) { return mTracking->GetClusterNativeAccess()->clustersMCTruth->getLabels(i)[j].getTrackID(); }
+inline int GPUQA::GetMCLabelNID(unsigned int i) { return mTracking->mIOPtrs.clustersNative->clustersMCTruth->getLabels(i).size(); }
+inline GPUQA::mcLabel_t GPUQA::GetMCLabel(unsigned int i, unsigned int j) { return mTracking->mIOPtrs.clustersNative->clustersMCTruth->getLabels(i)[j]; }
+inline int GPUQA::GetMCLabelID(unsigned int i, unsigned int j) { return mTracking->mIOPtrs.clustersNative->clustersMCTruth->getLabels(i)[j].getTrackID(); }
 inline int GPUQA::GetMCLabelID(const mcLabels_t& label, unsigned int j) { return label[j].getTrackID(); }
 inline int GPUQA::GetMCLabelID(const mcLabel_t& label) { return label.getTrackID(); }
-inline int GPUQA::GetMCLabelCol(unsigned int i, unsigned int j) { return mTracking->GetClusterNativeAccess()->clustersMCTruth->getLabels(i)[j].getEventID(); }
+inline int GPUQA::GetMCLabelCol(unsigned int i, unsigned int j) { return mTracking->mIOPtrs.clustersNative->clustersMCTruth->getLabels(i)[j].getEventID(); }
 inline float GPUQA::GetMCLabelWeight(unsigned int i, unsigned int j) { return 1; }
 inline float GPUQA::GetMCLabelWeight(const mcLabels_t& label, unsigned int j) { return 1; }
 inline float GPUQA::GetMCLabelWeight(const mcLabel_t& label) { return 1; }
-inline bool GPUQA::mcPresent() { return mTracking->GetClusterNativeAccess()->clustersMCTruth && mNColTracks.size(); }
+inline bool GPUQA::mcPresent() { return mTracking->mIOPtrs.clustersNative->clustersMCTruth && mNColTracks.size(); }
 #define TRACK_EXPECTED_REFERENCE_X 78
 #else
 inline GPUQA::mcLabelI_t::mcLabelI_t(const GPUQA::mcLabel_t& l) : track(l.fMCID)
@@ -418,8 +424,7 @@ int GPUQA::InitQA()
   std::vector<o2::MCTrack>* tracksX;
   std::vector<o2::TrackReference>* trackRefsX;
   if (treeSim == nullptr) {
-    GPUError("Error reading o2sim tree");
-    exit(1);
+    throw std::runtime_error("Error reading o2sim tree");
   }
   treeSim->SetBranchAddress("MCTrack", &tracksX);
   treeSim->SetBranchAddress("TrackRefs", &trackRefsX);
@@ -724,8 +729,8 @@ GPUCA_OPENMP(parallel for)
     for (unsigned int i = 0; i < GetNMCLabels(); i++) {
       if (mClusterParam[i].attached == 0 && mClusterParam[i].fakeAttached == 0) {
         int attach = merger.ClusterAttachment()[i];
-        if (attach & GPUTPCGMMergerTypes::attachFlagMask) {
-          int track = attach & GPUTPCGMMergerTypes::attachTrackMask;
+        if (attach & gputpcgmmergertypes::attachFlagMask) {
+          int track = attach & gputpcgmmergertypes::attachTrackMask;
           mcLabelI_t trackL = mTrackMCLabels[track];
           bool fake = true;
           for (int j = 0; j < GetMCLabelNID(i); j++) {
@@ -1159,7 +1164,7 @@ GPUCA_OPENMP(parallel for)
       int attach = merger.ClusterAttachment()[i];
       CHECK_CLUSTER_STATE_NOCOUNT();
       if (mClusterParam[i].adjacent) {
-        int label = merger.ClusterAttachment()[i] & GPUTPCGMMergerTypes::attachTrackMask;
+        int label = merger.ClusterAttachment()[i] & gputpcgmmergertypes::attachTrackMask;
         if (!mTrackMCLabels[label].isValid()) {
           float totalWeight = 0.;
           for (int j = 0; j < GetMCLabelNID(i); j++) {
@@ -1316,8 +1321,8 @@ GPUCA_OPENMP(parallel for)
             mNRecClustersFullFakeRemove400++;
           }
           /*printf("Fake removal (%d): Hit %7d, attached %d lowPt %d looper %d tube200 %d highIncl %d tube %d bad %d recPt %7.2f recLabel %6d", totalFake, i, (int) (mClusterParam[i].attached || mClusterParam[i].fakeAttached),
-              (int) lowPt, (int) ((attach & GPUTPCGMMergerTypes::attachGoodLeg) == 0), (int) ((attach & GPUTPCGMMergerTypes::attachTube) && mev200),
-              (int) ((attach & GPUTPCGMMergerTypes::attachHighIncl) != 0), (int) ((attach & GPUTPCGMMergerTypes::attachTube) != 0), (int) ((attach & GPUTPCGMMergerTypes::attachGood) == 0),
+              (int) lowPt, (int) ((attach & gputpcgmmergertypes::attachGoodLeg) == 0), (int) ((attach & gputpcgmmergertypes::attachTube) && mev200),
+              (int) ((attach & gputpcgmmergertypes::attachHighIncl) != 0), (int) ((attach & gputpcgmmergertypes::attachTube) != 0), (int) ((attach & gputpcgmmergertypes::attachGood) == 0),
               fabsf(qpt) > 0 ? 1.f / qpt : 0.f, id);
           for (int j = 0;j < GetMCLabelNID(i);j++)
           {
@@ -1471,9 +1476,9 @@ GPUCA_OPENMP(parallel for)
 void GPUQA::GetName(char* fname, int k)
 {
   const int nNewInput = mConfig.inputHistogramsOnly ? 0 : 1;
-  if (k || mConfig.inputHistogramsOnly || mConfig.name) {
+  if (k || mConfig.inputHistogramsOnly || mConfig.name.size()) {
     if (!(mConfig.inputHistogramsOnly || k)) {
-      snprintf(fname, 1024, "%s - ", mConfig.name);
+      snprintf(fname, 1024, "%s - ", mConfig.name.c_str());
     } else if (mConfig.compareInputNames.size() > (unsigned)(k - nNewInput)) {
       snprintf(fname, 1024, "%s - ", mConfig.compareInputNames[k - nNewInput]);
     } else {
@@ -1516,8 +1521,8 @@ int GPUQA::DrawQAHistograms()
     tin[i] = new TFile(mConfig.compareInputs[i]);
   }
   TFile* tout = nullptr;
-  if (mConfig.output) {
-    tout = new TFile(mConfig.output, "RECREATE");
+  if (mConfig.output.size()) {
+    tout = new TFile(mConfig.output.c_str(), "RECREATE");
   }
 
   float legendSpacingString = 0.025;

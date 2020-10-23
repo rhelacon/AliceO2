@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <functional>
 #include <gsl/span>
+#include "DetectorsRaw/RDHUtils.h"
 
 #include "MemoryResources/Types.h"
 #include "TPCBase/CRU.h"
@@ -44,6 +45,8 @@ namespace tpc
 namespace rawreader
 {
 
+using RDHUtils = o2::raw::RDHUtils;
+
 /// debug level bits
 enum DebugLevel : uint8_t {
   SyncPositions = 0, ///< dump sync positions
@@ -55,16 +58,21 @@ enum DebugLevel : uint8_t {
 
 /// data type
 enum class DataType : uint8_t {
-  TryToDetect = 0, ///< try to auto detect the mode
-  Continuous = 1,  ///< continuous data taking
-  HBScaling = 2,   ///< heart beat sclaing mode
-  Triggered = 3    ///< triggered data
+  Continuous = 1, ///< continuous data taking
+  HBScaling = 2,  ///< heart beat sclaing mode
+  Triggered = 3,  ///< triggered data
 };
 
 /// file type
 enum class ReaderType : uint8_t {
-  FLPData = 0, ///< single files from FLP as 8k pages with RAWDataHeader
-  EPNData = 1  ///< STF builder data merged on EPN
+  FLP = 0, ///< single files from FLP as 8k pages with RAWDataHeader
+  EPN = 1, ///< STF builder data merged on EPN
+};
+
+/// data type
+enum class RAWDataType : uint8_t {
+  GBT = 0,    ///< GBT encoded raw data
+  LinkZS = 1, ///< Link based zero suppression
 };
 
 using RDH = o2::header::RAWDataHeader;
@@ -295,6 +303,9 @@ class RawReaderCRUEventSync
 
   using RDH = o2::header::RAWDataHeader;
 
+  /// default ctor
+  RawReaderCRUEventSync() { reset(); }
+
   // ---------------------------------------------------------------------------
   /// \struct LinkInfo
   /// \brief helper to store link information in an event
@@ -383,13 +394,15 @@ class RawReaderCRUEventSync
   /// get link information for a specific event and cru
   LinkInfo& getLinkInfo(const RDH& rdh, DataType dataType)
   {
-    // check if event is already registered. If not create a new one.
-    auto& event = createEvent(rdh, dataType);
+    if (!mLastEvent) {
+      createEvent(rdh, dataType);
+    }
 
-    const auto dataWrapperID = rdh.endPointID;
-    const auto linkID = rdh.linkID;
+    const auto dataWrapperID = RDHUtils::getEndPointID(rdh);
+    const auto linkID = RDHUtils::getLinkID(rdh);
     const auto globalLinkID = linkID + dataWrapperID * 12;
-    return event.CRUInfoArray[rdh.cruID].LinkInformation[globalLinkID];
+
+    return mLastEvent->CRUInfoArray[RDHUtils::getCRUID(rdh)].LinkInformation[globalLinkID];
   }
 
   /// get array with all link informaiton for a specific event number and cru
@@ -439,13 +452,19 @@ class RawReaderCRUEventSync
   void setLinksSeen(const CRU cru, const std::bitset<MaxNumberOfLinks>& links);
 
   /// set a cru as seen
-  void setCRUSeen(const CRU cru) { mCRUSeen[cru] = true; }
+  void setCRUSeen(const CRU cru, const uint16_t reader = 0) { mCRUSeen[cru] = reader; }
+
+  /// return CRU seen information
+  const auto& getCRUSeen() const { return mCRUSeen; }
+
+  /// get the reader associated to the CRU
+  uint32_t getReaderNumber(uint32_t cru) { return mCRUSeen[cru]; }
 
   /// reset all information
   void reset()
   {
     mEventInformation.clear();
-    mCRUSeen.reset();
+    mCRUSeen.fill(-1);
   }
 
   /// overloading output stream operator
@@ -456,8 +475,9 @@ class RawReaderCRUEventSync
   }
 
  private:
-  EventInfoVector mEventInformation{}; ///< event information
-  std::bitset<CRU::MaxCRU> mCRUSeen{}; ///< if cru was seen
+  EventInfoVector mEventInformation{};         ///< event information
+  EventInfo* mLastEvent{nullptr};              ///< Last event that was created
+  std::array<int16_t, CRU::MaxCRU> mCRUSeen{}; ///< if cru was seen, number is for which decoder
 
   ClassDefNV(RawReaderCRUEventSync, 0); // event synchronisation for raw reader instances
 };                                      // class RawReaderCRUEventSync
@@ -482,12 +502,14 @@ class RawReaderCRU
                uint32_t stream = 0,
                uint32_t debugLevel = 0,
                uint32_t verbosity = 0,
-               const std::string_view outputFilePrefix = "")
+               const std::string_view outputFilePrefix = "",
+               uint32_t readerNumber = 0)
     : mDebugLevel(debugLevel),
       mVerbosity(verbosity),
       mNumTimeBins(numTimeBins),
       mLink(link),
       mStream(stream),
+      mReaderNumber(readerNumber),
       mCRU(),
       mFileSize(-1),
       mPacketsPerLink(),
@@ -533,8 +555,14 @@ class RawReaderCRU
   /// set event number
   void setEventNumber(uint32_t eventNumber = 0) { mEventNumber = eventNumber; }
 
+  /// set the reader number in the manager
+  void setReaderNumber(uint32_t readerNumber) { mReaderNumber = readerNumber; }
+
   /// set filling of ADC data map
   void setFillADCdataMap(bool fill) { mFillADCdataMap = fill; }
+
+  /// get filling of ADC data map
+  bool getFillADCdataMap() const { return mFillADCdataMap; }
 
   /// get event number
   uint32_t getEventNumber() const { return mEventNumber; }
@@ -639,10 +667,10 @@ class RawReaderCRU
   class PacketDescriptor
   {
    public:
-    PacketDescriptor(uint32_t headOff, uint32_t cruID, uint32_t linkID, uint32_t dataWrapperID, uint16_t memorySize = 7840, uint16_t packetSize = 8192) : mHeaderOffset(headOff),
-                                                                                                                                                          mFEEID(cruID + (linkID << 9) + (dataWrapperID << 13)),
-                                                                                                                                                          mMemorySize(memorySize),
-                                                                                                                                                          mPacketSize(packetSize)
+    PacketDescriptor(size_t headOff, uint32_t cruID, uint32_t linkID, uint32_t dataWrapperID, uint16_t memorySize = 7840, uint16_t packetSize = 8192) : mHeaderOffset(headOff),
+                                                                                                                                                        mFEEID(cruID + (linkID << 9) + (dataWrapperID << 13)),
+                                                                                                                                                        mMemorySize(memorySize),
+                                                                                                                                                        mPacketSize(packetSize)
     {
     }
 
@@ -670,10 +698,10 @@ class RawReaderCRU
     }
 
    private:
-    uint32_t mHeaderOffset; ///< header offset
-    uint16_t mMemorySize;   ///< payload size
-    uint16_t mPacketSize;   ///< packet size
-    uint16_t mFEEID;        ///< link ID -- BIT 0-8: CRUid -- BIT 9-12: LinkID -- BIT 13: DataWrapperID -- BIT 14,15: unused
+    size_t mHeaderOffset; ///< header offset
+    uint16_t mMemorySize; ///< payload size
+    uint16_t mPacketSize; ///< packet size
+    uint16_t mFEEID;      ///< link ID -- BIT 0-8: CRUid -- BIT 9-12: LinkID -- BIT 13: DataWrapperID -- BIT 14,15: unused
   };
 
   // ===========================================================================
@@ -688,8 +716,9 @@ class RawReaderCRU
   uint32_t mLink;                                                          ///< present link being processed
   uint32_t mStream;                                                        ///< present stream being processed
   uint32_t mEventNumber = 0;                                               ///< current event number to process
+  uint32_t mReaderNumber = 0;                                              ///< raw reader number in manager
   CRU mCRU;                                                                ///< CRU
-  int mFileSize;                                                           ///< size of the input file
+  size_t mFileSize;                                                        ///< size of the input file
   bool mDumpTextFiles = false;                                             ///< dump debugging text files
   bool mFillADCdataMap = true;                                             ///< fill the ADC data map
   bool mForceCRU = false;                                                  ///< force CRU: overwrite value from RDH
@@ -703,6 +732,8 @@ class RawReaderCRU
   // not so nice but simplest way to store the ADC data
   std::map<PadPos, std::vector<uint16_t>> mADCdata; ///< decoded ADC data
   RawReaderCRUManager* mManager{nullptr};           ///< event synchronization information
+
+  std::ifstream mFileHandle; ///< file handle for input file
 
   /// collect raw GBT data
   void collectGBTData(std::vector<o2::byte>& data);
@@ -838,6 +869,7 @@ class RawReaderCRUManager
 {
  public:
   using ADCDataCallback = std::function<Int_t(const PadROCPos&, const CRU&, const gsl::span<const uint32_t>)>;
+  using EndReaderCallback = std::function<void()>;
 
   /// constructor
   RawReaderCRUManager() = default;
@@ -852,7 +884,7 @@ class RawReaderCRUManager
                              const std::string_view outputFilePrefix = "")
   //RawReaderCRU& createReader(std::string_view fileName, uint32_t numTimeBins)
   {
-    mRawReadersCRU.emplace_back(std::make_unique<RawReaderCRU>(inputFileName, numTimeBins, 0, stream, debugLevel, verbosity, outputFilePrefix));
+    mRawReadersCRU.emplace_back(std::make_unique<RawReaderCRU>(inputFileName, numTimeBins, 0, stream, debugLevel, verbosity, outputFilePrefix, mRawReadersCRU.size()));
     mRawReadersCRU.back()->setManager(this);
     return *mRawReadersCRU.back().get();
   }
@@ -916,7 +948,12 @@ class RawReaderCRUManager
   void setDebugLevel(uint32_t debugLevel) { mDebugLevel = debugLevel; }
 
   /// set data type
-  void setDataType(DataType dataType) { mDataType = dataType; }
+  void setDataType(DataType dataType, RAWDataType rawType)
+  {
+    mDataType = dataType;
+    mRawDataType = rawType;
+    mDetectDataType = false;
+  }
 
   /// get data type
   DataType getDataType() const { return mDataType; }
@@ -930,11 +967,16 @@ class RawReaderCRUManager
   /// set a callback function
   void setADCDataCallback(ADCDataCallback function) { mADCDataCallback = function; }
 
+  /// process event calling mADCDataCallback to process values
+  void processEvent(uint32_t eventNumber, EndReaderCallback endReader = nullptr);
+
  private:
   std::vector<std::unique_ptr<RawReaderCRU>> mRawReadersCRU{}; ///< cru type raw readers
   RawReaderCRUEventSync mEventSync{};                          ///< event synchronisation
   uint32_t mDebugLevel{0};                                     ///< debug level
-  DataType mDataType{DataType::TryToDetect};                   ///< data type
+  DataType mDataType{DataType::Continuous};                    ///< data type
+  RAWDataType mRawDataType{RAWDataType::GBT};                  ///< raw data type
+  bool mDetectDataType{true};                                  ///< try to detect data types
   bool mIsInitialized{false};                                  ///< if init was called already
   ADCDataCallback mADCDataCallback{nullptr};                   ///< callback function for filling the ADC data
 

@@ -15,12 +15,13 @@
 #define GPUTPCGMMERGERTYPES_H
 
 #include "GPUTPCDef.h"
+#include "GPUGeneralKernels.h"
 
 namespace GPUCA_NAMESPACE
 {
 namespace gpu
 {
-namespace GPUTPCGMMergerTypes
+namespace gputpcgmmergertypes
 {
 
 enum attachTypes { attachAttached = 0x40000000,
@@ -42,7 +43,17 @@ struct InterpolationErrors {
   InterpolationErrorHit hit[GPUCA_MERGER_MAX_TRACK_CLUSTERS];
 };
 
-} // namespace GPUTPCGMMergerTypes
+struct GPUResolveSharedMemory : public GPUKernelTemplate::GPUSharedMemoryScan64<short, GPUCA_GET_THREAD_COUNT(GPUCA_LB_GPUTPCGMMergerResolve_step3)> {
+  int iTrack1[GPUCA_GET_THREAD_COUNT(GPUCA_LB_GPUTPCGMMergerResolve_step3)];
+  int iTrack2[GPUCA_GET_THREAD_COUNT(GPUCA_LB_GPUTPCGMMergerResolve_step3)];
+};
+
+struct GPUTPCGMBorderRange {
+  int fId;
+  float fMin, fMax;
+};
+
+} // namespace gputpcgmmergertypes
 } // namespace gpu
 } // namespace GPUCA_NAMESPACE
 

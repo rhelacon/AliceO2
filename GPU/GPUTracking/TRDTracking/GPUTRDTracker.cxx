@@ -22,7 +22,6 @@
 #include "GPUTRDTrackletWord.h"
 #include "GPUTRDGeometry.h"
 #include "GPUTRDTrackerDebug.h"
-#include "GPUReconstruction.h"
 #include "GPUMemoryResource.h"
 #include "GPUCommonMath.h"
 #include "GPUCommonAlgorithm.h"
@@ -33,7 +32,8 @@ class GPUTPCGMPolynomialField;
 
 #ifndef GPUCA_GPUCODE
 
-#ifndef __OPENCL__
+#ifndef GPUCA_GPUCODE_DEVICE
+#include "GPUReconstruction.h"
 #ifdef WITH_OPENMP
 #include <omp.h>
 #endif
@@ -56,10 +56,6 @@ void GPUTRDTracker_t<TRDTRK, PROP>::SetMaxData(const GPUTrackingInOutPointers& i
 {
   mNMaxTracks = io.nMergedTracks;
   mNMaxSpacePoints = io.nTRDTracklets;
-  if (mRec->GetDeviceProcessingSettings().memoryAllocationStrategy == GPUMemoryResource::ALLOCATION_GLOBAL) {
-    mNMaxTracks = 50000;
-    mNMaxSpacePoints = 100000;
-  }
 }
 
 template <class TRDTRK, class PROP>
@@ -68,17 +64,7 @@ void GPUTRDTracker_t<TRDTRK, PROP>::RegisterMemoryAllocation()
   AllocateAndInitializeLate();
   mMemoryPermanent = mRec->RegisterMemoryAllocation(this, &GPUTRDTracker_t<TRDTRK, PROP>::SetPointersBase, GPUMemoryResource::MEMORY_PERMANENT, "TRDInitialize");
   mMemoryTracklets = mRec->RegisterMemoryAllocation(this, &GPUTRDTracker_t<TRDTRK, PROP>::SetPointersTracklets, GPUMemoryResource::MEMORY_INPUT, "TRDTracklets");
-  auto type = GPUMemoryResource::MEMORY_INOUT;
-  if (mRec->GetDeviceProcessingSettings().memoryAllocationStrategy == GPUMemoryResource::ALLOCATION_INDIVIDUAL) {
-    type = GPUMemoryResource::MEMORY_CUSTOM;
-  }
-  mMemoryTracks = mRec->RegisterMemoryAllocation(this, &GPUTRDTracker_t<TRDTRK, PROP>::SetPointersTracks, type, "TRDTracks");
-}
-
-template <class TRDTRK, class PROP>
-void GPUTRDTracker_t<TRDTRK, PROP>::InitializeProcessor()
-{
-  Init((TRD_GEOMETRY_CONST GPUTRDGeometry*)GetConstantMem()->calibObjects.trdGeometry);
+  mMemoryTracks = mRec->RegisterMemoryAllocation(this, &GPUTRDTracker_t<TRDTRK, PROP>::SetPointersTracks, GPUMemoryResource::MEMORY_INOUT, "TRDTracks");
 }
 
 template <class TRDTRK, class PROP>
@@ -89,8 +75,7 @@ void* GPUTRDTracker_t<TRDTRK, PROP>::SetPointersBase(void* base)
   //--------------------------------------------------------------------
   mMaxThreads = mRec->GetMaxThreads();
   computePointerWithAlignment(base, mR, kNChambers);
-  computePointerWithAlignment(base, mNTrackletsInChamber, kNChambers);
-  computePointerWithAlignment(base, mTrackletIndexArray, kNChambers);
+  computePointerWithAlignment(base, mTrackletIndexArray, (kNChambers + 1) * mNMaxCollisions);
   computePointerWithAlignment(base, mHypothesis, mNCandidates * mMaxThreads);
   computePointerWithAlignment(base, mCandidates, mNCandidates * 2 * mMaxThreads);
   return base;
@@ -103,9 +88,9 @@ void* GPUTRDTracker_t<TRDTRK, PROP>::SetPointersTracklets(void* base)
   // Allocate memory for tracklets and space points
   // (size might change for different events)
   //--------------------------------------------------------------------
-  computePointerWithAlignment(base, mTracklets, mNMaxSpacePoints);
-  computePointerWithAlignment(base, mSpacePoints, mNMaxSpacePoints);
-  computePointerWithAlignment(base, mTrackletLabels, 3 * mNMaxSpacePoints);
+  computePointerWithAlignment(base, mTracklets, mNMaxSpacePoints * mNMaxCollisions);
+  computePointerWithAlignment(base, mSpacePoints, mNMaxSpacePoints * mNMaxCollisions);
+  computePointerWithAlignment(base, mTrackletLabels, 3 * mNMaxSpacePoints * mNMaxCollisions);
   return base;
 }
 
@@ -120,8 +105,7 @@ void* GPUTRDTracker_t<TRDTRK, PROP>::SetPointersTracks(void* base)
 }
 
 template <class TRDTRK, class PROP>
-GPUTRDTracker_t<TRDTRK, PROP>::GPUTRDTracker_t()
-  : mR(nullptr), mIsInitialized(false), mMemoryPermanent(-1), mMemoryTracklets(-1), mMemoryTracks(-1), mNMaxTracks(0), mNMaxSpacePoints(0), mTracks(nullptr), mNCandidates(1), mNTracks(0), mNEvents(0), mTracklets(nullptr), mMaxThreads(100), mNTracklets(0), mNTrackletsInChamber(nullptr), mTrackletIndexArray(nullptr), mHypothesis(nullptr), mCandidates(nullptr), mSpacePoints(nullptr), mTrackletLabels(nullptr), mGeo(nullptr), mDebugOutput(false), mRadialOffset(-0.1), mMinPt(2.f), mMaxEta(0.84f), mExtraRoadY(2.f), mRoadZ(18.f), mMaxChi2(15.0f), mMaxMissingLy(6), mChi2Penalty(12.0f), mZCorrCoefNRC(1.4f), mMCEvent(nullptr), mDebug(new GPUTRDTrackerDebug<TRDTRK>())
+GPUTRDTracker_t<TRDTRK, PROP>::GPUTRDTracker_t() : mR(nullptr), mIsInitialized(false), mProcessPerTimeFrame(false), mMemoryPermanent(-1), mMemoryTracklets(-1), mMemoryTracks(-1), mNMaxCollisions(1), mNMaxTracks(0), mNMaxSpacePoints(0), mTracks(nullptr), mNCandidates(1), mNCollisions(1), mNTracks(0), mNEvents(0), mTriggerRecordIndices(nullptr), mTriggerRecordTimes(nullptr), mTracklets(nullptr), mMaxThreads(100), mNTracklets(0), mTrackletIndexArray(nullptr), mHypothesis(nullptr), mCandidates(nullptr), mSpacePoints(nullptr), mTrackletLabels(nullptr), mGeo(nullptr), mRPhiA2(0), mRPhiB(0), mRPhiC2(0), mDyA2(0), mDyB(0), mDyC2(0), mAngleToDyA(0), mAngleToDyB(0), mAngleToDyC(0), mDebugOutput(false), mTimeWindow(.1f), mRadialOffset(-0.1), mMinPt(2.f), mMaxEta(0.84f), mExtraRoadY(2.f), mRoadZ(18.f), mMaxChi2(15.0f), mMaxMissingLy(6), mChi2Penalty(12.0f), mZCorrCoefNRC(1.4f), mMCEvent(nullptr), mDebug(new GPUTRDTrackerDebug<TRDTRK>())
 {
   //--------------------------------------------------------------------
   // Default constructor
@@ -138,28 +122,54 @@ GPUTRDTracker_t<TRDTRK, PROP>::~GPUTRDTracker_t()
 }
 
 template <class TRDTRK, class PROP>
-bool GPUTRDTracker_t<TRDTRK, PROP>::Init(TRD_GEOMETRY_CONST GPUTRDGeometry* geo)
+void GPUTRDTracker_t<TRDTRK, PROP>::InitializeProcessor()
 {
   //--------------------------------------------------------------------
   // Initialise tracker
   //--------------------------------------------------------------------
-  if (!geo) {
+  mGeo = (TRD_GEOMETRY_CONST GPUTRDGeometry*)GetConstantMem()->calibObjects.trdGeometry;
+  if (!mGeo) {
     Error("Init", "TRD geometry must be provided externally");
-    return false;
   }
 
-  mGeo = geo;
+  float Bz = Param().BzkG;
+  GPUInfo("Initializing with B-field: %f kG", Bz);
+  if (abs(abs(Bz) - 2) < 0.1) {
+    // magnetic field +-0.2 T
+    if (Bz > 0) {
+      GPUInfo("Loading error parameterization for Bz = +2 kG");
+      mRPhiA2 = 1.6e-3f, mRPhiB = -1.43e-2f, mRPhiC2 = 4.55e-2f;
+      mDyA2 = 1.225e-3f, mDyB = -9.8e-3f, mDyC2 = 3.88e-2f;
+      mAngleToDyA = -0.1f, mAngleToDyB = 1.89f, mAngleToDyC = -0.4f;
+    } else {
+      GPUInfo("Loading error parameterization for Bz = -2 kG");
+      mRPhiA2 = 1.6e-3f, mRPhiB = 1.43e-2f, mRPhiC2 = 4.55e-2f;
+      mDyA2 = 1.225e-3f, mDyB = 9.8e-3f, mDyC2 = 3.88e-2f;
+      mAngleToDyA = 0.1f, mAngleToDyB = 1.89f, mAngleToDyC = 0.4f;
+    }
+  } else if (abs(abs(Bz) - 5) < 0.1) {
+    // magnetic field +-0.5 T
+    if (Bz > 0) {
+      GPUInfo("Loading error parameterization for Bz = +5 kG");
+      mRPhiA2 = 1.6e-3f, mRPhiB = 0.125f, mRPhiC2 = 0.0961f;
+      mDyA2 = 1.681e-3f, mDyB = 0.15f, mDyC2 = 0.1849f;
+      mAngleToDyA = 0.13f, mAngleToDyB = 2.43f, mAngleToDyC = -0.58f;
+    } else {
+      GPUInfo("Loading error parameterization for Bz = -5 kG");
+      mRPhiA2 = 1.6e-3f, mRPhiB = -0.14f, mRPhiC2 = 0.1156f;
+      mDyA2 = 2.209e-3f, mDyB = -0.15f, mDyC2 = 0.2025f;
+      mAngleToDyA = -0.15f, mAngleToDyB = 2.34f, mAngleToDyC = 0.56f;
+    }
+  } else {
+    // magnetic field 0 T or another value which is not covered by the error parameterizations
+    GPUError("No error parameterization available for Bz = %.2f kG", Bz);
+  }
 
 #ifdef GPUCA_ALIROOT_LIB
   for (int iCandidate = 0; iCandidate < mNCandidates * 2 * mMaxThreads; ++iCandidate) {
     new (&mCandidates[iCandidate]) TRDTRK;
   }
 #endif
-
-  for (int iDet = 0; iDet < kNChambers; ++iDet) {
-    mNTrackletsInChamber[iDet] = 0;
-    mTrackletIndexArray[iDet] = -1;
-  }
 
   // obtain average radius of TRD chambers
   float x0[kNLayers] = {300.2f, 312.8f, 325.4f, 338.0f, 350.6f, 363.2f}; // used as default value in case no transformation matrix can be obtained
@@ -178,39 +188,16 @@ bool GPUTRDTracker_t<TRDTRK, PROP>::Init(TRD_GEOMETRY_CONST GPUTRDGeometry* geo)
 
   mDebug->ExpandVectors();
   mIsInitialized = true;
-  return true;
 }
 
 template <class TRDTRK, class PROP>
-void GPUTRDTracker_t<TRDTRK, PROP>::Reset(bool fast)
+void GPUTRDTracker_t<TRDTRK, PROP>::Reset()
 {
   //--------------------------------------------------------------------
   // Reset tracker
   //--------------------------------------------------------------------
   mNTracklets = 0;
   mNTracks = 0;
-  for (int iDet = 0; iDet < kNChambers; ++iDet) {
-    mNTrackletsInChamber[iDet] = 0;
-    mTrackletIndexArray[iDet] = -1;
-  }
-  if (fast) {
-    return;
-  }
-  for (int i = 0; i < mNMaxSpacePoints; ++i) {
-    mTracklets[i] = 0x0;
-    mSpacePoints[i].mR = 0.f;
-    mSpacePoints[i].mX[0] = 0.f;
-    mSpacePoints[i].mX[1] = 0.f;
-    mSpacePoints[i].mCov[0] = 0.f;
-    mSpacePoints[i].mCov[1] = 0.f;
-    mSpacePoints[i].mCov[2] = 0.f;
-    mSpacePoints[i].mDy = 0.f;
-    mSpacePoints[i].mId = 0;
-    mSpacePoints[i].mLabel[0] = -1;
-    mSpacePoints[i].mLabel[1] = -1;
-    mSpacePoints[i].mLabel[2] = -1;
-    mSpacePoints[i].mVolumeId = 0;
-  }
 }
 
 template <class TRDTRK, class PROP>
@@ -221,17 +208,38 @@ void GPUTRDTracker_t<TRDTRK, PROP>::DoTracking(GPUChainTracking* chainTracking)
   //--------------------------------------------------------------------
 
   // sort tracklets and fill index array
-  CAAlgo::sort(mTracklets, mTracklets + mNTracklets);
-  int trkltCounter = 0;
-  for (int iDet = 0; iDet < kNChambers; ++iDet) {
-    if (mNTrackletsInChamber[iDet] != 0) {
-      mTrackletIndexArray[iDet] = trkltCounter;
-      trkltCounter += mNTrackletsInChamber[iDet];
+  for (int iColl = 0; iColl < mNCollisions; ++iColl) {
+    int nTrklts = 0;
+    if (mProcessPerTimeFrame) {
+      // FIXME maybe two nested if statements are not so good in terms of performance?
+      nTrklts = (iColl < mNCollisions - 1) ? mTriggerRecordIndices[iColl + 1] - mTriggerRecordIndices[iColl] : mNTracklets - mTriggerRecordIndices[iColl];
+    } else {
+      nTrklts = mNTracklets;
     }
-  }
+    GPUTRDTrackletWord* tracklets = (mProcessPerTimeFrame) ? &(mTracklets[mTriggerRecordIndices[iColl]]) : mTracklets;
+    CAAlgo::sort(tracklets, tracklets + nTrklts); // tracklets are sorted by HCId
+    int* trkltIndexArray = &mTrackletIndexArray[iColl * (kNChambers + 1) + 1];
+    trkltIndexArray[-1] = 0;
+    int currDet = 0;
+    int nextDet = 0;
+    int trkltCounter = 0;
+    for (int iTrklt = 0; iTrklt < nTrklts; ++iTrklt) {
+      if (tracklets[iTrklt].GetDetector() > currDet) {
+        nextDet = tracklets[iTrklt].GetDetector();
+        for (int iDet = currDet; iDet < nextDet; ++iDet) {
+          trkltIndexArray[iDet] = trkltCounter;
+        }
+        currDet = nextDet;
+      }
+      ++trkltCounter;
+    }
+    for (int iDet = currDet; iDet <= kNChambers; ++iDet) {
+      trkltIndexArray[iDet] = trkltCounter;
+    }
 
-  if (!CalculateSpacePoints()) {
-    Error("DoTracking", "Space points for at least one chamber could not be calculated");
+    if (!CalculateSpacePoints(iColl)) {
+      GPUError("Space points for at least one chamber could not be calculated");
+    }
   }
 
   auto timeStart = std::chrono::high_resolution_clock::now();
@@ -243,7 +251,7 @@ void GPUTRDTracker_t<TRDTRK, PROP>::DoTracking(GPUChainTracking* chainTracking)
 #pragma omp parallel for
     for (int iTrk = 0; iTrk < mNTracks; ++iTrk) {
       if (omp_get_num_threads() > mMaxThreads) {
-        Error("DoTracking", "number of parallel threads too high, aborting tracking");
+        GPUError("Number of parallel threads too high, aborting tracking");
         // break statement not possible in OpenMP for loop
         iTrk = mNTracks;
         continue;
@@ -265,7 +273,7 @@ void GPUTRDTracker_t<TRDTRK, PROP>::DoTracking(GPUChainTracking* chainTracking)
   std::cout << " nTracklets: " << mNTracklets;
   std::cout << std::endl;
   */
-  DumpTracks();
+  //DumpTracks();
   mNEvents++;
 }
 
@@ -296,6 +304,12 @@ void GPUTRDTracker_t<TRDTRK, PROP>::PrintSettings() const
 }
 
 template <class TRDTRK, class PROP>
+void GPUTRDTracker_t<TRDTRK, PROP>::StartDebugging()
+{
+  mDebug->CreateStreamer();
+}
+
+template <class TRDTRK, class PROP>
 void GPUTRDTracker_t<TRDTRK, PROP>::CountMatches(const int trackID, std::vector<int>* matches) const
 {
 //--------------------------------------------------------------------
@@ -308,8 +322,7 @@ void GPUTRDTracker_t<TRDTRK, PROP>::CountMatches(const int trackID, std::vector<
 #ifdef ENABLE_GPUMC
   for (int k = 0; k < kNChambers; k++) {
     int layer = mGeo->GetLayer(k);
-    for (int iTrklt = 0; iTrklt < mNTrackletsInChamber[k]; iTrklt++) {
-      int trkltIdx = mTrackletIndexArray[k] + iTrklt;
+    for (int trkltIdx = mTrackletIndexArray[k]; trkltIdx < mTrackletIndexArray[k + 1]; trkltIdx++) {
       bool trkltStored = false;
       for (int il = 0; il < 3; il++) {
         int lb = mSpacePoints[trkltIdx].mLabel[il];
@@ -414,12 +427,58 @@ GPUd() void GPUTRDTracker_t<TRDTRK, PROP>::CheckTrackRefs(const int trackID, boo
 #endif //! GPUCA_GPUCODE
 
 template <class TRDTRK, class PROP>
+GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::CheckTrackTRDCandidate(const TRDTRK& trk) const
+{
+  if (!trk.CheckNumericalQuality()) {
+    return false;
+  }
+  if (CAMath::Abs(trk.getEta()) > mMaxEta) {
+    return false;
+  }
+  if (trk.getPt() < mMinPt) {
+    return false;
+  }
+  return true;
+}
+
+template <class TRDTRK, class PROP>
+GPUd() int GPUTRDTracker_t<TRDTRK, PROP>::LoadTrack(const TRDTRK& trk, const int label, const int* nTrkltsOffline, const int labelOffline, int tpcTrackId, bool checkTrack)
+{
+  if (mNTracks >= mNMaxTracks) {
+#ifndef GPUCA_GPUCODE
+    GPUError("Error: Track dropped (no memory available) -> must not happen");
+#endif
+    return (1);
+  }
+  if (checkTrack && !CheckTrackTRDCandidate(trk)) {
+    return 0;
+  }
+#ifdef GPUCA_ALIROOT_LIB
+  new (&mTracks[mNTracks]) TRDTRK(trk); // We need placement new, since the class is virtual
+#else
+  mTracks[mNTracks] = trk;
+#endif
+  mTracks[mNTracks].SetTPCtrackId(tpcTrackId >= 0 ? tpcTrackId : mNTracks);
+  if (label >= 0) {
+    mTracks[mNTracks].SetLabel(label);
+  }
+  if (nTrkltsOffline) {
+    for (int i = 0; i < 4; ++i) {
+      mTracks[mNTracks].SetNtrackletsOffline(i, nTrkltsOffline[i]); // see GPUTRDTrack.h for information on the index
+    }
+  }
+  mTracks[mNTracks].SetLabelOffline(labelOffline);
+  mNTracks++;
+  return (0);
+}
+
+template <class TRDTRK, class PROP>
 GPUd() int GPUTRDTracker_t<TRDTRK, PROP>::LoadTracklet(const GPUTRDTrackletWord& tracklet, const int* labels)
 {
   //--------------------------------------------------------------------
   // Add single tracklet to tracker
   //--------------------------------------------------------------------
-  if (mNTracklets >= mNMaxSpacePoints) {
+  if (mNTracklets >= mNMaxSpacePoints * mNMaxCollisions) {
     Error("LoadTracklet", "Running out of memory for tracklets, skipping tracklet(s). This should actually never happen.");
     return 1;
   }
@@ -429,7 +488,6 @@ GPUd() int GPUTRDTracker_t<TRDTRK, PROP>::LoadTracklet(const GPUTRDTrackletWord&
     }
   }
   mTracklets[mNTracklets++] = tracklet;
-  mNTrackletsInChamber[tracklet.GetDetector()]++;
   return 0;
 }
 
@@ -447,21 +505,42 @@ GPUd() void GPUTRDTracker_t<TRDTRK, PROP>::DumpTracks()
 }
 
 template <class TRDTRK, class PROP>
+GPUd() int GPUTRDTracker_t<TRDTRK, PROP>::GetCollisionID(float trkTime) const
+{
+  for (int iColl = 0; iColl < mNCollisions; ++iColl) {
+    if (CAMath::Abs(trkTime - mTriggerRecordTimes[iColl]) < mTimeWindow) {
+      GPUInfo("TRD info found from interaction %i at %f for track with time %f", iColl, mTriggerRecordTimes[iColl], trkTime);
+      return iColl;
+    }
+  }
+  return -1;
+}
+
+template <class TRDTRK, class PROP>
 GPUd() void GPUTRDTracker_t<TRDTRK, PROP>::DoTrackingThread(int iTrk, int threadId)
 {
   //--------------------------------------------------------------------
   // perform the tracking for one track (must be threadsafe)
   //--------------------------------------------------------------------
+  int collisionId = 0;
+  if (mProcessPerTimeFrame) {
+    collisionId = GetCollisionID(mTracks[iTrk].getTime());
+    if (collisionId < 0) {
+      GPUInfo("Did not find TRD data for track with t=%f", mTracks[iTrk].getTime());
+      // no TRD data available for the bunch crossing this track originates from
+      return;
+    }
+  }
   PROP prop(&Param().polynomialField);
   auto trkCopy = mTracks[iTrk];
   prop.setTrack(&trkCopy);
   prop.setFitInProjections(true);
-  FollowProlongation(&prop, &trkCopy, threadId);
+  FollowProlongation(&prop, &trkCopy, threadId, collisionId);
   mTracks[iTrk] = trkCopy; // copy back the resulting track
 }
 
 template <class TRDTRK, class PROP>
-GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::CalculateSpacePoints()
+GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::CalculateSpacePoints(int iCollision)
 {
   //--------------------------------------------------------------------
   // Calculates TRD space points in sector tracking coordinates
@@ -469,17 +548,20 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::CalculateSpacePoints()
   //--------------------------------------------------------------------
 
   bool result = true;
+  int idxOffset = iCollision * (kNChambers + 1);
 
   for (int iDet = 0; iDet < kNChambers; ++iDet) {
-
-    int nTracklets = mNTrackletsInChamber[iDet];
+    int nTracklets = mTrackletIndexArray[idxOffset + iDet + 1] - mTrackletIndexArray[idxOffset + iDet];
     if (nTracklets == 0) {
       continue;
     }
-
+    if (!mGeo->ChamberInGeometry(iDet)) {
+      GPUError("Found TRD tracklets in chamber %i which is not included in the geometry", iDet);
+      return false;
+    }
     auto* matrix = mGeo->GetClusterMatrix(iDet);
     if (!matrix) {
-      Error("CalculateSpacePoints", "Invalid TRD cluster matrix, skipping detector  %i", iDet);
+      GPUError("No cluster matrix available for chamber %i. Skipping it...", iDet);
       result = false;
       continue;
     }
@@ -489,8 +571,7 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::CalculateSpacePoints()
     float c2 = 1.f / (1.f + t2); // cos^2 (tilt)
     float sy2 = 0.1f * 0.1f;     // sigma_rphi^2, currently assume sigma_rphi = 1 mm
 
-    for (int iTrklt = 0; iTrklt < nTracklets; ++iTrklt) {
-      int trkltIdx = mTrackletIndexArray[iDet] + iTrklt;
+    for (int trkltIdx = mTrackletIndexArray[idxOffset + iDet]; trkltIdx < mTrackletIndexArray[idxOffset + iDet + 1]; ++trkltIdx) {
       int trkltZbin = mTracklets[trkltIdx].GetZbin();
       float sz2 = pp->GetRowSize(trkltZbin) * pp->GetRowSize(trkltZbin) / 12.f; // sigma_z = l_pad/sqrt(12) TODO try a larger z error
       My_Float xTrkltDet[3] = {0.f};                                            // trklt position in chamber coordinates
@@ -498,7 +579,7 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::CalculateSpacePoints()
       xTrkltDet[0] = mGeo->AnodePos() + mRadialOffset;
       xTrkltDet[1] = mTracklets[trkltIdx].GetY();
       xTrkltDet[2] = pp->GetRowPos(trkltZbin) - pp->GetRowSize(trkltZbin) / 2.f - pp->GetRowPos(pp->GetNrows() / 2);
-      //GPUInfo("Space point local %i: x=%f, y=%f, z=%f", iTrklt, xTrkltDet[0], xTrkltDet[1], xTrkltDet[2]);
+      //GPUInfo("Space point local %i: x=%f, y=%f, z=%f", trkltIdx, xTrkltDet[0], xTrkltDet[1], xTrkltDet[2]);
       matrix->LocalToMaster(xTrkltDet, xTrkltSec);
       mSpacePoints[trkltIdx].mR = xTrkltSec[0];
       mSpacePoints[trkltIdx].mX[0] = xTrkltSec[1];
@@ -515,14 +596,14 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::CalculateSpacePoints()
       int modId = mGeo->GetSector(iDet) * GPUTRDGeometry::kNstack + mGeo->GetStack(iDet); // global TRD stack number
       unsigned short volId = mGeo->GetGeomManagerVolUID(iDet, modId);
       mSpacePoints[trkltIdx].mVolumeId = volId;
-      //GPUInfo("Space point global %i: x=%f, y=%f, z=%f", iTrklt, mSpacePoints[trkltIdx].mR, mSpacePoints[trkltIdx].mX[0], mSpacePoints[trkltIdx].mX[1]);
+      //GPUInfo("Space point global %i: x=%f, y=%f, z=%f", trkltIdx, mSpacePoints[trkltIdx].mR, mSpacePoints[trkltIdx].mX[0], mSpacePoints[trkltIdx].mX[1]);
     }
   }
   return result;
 }
 
 template <class TRDTRK, class PROP>
-GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK* t, int threadId)
+GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK* t, int threadId, int collisionId)
 {
   //--------------------------------------------------------------------
   // Propagate TPC track layerwise through TRD and pick up closest
@@ -530,7 +611,7 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK
   // -> returns false if prolongation could not be executed fully
   //    or track does not fullfill threshold conditions
   //--------------------------------------------------------------------
-  GPUInfo("Start track following for track %i at x=%f with pt=%f", t->GetTPCtrackId(), t->getX(), t->getPt());
+  //GPUInfo("Start track following for track %i at x=%f with pt=%f", t->GetTPCtrackId(), t->getX(), t->getPt());
   mDebug->Reset();
   int iTrack = t->GetTPCtrackId();
   t->SetChi2(0.f);
@@ -555,6 +636,7 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK
 
   int candidateIdxOffset = threadId * 2 * mNCandidates;
   int hypothesisIdxOffset = threadId * mNCandidates;
+  int trkltIdxOffset = collisionId * (kNChambers + 1);
 
   auto trkWork = t;
   if (mNCandidates > 1) {
@@ -603,15 +685,15 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK
 
       // propagate track to average radius of TRD layer iLayer (sector 0, stack 2 is chosen as a reference)
       if (!prop->propagateToX(mR[2 * kNLayers + iLayer], .8f, 2.f)) {
-        //if (ENABLE_INFO) {
-        GPUInfo("Track propagation failed for track %i candidate %i in layer %i (pt=%f, x=%f, mR[layer]=%f)", iTrack, iCandidate, iLayer, trkWork->getPt(), trkWork->getX(), mR[2 * kNLayers + iLayer]);
-        //}
+        if (ENABLE_INFO) {
+          GPUInfo("Track propagation failed for track %i candidate %i in layer %i (pt=%f, x=%f, mR[layer]=%f)", iTrack, iCandidate, iLayer, trkWork->getPt(), trkWork->getX(), mR[2 * kNLayers + iLayer]);
+        }
         GPUInfo("Propagation failed");
         continue;
       }
 
       // rotate track in new sector in case of sector crossing
-      if (!AdjustSector(prop, trkWork, iLayer)) {
+      if (!AdjustSector(prop, trkWork)) {
         if (ENABLE_INFO) {
           GPUInfo("FollowProlongation: Adjusting sector failed for track %i candidate %i in layer %i", iTrack, iCandidate, iLayer);
         }
@@ -651,8 +733,7 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK
         }
         int currSec = mGeo->GetSector(currDet);
         if (currSec != GetSector(prop->getAlpha())) {
-          float currAlpha = GetAlphaOfSector(currSec);
-          if (!prop->rotate(currAlpha)) {
+          if (!prop->rotate(GetAlphaOfSector(currSec))) {
             if (ENABLE_WARNING) {
               Warning("FollowProlongation", "Track could not be rotated in tracklet coordinate system");
             }
@@ -670,14 +751,13 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK
           }
         }
         // first propagate track to x of tracklet
-        for (int iTrklt = 0; iTrklt < mNTrackletsInChamber[currDet]; ++iTrklt) {
-          int trkltIdx = mTrackletIndexArray[currDet] + iTrklt;
-          if (CAMath::Abs(trkWork->getY() - mSpacePoints[trkltIdx].mX[0]) > roadY && CAMath::Abs(trkWork->getZ() - mSpacePoints[trkltIdx].mX[1]) > roadZ) {
+        for (int trkltIdx = mTrackletIndexArray[trkltIdxOffset + currDet]; trkltIdx < mTrackletIndexArray[trkltIdxOffset + currDet + 1]; ++trkltIdx) {
+          if (CAMath::Abs(trkWork->getY() - mSpacePoints[trkltIdx].mX[0]) > roadY || CAMath::Abs(trkWork->getZ() - mSpacePoints[trkltIdx].mX[1]) > roadZ) {
             // skip tracklets which are too far away
             // although the radii of space points and tracks may differ by ~ few mm the roads are large enough to allow no efficiency loss by this cut
             continue;
           }
-          My_Float projY, projZ;
+          float projY, projZ;
           prop->getPropagatedYZ(mSpacePoints[trkltIdx].mR, projY, projZ);
           // correction for tilted pads (only applied if deltaZ < l_pad && track z err << l_pad)
           float tiltCorr = tilt * (mSpacePoints[trkltIdx].mX[1] - projZ);
@@ -698,7 +778,7 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK
             float chi2 = prop->getPredictedChi2(trkltPosTmpYZ, trkltCovTmp);
             // GPUInfo("layer %i: chi2 = %f", iLayer, chi2);
             if (chi2 < mMaxChi2 && CAMath::Abs(GetAngularPull(mSpacePoints[trkltIdx].mDy, trkWork->getSnp())) < 4) {
-              Hypothesis hypo(trkWork->GetNlayers(), iCandidate, trkltIdx, trkWork->GetChi2() + chi2, GetPredictedChi2(trkltPosTmpYZ, trkltCovTmp, trkWork->getPar(), trkWork->getCov()));
+              Hypothesis hypo(trkWork->GetNlayers(), iCandidate, trkltIdx, trkWork->GetChi2() + chi2);
               InsertHypothesis(hypo, nCurrHypothesis, hypothesisIdxOffset);
             } // end tracklet chi2 < mMaxChi2
           }   // end tracklet in window
@@ -712,7 +792,7 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK
     } // end candidate loop
 
 #ifdef ENABLE_GPUMC
-    // in case matching tracklet exists in this layer -> store position information for debugging
+    // in case matching tracklet exists in this layer -> store position information for debugging FIXME: does not yet work for time frames in o2, but here we anyway do not yet have MC labels...
     if (matchAvailableAll[iLayer].size() > 0 && mDebugOutput) {
       mDebug->SetNmatchAvail(matchAvailableAll[iLayer].size(), iLayer);
       int realTrkltId = matchAvailableAll[iLayer].at(0);
@@ -736,7 +816,6 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK
         My_Float covReal[3] = {0.};
         RecalcTrkltCov(tilt, trkWork->getSnp(), pad->GetRowSize(mTracklets[realTrkltId].GetZbin()), covReal);
         mDebug->SetChi2Real(prop->getPredictedChi2(yzPosReal, covReal), iLayer);
-        mDebug->SetChi2YZPhiReal(GetPredictedChi2(yzPosReal, covReal, trkWork->getPar(), trkWork->getCov()), iLayer);
         mDebug->SetRawTrackletPositionReal(mSpacePoints[realTrkltId].mR, mSpacePoints[realTrkltId].mX, iLayer);
         mDebug->SetCorrectedTrackletPositionReal(yzPosReal, iLayer);
         mDebug->SetTrackletPropertiesReal(mTracklets[realTrkltId].GetDetector(), iLayer);
@@ -745,7 +824,6 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK
 #endif
     //
     mDebug->SetChi2Update(mHypothesis[0 + hypothesisIdxOffset].mChi2 - t->GetChi2(), iLayer); // only meaningful for ONE candidate!!!
-    mDebug->SetChi2YZPhiUpdate(mHypothesis[0 + hypothesisIdxOffset].mChi2YZPhi, iLayer);      // only meaningful for ONE candidate!!!
     mDebug->SetRoad(roadY, roadZ, iLayer);                                                    // only meaningful for ONE candidate
     bool wasTrackStored = false;
     // --------------------------------------------------------------------------------
@@ -951,45 +1029,11 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::FollowProlongation(PROP* prop, TRDTRK
     mDebug->SetUpdates(update);
     mDebug->Output();
   }
-  GPUInfo("Ended track following for track %i at x=%f with pt=%f", t->GetTPCtrackId(), t->getX(), t->getPt());
-  GPUInfo("Attached %i tracklets", t->GetNtracklets());
+  //GPUInfo("Ended track following for track %i at x=%f with pt=%f", t->GetTPCtrackId(), t->getX(), t->getPt());
+  //GPUInfo("Attached %i tracklets", t->GetNtracklets());
   return true;
 }
 
-template <class TRDTRK, class PROP>
-GPUd() float GPUTRDTracker_t<TRDTRK, PROP>::GetPredictedChi2(const My_Float* pTRD, const My_Float* covTRD, const My_Float* pTrk, const My_Float* covTrk) const
-{
-  // FIXME: This function cannot yet be used in production (maybe it is not necessary at all?)
-  // conversion from tracklet deflection to sin(phi) needs to be parametrized
-  // predict chi2 for update of track with pTrk and covTrk with TRD space point with pTRD and covTRD
-  // taking into account y, z and azimuthal angle of the track and tracklet
-  float deltaY = pTrk[0] - pTRD[0];
-  float deltaZ = pTrk[1] - pTRD[1];
-  float deltaS = pTrk[2] - pTRD[2]; // FIXME: pTRD[2] is not defined, needs conversion dy -> sin(phi)
-
-  // add errors for track and space point, assume no correlation in y-sin(phi) and z-sin(phi) for space point
-  float sigmaZ2 = covTrk[2] + covTRD[2];
-  float sigmaS2 = covTrk[5] + GetAngularResolution(pTrk[2]); // FIXME: convert angular resolution from dy to sin(phi) for the TRD space point
-  float sigmaY2 = covTrk[0] + covTRD[0];
-  float sigmaZS = covTrk[4];
-  float sigmaYS = covTrk[3];
-  float sigmaYZ = covTrk[1] + covTRD[1];
-  // inverse of the covariance matrix
-  float c11 = sigmaZ2 * sigmaS2 - sigmaZS * sigmaZS;
-  float c21 = sigmaZS * sigmaYS - sigmaYZ * sigmaS2;
-  float c22 = sigmaY2 * sigmaS2 - sigmaYS * sigmaYS;
-  float c31 = sigmaYZ * sigmaZS - sigmaZ2 * sigmaYS;
-  float c32 = sigmaYZ * sigmaYS - sigmaY2 * sigmaZS;
-  float c33 = sigmaY2 * sigmaZ2 - sigmaYZ * sigmaYZ;
-  // determinant
-  float det = sigmaY2 * sigmaZ2 * sigmaS2 + 2 * sigmaYZ * sigmaZS * sigmaYS - sigmaYS * sigmaYS * sigmaZ2 - sigmaZS * sigmaZS * sigmaY2 - sigmaS2 * sigmaYZ * sigmaYZ;
-  if (CAMath::Abs(det) < 1.e-10f) {
-    printf("Determinant too small: %f\n", det);
-    det = 1.e-10f;
-  }
-  det = 1.f / det;
-  return (c11 * deltaY * deltaY + 2.f * c21 * deltaY * deltaZ + 2.f * c31 * deltaY * deltaS + c22 * deltaZ * deltaZ + 2.f * c32 * deltaZ * deltaS + c33 * deltaS * deltaS) * det;
-}
 
 template <class TRDTRK, class PROP>
 GPUd() void GPUTRDTracker_t<TRDTRK, PROP>::InsertHypothesis(Hypothesis hypo, int& nCurrHypothesis, int idxOffset)
@@ -1052,11 +1096,11 @@ GPUd() int GPUTRDTracker_t<TRDTRK, PROP>::GetDetectorNumber(const float zPos, co
 }
 
 template <class TRDTRK, class PROP>
-GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::AdjustSector(PROP* prop, TRDTRK* t, const int layer) const
+GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::AdjustSector(PROP* prop, TRDTRK* t) const
 {
   //--------------------------------------------------------------------
   // rotate track in new sector if necessary and
-  // propagate to correct x of layer
+  // propagate to previous x afterwards
   // cancel if track crosses two sector boundaries
   //--------------------------------------------------------------------
   float alpha = mGeo->GetAlpha();
@@ -1078,7 +1122,13 @@ GPUd() bool GPUTRDTracker_t<TRDTRK, PROP>::AdjustSector(PROP* prop, TRDTRK* t, c
       return false;
     }
     int sign = (y > 0) ? 1 : -1;
-    if (!prop->rotate(alphaCurr + alpha * sign)) {
+    float alphaNew = alphaCurr + alpha * sign;
+    if (alphaNew > M_PI) {
+      alphaNew -= 2 * M_PI;
+    } else if (alphaNew < -M_PI) {
+      alphaNew += 2 * M_PI;
+    }
+    if (!prop->rotate(alphaNew)) {
       return false;
     }
     if (!prop->propagateToX(xTmp, .8f, 2.f)) {
@@ -1110,7 +1160,11 @@ GPUd() float GPUTRDTracker_t<TRDTRK, PROP>::GetAlphaOfSector(const int sec) cons
   //--------------------------------------------------------------------
   // rotation angle for TRD sector sec
   //--------------------------------------------------------------------
-  return (2.0f * M_PI / (float)kNSectors * ((float)sec + 0.5f));
+  float alpha = 2.0f * M_PI / (float)kNSectors * ((float)sec + 0.5f);
+  if (alpha > M_PI) {
+    alpha -= 2 * M_PI;
+  }
+  return alpha;
 }
 
 template <class TRDTRK, class PROP>
@@ -1164,7 +1218,7 @@ GPUd() void GPUTRDTracker_t<TRDTRK, PROP>::FindChambersInRoad(const TRDTRK* t, c
     const GPUTRDpadPlane* pp = mGeo->GetPadPlane(iLayer, currStack);
     int lastPadRow = mGeo->GetRowMax(iLayer, currStack, 0);
     float zCenter = pp->GetRowPos(lastPadRow / 2);
-    if ((t->getZ() + roadZ) > pp->GetRowPos(0) || (t->getZ() - roadZ) < pp->GetRowPos(lastPadRow)) {
+    if ((t->getZ() + roadZ) > pp->GetRow0() || (t->getZ() - roadZ) < pp->GetRowEnd()) {
       int addStack = t->getZ() > zCenter ? currStack - 1 : currStack + 1;
       if (addStack < kNStacks && addStack > -1) {
         det[nDets++] = mGeo->GetDetector(iLayer, addStack, currSec);
@@ -1260,13 +1314,12 @@ namespace GPUCA_NAMESPACE
 {
 namespace gpu
 {
-// instatiate the tracker for both for GPU data types and for AliRoot/O2 data types
 #if !defined(GPUCA_STANDALONE) && !defined(GPUCA_GPUCODE)
+// instantiate version for non-GPU data types
 template class GPUTRDTracker_t<GPUTRDTrack, GPUTRDPropagator>;
 #endif
-#ifndef GPUCA_ALIROOT_LIB
+// always instantiate version for GPU data types
 template class GPUTRDTracker_t<GPUTRDTrackGPU, GPUTRDPropagatorGPU>;
-#endif
 } // namespace gpu
 } // namespace GPUCA_NAMESPACE
 #endif

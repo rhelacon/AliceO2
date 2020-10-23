@@ -12,13 +12,14 @@
 //                                                                        //
 //  TRAP config                                                           //
 //                                                                        //
-//  Author: J. Klein (Jochen.Klein@cern.ch)                               //
-//          Lots of mods by S. Murray (murrays@cern.ch)                   //
+//  Author: J. Klein (Jochen.Klein@cern.ch) (run2 version                 //
+//          S. Murray (murrays@cern.ch)                   //
 ////////////////////////////////////////////////////////////////////////////
 
 #include "TRDBase/TRDGeometry.h"
 #include "TRDBase/FeeParam.h"
 #include "TRDSimulation/TrapConfig.h"
+#include "DataFormatsTRD/Constants.h"
 #include <fairlogger/Logger.h>
 
 #include <fstream>
@@ -28,12 +29,13 @@
 
 using namespace std;
 using namespace o2::trd;
+using namespace o2::trd::constants;
 
 bool TrapConfig::mgRegAddressMapInitialized = false;
 
 const std::array<int, TrapConfig::mlastAlloc> o2::trd::TrapConfig::TrapValue::mgkSize = {0, 1, 540, 1080, 8 * 18 * 540, 4, 6, 8 * 18 * 30};
 
-TrapConfig::TrapConfig(std::string configname)
+TrapConfig::TrapConfig()
 {
   // default constructor
 
@@ -663,9 +665,9 @@ bool TrapConfig::printTrapReg(TrapReg_t reg, int det, int rob, int mcm)
   // print the value stored in the given register
   // if it is individual a valid MCM has to be specified
 
-  if ((det >= 0 && det < kNdet) &&
-      (rob >= 0 && rob < FeeParam::getNrobC1()) &&
-      (mcm >= 0 && mcm < FeeParam::getNmcmRob() + 2)) {
+  if ((det >= 0 && det < MAXCHAMBER) &&
+      (rob >= 0 && rob < NROBC1) &&
+      (mcm >= 0 && mcm < NMCMROB + 2)) {
     LOG(info) << getRegName((TrapReg_t)reg) << "(" << std::setw(2) << getRegNBits((TrapReg_t)reg)
               << " bits) at 0x" << hex << std::setw(4) << getRegAddress((TrapReg_t)reg)
               << " is 0x" << hex << std::setw(8) << mRegisterValue[reg].getValue(det, rob, mcm)
@@ -818,7 +820,7 @@ bool TrapConfig::TrapValue::allocatei(int alloc)
   // allocate memory for the specified granularity
   mAllocMode = (Alloc_t)alloc;
   int mSize = mgkSize[mAllocMode];
-  cout << "in allocatei : with alloc = " << alloc << " and mSize is now :" << mSize << endl;
+  //cout << "in allocatei : with alloc = " << alloc << " and mSize is now :" << mSize << endl;
   if (mSize > 0) {
     mData.resize(mSize);
     mValid.resize(mSize);
@@ -867,7 +869,8 @@ int TrapConfig::TrapValue::getIdx(int det, int rob, int mcm)
     // LOG(info) << "Index ok " << dec << idx << " (size " << mData.size() << ") for " << this->getName() << " getIdx : " << det <<"::"<< rob<< "::" << mcm << "::" << mAllocMode;
     return idx;
   } else {
-    LOG(fatal) << "Index too large " << dec << idx << " (size " << mData.size() << ") for " << this->getName() << " getIdx : " << det << "::" << rob << "::" << mcm << "::" << mAllocMode;
+    LOG(warn) << "Index too large " << dec << idx << " (size " << mData.size() << ") for "
+              << " getIdx : " << det << "::" << rob << "::" << mcm << "::" << mAllocMode;
     return -1;
   }
 }
@@ -894,7 +897,8 @@ bool TrapConfig::TrapValue::setData(unsigned int value, int det)
     // short cut for detector-wise allocation
     if (mAllocMode == kAllocByDetector) {
       if (mValid[idx] && (mData[idx] != value)) {
-        LOG(debug) << "Overwriting previous value " << dec << mData[idx] << " of " << this->getName() << " with " << value << " for " << det;
+        LOG(debug) << "Overwriting previous value " << dec << mData[idx] << " of "
+                   << " with " << value << " for " << det;
       }
       mData[idx] = value;
       mValid[idx] = true;
@@ -904,7 +908,8 @@ bool TrapConfig::TrapValue::setData(unsigned int value, int det)
         for (int mcm = 0; mcm < 18; ++mcm) {
           idx = getIdx(det, rob, mcm);
           if (mValid[idx] && (mData[idx] != value)) {
-            LOG(debug) << "Overwriting previous value " << mData[idx] << " of " << this->getName() << " with " << value << " for " << det << " " << rob << ":" << setw(2) << mcm;
+            LOG(debug) << "Overwriting previous value " << mData[idx] << " of "
+                       << " with " << value << " for " << det << " " << rob << ":" << setw(2) << mcm;
           }
           mData[idx] = value;
           mValid[idx] = true;
@@ -929,7 +934,8 @@ bool TrapConfig::TrapValue::setData(unsigned int value, int det, int rob, int mc
 
   if (idx >= 0) {
     if (mValid[idx] && (mData[idx] != value)) {
-      LOG(debug) << "Overwriting previous value " << mData[idx] << " of " << this->getName() << " with " << value << " " << det << ":" << rob << std::setw(2) << mcm << " (idx: " << idx << ")";
+      LOG(debug) << "Overwriting previous value " << mData[idx] << " of "
+                 << " with " << value << " " << det << ":" << rob << std::setw(2) << mcm << " (idx: " << idx << ")";
     }
     mData[idx] = value;
     mValid[idx] = true;
@@ -948,8 +954,10 @@ unsigned int TrapConfig::TrapValue::getData(int det, int rob, int mcm)
 
   int idx = getIdx(det, rob, mcm);
   if (idx >= 0) {
-    if (!mValid[idx])
-      LOG(debug1) << "reading from unwritten address: " << this->getName() << " at idx " << idx << ":" << mValid[idx];
+    if (!mValid[idx]) {
+      LOG(debug1) << "reading from unwritten address: "
+                  << " at idx " << idx << ":" << mValid[idx];
+    }
     return mData[idx];
   } else {
     LOG(error) << "read from invalid address";
@@ -986,14 +994,56 @@ void TrapConfig::TrapRegister::initfromrun2(const char* name, int addr, int nBit
   mNbits = nBits;
   mResetValue = resetValue;
   //LOG(fatal) << "Re-initialising an existing TRAP register " << name << ":" << mName << " : " << addr << ":" << mAddr << " : " << nBits << ":" << mNbits <<  " : " << resetValue << ":" << mResetValue;
-  LOG(fatal) << "Re-initialising an existing TRAP register";
+  //LOG(fatal) << "Re-initialising an existing TRAP register";
+}
+
+void TrapConfig::PrintDmemValue3(TrapConfig::TrapDmemWord* trapval, std::ofstream& output)
+{
+  output << "\t AllocationMode : " << trapval->getAllocMode() << std::endl;
+  output << "\t Array size : " << trapval->getDataSize() << std::endl;
+  for (int dataarray = 0; dataarray < trapval->getDataSize(); dataarray++) {
+    output << "\t " << trapval->getDataRaw(dataarray) << " : valid : " << trapval->getValidRaw(dataarray) << std::endl;
+  }
+}
+
+void TrapConfig::PrintRegisterValue3(TrapConfig::TrapRegister* trapval, std::ofstream& output)
+{
+  output << "\t AllocationMode : " << trapval->getAllocMode() << std::endl;
+  output << "\t Array size : " << trapval->getDataSize() << std::endl;
+  for (int dataarray = 0; dataarray < trapval->getDataSize(); dataarray++) {
+    output << "\t " << trapval->getDataRaw(dataarray) << " : valid : " << trapval->getValidRaw(dataarray) << std::endl;
+  }
+}
+
+void TrapConfig::DumpTrapConfig2File(std::string filename)
+{
+  std::ofstream outfile(filename);
+  outfile << "Trap Registers : " << std::endl;
+  for (int regvalue = 0; regvalue < TrapConfig::kLastReg; regvalue++) {
+    outfile << " Trap : " << mRegisterValue[regvalue].getName()
+            << " at : 0x " << std::hex << mRegisterValue[regvalue].getAddr() << std::dec
+            << " with nbits : " << mRegisterValue[regvalue].getNbits()
+            << " and reset value of : " << mRegisterValue[regvalue].getResetValue() << std::endl;
+    // now for the inherited AliTRDtrapValue members;
+    PrintRegisterValue3(&mRegisterValue[regvalue], outfile);
+  }
+
+  //  outfile << "done with regiser values now for dmemwords" << std::endl;
+  outfile << "DMEM Words : " << std::endl;
+  for (int dmemwords = 0; dmemwords < TrapConfig::mgkDmemWords; dmemwords++) {
+    // copy fName, fAddr
+    // inherited from trapvalue : fAllocMode, fSize fData and fValid
+    //        trapconfig->mDmem[dmemwords].mName= run2config->fDmem[dmemwords].fName; // this gets set on setting the address
+    outfile << "Name : " << mDmem[dmemwords].getName() << " :address : " << mDmem[dmemwords].getAddress() << std::endl;
+    PrintDmemValue3(&mDmem[dmemwords], outfile);
+  }
 }
 
 void TrapConfig::configureOnlineGains()
 {
   // we dont want to do this anymore .... but here for future reference.
   /* if (hasOnlineFilterGain()) {
-    const int nDets = kNdet;
+    const int nDets = MAXCHAMBER;
     const int nMcms = TRDGeometry::MCMmax();
     const int nChs = TRDGeometry::ADCmax();
 
@@ -1005,8 +1055,8 @@ void TrapConfig::configureOnlineGains()
     }
 
     for (int iDet = 0; iDet < nDets; ++iDet) {
-      //const int MaxRows = TRDGeometry::getStack(iDet) == 2 ? FeeParam::mgkNrowC0 : FeeParam::mgkNrowC1;
-      int MaxCols = FeeParam::mgkNcol;
+      //const int MaxRows = TRDGeometry::getStack(iDet) == 2 ? NROWC0 : NROWC1;
+      int MaxCols = NCOLUMN;
       //	CalOnlineGainTableROC gainTbl = mGainTable.getGainTableROC(iDet);
       const int nRobs = TRDGeometry::getStack(iDet) == 2 ? TRDGeometry::ROBmaxC0() : TRDGeometry::ROBmaxC1();
 

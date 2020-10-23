@@ -13,16 +13,18 @@
 /// @since  2020-02-25
 /// @brief  TOF compressed data decoding task
 
-#include "TOFWorkflow/CompressedDecodingTask.h"
+#include "TOFWorkflowUtils/CompressedDecodingTask.h"
 #include "Framework/ControlService.h"
 #include "Framework/ConfigParamRegistry.h"
 
+#include "CommonUtils/StringUtils.h"
 #include "Headers/RAWDataHeader.h"
 #include "DataFormatsTOF/CompressedDataFormat.h"
 #include "DetectorsRaw/HBFUtils.h"
 #include "DataFormatsParameters/GRPObject.h"
 #include "Framework/WorkflowSpec.h"
 #include "Framework/Logger.h"
+#include "DetectorsRaw/RDHUtils.h"
 
 using namespace o2::framework;
 
@@ -30,6 +32,8 @@ namespace o2
 {
 namespace tof
 {
+
+using RDHUtils = o2::raw::RDHUtils;
 
 void CompressedDecodingTask::init(InitContext& ic)
 {
@@ -52,6 +56,28 @@ void CompressedDecodingTask::postData(ProcessingContext& pc)
   std::vector<o2::tof::Digit>* alldigits = mDecoder.getDigitPerTimeFrame();
   std::vector<o2::tof::ReadoutWindowData>* row = mDecoder.getReadoutWindowData();
 
+  ReadoutWindowData* last = nullptr;
+  o2::InteractionRecord lastIR;
+  int lastval = 0;
+  if (!row->empty()) {
+    last = &row->back();
+    lastval = last->first() + last->size();
+    lastIR = last->mFirstIR;
+  }
+
+  /*
+  int nwindowperTF = o2::raw::HBFUtils::Instance().getNOrbitsPerTF() * 3;
+  while (row->size() < nwindowperTF) {
+    // complete timeframe with empty readout windows
+    auto& dummy = row->emplace_back(lastval, 0);
+    dummy.mFirstIR = lastIR;
+  }
+  while (row->size() > nwindowperTF) {
+    // remove extra readout windows after a check they are empty
+    row->pop_back();
+  }
+*/
+
   int n_tof_window = row->size();
   int n_orbits = n_tof_window / 3;
   int digit_size = alldigits->size();
@@ -62,10 +88,21 @@ void CompressedDecodingTask::postData(ProcessingContext& pc)
   pc.outputs().snapshot(Output{o2::header::gDataOriginTOF, "DIGITS", 0, Lifetime::Timeframe}, *alldigits);
   pc.outputs().snapshot(Output{o2::header::gDataOriginTOF, "READOUTWINDOW", 0, Lifetime::Timeframe}, *row);
 
-  static o2::parameters::GRPObject::ROMode roMode = o2::parameters::GRPObject::CONTINUOUS;
+  // RS FIXME: At the moment dummy output to comply with CTF encoded inputs
+  std::vector<uint32_t> patterns;
+  pc.outputs().snapshot(Output{o2::header::gDataOriginTOF, "PATTERNS", 0, Lifetime::Timeframe}, patterns);
 
-  LOG(INFO) << "TOF: Sending ROMode= " << roMode << " to GRPUpdater";
-  pc.outputs().snapshot(Output{o2::header::gDataOriginTOF, "ROMode", 0, Lifetime::Timeframe}, roMode);
+  // RS this is a hack to be removed once we have correct propagation of the firstTForbit by the framework
+  auto setFirstTFOrbit = [&](const Output& spec, uint32_t orb) {
+    auto* hd = pc.outputs().findMessageHeader(spec);
+    if (!hd) {
+      throw std::runtime_error(o2::utils::concat_string("failed to find output message header for ", spec.origin.str, "/", spec.description.str, "/", std::to_string(spec.subSpec)));
+    }
+    hd->firstTForbit = orb;
+  };
+
+  setFirstTFOrbit(Output{o2::header::gDataOriginTOF, "DIGITS", 0, Lifetime::Timeframe}, mInitOrbit);
+  setFirstTFOrbit(Output{o2::header::gDataOriginTOF, "READOUTWINDOW", 0, Lifetime::Timeframe}, mInitOrbit);
 
   mDecoder.clear();
 
@@ -80,6 +117,14 @@ void CompressedDecodingTask::run(ProcessingContext& pc)
 {
   LOG(INFO) << "CompressedDecoding run";
   mTimer.Start(false);
+
+  if (pc.inputs().getNofParts(0)) {
+    //RS set the 1st orbit of the TF from the O2 header, relying on rdhHandler is not good (in fact, the RDH might be eliminated in the derived data)
+    const auto* dh = o2::header::get<o2::header::DataHeader*>(pc.inputs().getByPos(0).header);
+    mInitOrbit = dh->firstTForbit;
+  }
+
+  mDecoder.setFirstIR({0, mInitOrbit});
 
   /** loop over inputs routes **/
   for (auto iit = pc.inputs().begin(), iend = pc.inputs().end(); iit != iend; ++iit) {
@@ -118,16 +163,17 @@ void CompressedDecodingTask::rdhHandler(const o2::header::RAWDataHeader* rdh)
 {
 
   // rdh close
-  if (rdh->stop && rdh->heartbeatOrbit == o2::raw::HBFUtils::Instance().getNOrbitsPerTF() - 1 + mInitOrbit) {
+  const auto& rdhr = *rdh;
+  if (RDHUtils::getStop(rdhr) && RDHUtils::getHeartBeatOrbit(rdhr) == o2::raw::HBFUtils::Instance().getNOrbitsPerTF() - 1 + mInitOrbit) {
     mNCrateCloseTF++;
     //    printf("New TF close RDH %d\n", int(rdh->feeId));
     return;
   }
 
   // rdh open
-  if ((rdh->pageCnt == 0) && (rdh->triggerType & o2::trigger::TF)) {
+  if ((RDHUtils::getPageCounter(rdhr) == 0) && (RDHUtils::getTriggerType(rdhr) & o2::trigger::TF)) {
     mNCrateOpenTF++;
-    mInitOrbit = rdh->heartbeatOrbit;
+    mInitOrbit = RDHUtils::getHeartBeatOrbit(rdhr); // RSTODO this may be eliminated once the framework will start to propagated the dh.firstTForbit
     //    printf("New TF open RDH %d\n", int(rdh->feeId));
   }
 };
@@ -146,7 +192,7 @@ DataProcessorSpec getCompressedDecodingSpec(const std::string& inputDesc)
   std::vector<OutputSpec> outputs;
   outputs.emplace_back(o2::header::gDataOriginTOF, "DIGITS", 0, Lifetime::Timeframe);
   outputs.emplace_back(o2::header::gDataOriginTOF, "READOUTWINDOW", 0, Lifetime::Timeframe);
-  outputs.emplace_back(o2::header::gDataOriginTOF, "ROMode", 0, Lifetime::Timeframe);
+  outputs.emplace_back(o2::header::gDataOriginTOF, "PATTERNS", 0, Lifetime::Timeframe); // RS FIXME: At the moment dummy output to comply with CTF encoded inputs
 
   return DataProcessorSpec{
     "tof-compressed-decoder",

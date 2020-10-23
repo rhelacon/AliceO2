@@ -15,27 +15,30 @@
 
 #include "DetectorsBase/Propagator.h"
 #include "GlobalTrackingWorkflow/TrackTPCITSReaderSpec.h"
-#include "TOFWorkflow/DigitReaderSpec.h"
-#include "TOFWorkflow/TOFDigitWriterSpec.h"
-#include "TOFWorkflow/ClusterReaderSpec.h"
-#include "TOFWorkflow/TOFClusterizerSpec.h"
-#include "TOFWorkflow/TOFClusterWriterSpec.h"
+#include "TOFWorkflowUtils/DigitReaderSpec.h"
+#include "TOFWorkflowUtils/TOFDigitWriterSpec.h"
+#include "TOFWorkflowUtils/ClusterReaderSpec.h"
+#include "TOFWorkflowUtils/TOFClusterizerSpec.h"
+#include "TOFWorkflowUtils/TOFClusterWriterSpec.h"
 #include "TOFWorkflow/TOFMatchedWriterSpec.h"
 #include "TOFWorkflow/TOFCalibWriterSpec.h"
-#include "TOFWorkflow/TOFRawWriterSpec.h"
-#include "TOFWorkflow/CompressedDecodingTask.h"
+#include "TOFWorkflowUtils/TOFRawWriterSpec.h"
+#include "TOFWorkflowUtils/CompressedDecodingTask.h"
+#include "TOFWorkflowUtils/EntropyEncoderSpec.h"
+#include "TOFWorkflowUtils/EntropyDecoderSpec.h"
 #include "Framework/WorkflowSpec.h"
 #include "Framework/ConfigParamSpec.h"
 #include "TOFWorkflow/RecoWorkflowSpec.h"
 #include "Algorithm/RangeTokenizer.h"
 #include "FairLogger.h"
 #include "CommonUtils/ConfigurableParam.h"
+#include "DetectorsCommonDataFormats/NameConf.h"
 
 // GRP
 #include "DataFormatsParameters/GRPObject.h"
 
 // FIT
-#include "FITWorkflow/FT0RecPointReaderSpec.h"
+#include "FT0Workflow/RecPointReaderSpec.h"
 
 #include <string>
 #include <stdexcept>
@@ -45,8 +48,8 @@
 // including Framework/runDataProcessing
 void customize(std::vector<o2::framework::ConfigParamSpec>& workflowOptions)
 {
-  workflowOptions.push_back(ConfigParamSpec{"input-type", o2::framework::VariantType::String, "digits", {"digits, raw, clusters, TBI"}});
-  workflowOptions.push_back(ConfigParamSpec{"output-type", o2::framework::VariantType::String, "clusters,matching-info,calib-info", {"digits,clusters, matching-info, calib-info, TBI"}});
+  workflowOptions.push_back(ConfigParamSpec{"input-type", o2::framework::VariantType::String, "digits", {"digits, raw, clusters, ctf"}});
+  workflowOptions.push_back(ConfigParamSpec{"output-type", o2::framework::VariantType::String, "clusters,matching-info,calib-info", {"digits, clusters, matching-info, calib-info, raw, ctf"}});
   workflowOptions.push_back(ConfigParamSpec{"disable-mc", o2::framework::VariantType::Bool, false, {"disable sending of MC information, TBI"}});
   workflowOptions.push_back(ConfigParamSpec{"tof-sectors", o2::framework::VariantType::String, "0-17", {"TOF sector range, e.g. 5-7,8,9 ,TBI"}});
   workflowOptions.push_back(ConfigParamSpec{"tof-lanes", o2::framework::VariantType::Int, 1, {"number of parallel lanes up to the matcher, TBI"}});
@@ -80,16 +83,17 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 {
   WorkflowSpec specs;
 
-  o2::base::Propagator::initFieldFromGRP("o2sim_grp.root");
-  auto grp = o2::parameters::GRPObject::loadFrom("o2sim_grp.root");
-
-  if (!grp) {
-    LOG(ERROR) << "This workflow needs a valid GRP file to start";
-    return specs;
+  if (!cfgc.helpOnCommandLine()) {
+    std::string inputGRP = o2::base::NameConf::getGRPFileName();
+    o2::base::Propagator::initFieldFromGRP(inputGRP);
+    const auto grp = o2::parameters::GRPObject::loadFrom(inputGRP);
+    if (!grp) {
+      LOG(ERROR) << "This workflow needs a valid GRP file to start";
+      return specs;
+    }
+    o2::conf::ConfigurableParam::updateFromString(cfgc.options().get<std::string>("configKeyValues"));
+    //  o2::conf::ConfigurableParam::writeINI("o2tofrecoflow_configuration.ini");
   }
-  o2::conf::ConfigurableParam::updateFromString(cfgc.options().get<std::string>("configKeyValues"));
-  //  o2::conf::ConfigurableParam::writeINI("o2tofrecoflow_configuration.ini");
-
   // the lane configuration defines the subspecification ids to be distributed among the lanes.
   // auto tofSectors = o2::RangeTokenizer::tokenize<int>(cfgc.options().get<std::string>("tof-sectors"));
   // std::vector<int> laneConfiguration = tofSectors;
@@ -102,6 +106,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
   bool writecalib = 0;
   bool writedigit = 0;
   bool writeraw = 0;
+  bool writectf = 0;
 
   if (outputType.rfind("clusters") < outputType.size())
     writecluster = 1;
@@ -113,18 +118,21 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
     writedigit = 1;
   if (outputType.rfind("raw") < outputType.size())
     writeraw = 1;
+  if (outputType.rfind("ctf") < outputType.size())
+    writectf = 1;
 
   bool dgtinput = 0;
+  bool clusterinput = 0;
+  bool rawinput = 0;
+  bool ctfinput = 0;
   if (inputType == "digits") {
     dgtinput = 1;
-  }
-  bool clusterinput = 0;
-  if (inputType == "clusters") {
+  } else if (inputType == "clusters") {
     clusterinput = 1;
-  }
-  bool rawinput = 0;
-  if (inputType == "raw") {
+  } else if (inputType == "raw") {
     rawinput = 1;
+  } else if (inputType == "ctf") {
+    ctfinput = 1;
   }
 
   auto useMC = !cfgc.options().get<bool>("disable-mc");
@@ -167,6 +175,15 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
       LOG(INFO) << "Insert TOF Digit Writer";
       specs.emplace_back(o2::tof::getTOFDigitWriterSpec(0));
     }
+  } else if (ctfinput) {
+    LOG(INFO) << "Insert TOF CTF decoder";
+    specs.emplace_back(o2::tof::getEntropyDecoderSpec());
+
+    if (writedigit && !disableRootOutput) {
+      // add TOF digit writer without mc labels
+      LOG(INFO) << "Insert TOF Digit Writer";
+      specs.emplace_back(o2::tof::getTOFDigitWriterSpec(0));
+    }
   }
 
   if (!clusterinput && writecluster) {
@@ -179,7 +196,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
   }
 
   if (useFIT) {
-    specs.emplace_back(o2::ft0::getFT0RecPointReaderSpec(useMC));
+    specs.emplace_back(o2::ft0::getRecPointReaderSpec(useMC));
   }
 
   if (writematching || writecalib) {
@@ -199,6 +216,11 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
       specs.emplace_back(o2::tof::getTOFCalibWriterSpec());
     }
   }
+  if (writectf) {
+    LOG(INFO) << "Insert TOF CTF encoder";
+    specs.emplace_back(o2::tof::getEntropyEncoderSpec());
+  }
+
   LOG(INFO) << "Number of active devices = " << specs.size();
 
   return std::move(specs);

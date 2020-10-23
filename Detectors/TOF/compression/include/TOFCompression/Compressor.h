@@ -28,20 +28,28 @@ namespace o2
 namespace tof
 {
 
-template <typename RAWDataHeader, bool verbose>
+template <typename RDH, bool verbose>
 class Compressor
 {
 
  public:
-  Compressor() = default;
-  ~Compressor() = default;
+  Compressor() { mDecoderSaveBuffer = new char[mDecoderSaveBufferSize]; };
+  ~Compressor() { delete[] mDecoderSaveBuffer; };
 
   inline bool run()
   {
     rewind();
     if (mDecoderCONET) {
       mDecoderPointerMax = reinterpret_cast<const uint32_t*>(mDecoderBuffer + mDecoderBufferSize);
-      return processDRM();
+      while (mDecoderPointer < mDecoderPointerMax) {
+        mEventCounter++;
+        processDRM();
+        if (mDecoderFatal)
+          mFatalCounter++;
+        if (mDecoderError)
+          mErrorCounter++;
+      }
+      return false;
     }
     while (!processHBF())
       ;
@@ -108,12 +116,13 @@ class Compressor
   const uint32_t* mDecoderPointerNext = nullptr;
   uint8_t mDecoderNextWord = 1;
   uint8_t mDecoderNextWordStep = 2;
-  const RAWDataHeader* mDecoderRDH;
+  const RDH* mDecoderRDH;
   bool mDecoderCONET = false;
   bool mDecoderVerbose = false;
   bool mDecoderError = false;
   bool mDecoderFatal = false;
-  char mDecoderSaveBuffer[1048576];
+  char* mDecoderSaveBuffer = nullptr;
+  const int mDecoderSaveBufferSize = 33554432;
   uint32_t mDecoderSaveBufferDataSize = 0;
   uint32_t mDecoderSaveBufferDataLeft = 0;
 
@@ -130,7 +139,7 @@ class Compressor
   uint32_t* mEncoderPointerMax = nullptr;
   uint32_t* mEncoderPointerStart = nullptr;
   uint8_t mEncoderNextWord = 1;
-  RAWDataHeader* mEncoderRDH;
+  RDH* mEncoderRDH;
   bool mEncoderVerbose = false;
 
   /** checker private functions and data members **/
@@ -191,7 +200,9 @@ class Compressor
     uint8_t trmErrors[10][2];
     bool hasHits[10][2];
     bool hasErrors[10][2];
-    bool decodeError;
+    bool drmDecodeError;
+    bool ltmDecodeError;
+    bool trmDecodeError[10];
   } mDecoderSummary = {nullptr};
 
   struct SpiderSummary_t {

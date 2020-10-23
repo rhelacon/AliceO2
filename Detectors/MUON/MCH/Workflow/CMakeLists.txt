@@ -9,19 +9,11 @@
 # submit itself to any jurisdiction.
 
 o2_add_library(MCHWorkflow
-               SOURCES src/DataDecoderSpec.cxx src/PreClusterFinderSpec.cxx
+               SOURCES src/DataDecoderSpec.cxx src/PreClusterFinderSpec.cxx src/ClusterFinderOriginalSpec.cxx
                TARGETVARNAME targetName
                PUBLIC_LINK_LIBRARIES O2::Framework O2::DPLUtils O2::MCHRawDecoder Boost::program_options
                                      O2::MCHRawImplHelpers RapidJSON::RapidJSON O2::MCHMappingInterface O2::MCHPreClustering
-                                     O2::MCHMappingImpl3 O2::MCHRawElecMap O2::MCHBase O2::MCHPreClustering)
-
-o2_add_executable(
-        file-to-digits-workflow
-        SOURCES src/file-to-digits-workflow.cxx
-        COMPONENT_NAME mch
-        PUBLIC_LINK_LIBRARIES O2::Framework O2::DPLUtils O2::MCHRawDecoder Boost::program_options
-                              O2::MCHRawImplHelpers O2::MCHMappingInterface
-                              O2::MCHMappingImpl3 O2::MCHRawElecMap O2::MCHBase)
+                                     O2::MCHMappingImpl4 O2::MCHRawElecMap O2::MCHBase O2::MCHClustering)
 
 o2_add_executable(
         cru-page-reader-workflow
@@ -33,11 +25,17 @@ o2_add_executable(
         digits-sink-workflow
         SOURCES src/digits-sink-workflow.cxx
         COMPONENT_NAME mch
-        PUBLIC_LINK_LIBRARIES O2::Framework O2::DPLUtils Boost::program_options O2::MCHBase)
+        PUBLIC_LINK_LIBRARIES O2::Framework O2::DPLUtils Boost::program_options O2::MCHBase O2::MCHRawDecoder)
 
 o2_add_executable(
         raw-to-digits-workflow
         SOURCES src/raw-to-digits-workflow.cxx
+        COMPONENT_NAME mch
+        PUBLIC_LINK_LIBRARIES O2::MCHWorkflow)
+
+o2_add_executable(
+        cru-page-to-digits-workflow
+        SOURCES src/cru-page-to-digits-workflow.cxx
         COMPONENT_NAME mch
         PUBLIC_LINK_LIBRARIES O2::MCHWorkflow)
 
@@ -56,5 +54,17 @@ o2_add_executable(
 o2_add_executable(
         preclusters-sink-workflow
         SOURCES src/PreClusterSinkSpec.cxx src/preclusters-sink-workflow.cxx
+        COMPONENT_NAME mch
+        PUBLIC_LINK_LIBRARIES O2::MCHWorkflow)
+
+o2_add_executable(
+        preclusters-to-clusters-original-workflow
+        SOURCES src/preclusters-to-clusters-original-workflow.cxx
+        COMPONENT_NAME mch
+        PUBLIC_LINK_LIBRARIES O2::MCHWorkflow)
+
+o2_add_executable(
+        clusters-sink-workflow
+        SOURCES src/ClusterSinkSpec.cxx src/clusters-sink-workflow.cxx
         COMPONENT_NAME mch
         PUBLIC_LINK_LIBRARIES O2::MCHWorkflow)

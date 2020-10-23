@@ -54,6 +54,7 @@ class ConfigParamRegistry
     try {
       if constexpr (std::is_same_v<T, int> ||
                     std::is_same_v<T, int64_t> ||
+                    std::is_same_v<T, long> ||
                     std::is_same_v<T, float> ||
                     std::is_same_v<T, double> ||
                     std::is_same_v<T, bool>) {
@@ -76,6 +77,7 @@ class ConfigParamRegistry
       throw std::invalid_argument(std::string("error parsing option: ") + key);
     }
   }
+
  private:
   std::unique_ptr<ConfigParamStore> mStore;
 };

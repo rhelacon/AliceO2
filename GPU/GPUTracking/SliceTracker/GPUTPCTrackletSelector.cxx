@@ -41,6 +41,7 @@ GPUdii() void GPUTPCTrackletSelector::Thread<0>(int nBlocks, int nThreads, int i
         return;
       }
     }
+    GPUbarrierWarp();
 
     GPUglobalref() MEM_GLOBAL(GPUTPCTracklet) & GPUrestrict() tracklet = tracker.Tracklets()[itr];
     const int kMaxRowGap = 4;
@@ -58,6 +59,7 @@ GPUdii() void GPUTPCTrackletSelector::Thread<0>(int nBlocks, int nThreads, int i
     int nHits = 0;
     const int minHits = tracker.Param().rec.MinNTrackClusters == -1 ? GPUCA_TRACKLET_SELECTOR_MIN_HITS(tracklet.Param().QPt()) : tracker.Param().rec.MinNTrackClusters;
 
+    GPUCA_UNROLL(, U(1))
     for (irow = firstRow; irow <= lastRow && lastRow - irow + nHits >= minHits; irow++) {
       gap++;
       calink ih = tracker.TrackletRowHits()[tracklet.FirstHit() + (irow - firstRow)];
@@ -87,7 +89,11 @@ GPUdii() void GPUTPCTrackletSelector::Thread<0>(int nBlocks, int nThreads, int i
           unsigned int itrout = CAMath::AtomicAdd(tracker.NTracks(), 1u);
           unsigned int nFirstTrackHit = CAMath::AtomicAdd(tracker.NTrackHits(), (unsigned int)nHits);
           if (itrout >= tracker.NMaxTracks() || nFirstTrackHit + nHits > tracker.NMaxTrackHits()) {
-            tracker.CommonMemory()->kernelError = (itrout >= tracker.NMaxTracks()) ? GPUCA_ERROR_TRACK_OVERFLOW : GPUCA_ERROR_TRACK_HIT_OVERFLOW;
+            if (itrout >= tracker.NMaxTracks()) {
+              tracker.raiseError(GPUErrors::ERROR_TRACK_OVERFLOW, itrout, tracker.NMaxTracks());
+            } else {
+              tracker.raiseError(GPUErrors::ERROR_TRACK_HIT_OVERFLOW, nFirstTrackHit + nHits, tracker.NMaxTrackHits());
+            }
             CAMath::AtomicExch(tracker.NTracks(), 0u);
             if (nFirstTrackHit + nHits > tracker.NMaxTrackHits()) {
               CAMath::AtomicExch(tracker.NTrackHits(), tracker.NMaxTrackHits());

@@ -96,8 +96,8 @@ namespace o2
 namespace tof
 {
 
-template <typename RAWDataHeader, bool verbose>
-bool Compressor<RAWDataHeader, verbose>::processHBF()
+template <typename RDH, bool verbose>
+bool Compressor<RDH, verbose>::processHBF()
 {
 
   if (verbose && mDecoderVerbose) {
@@ -107,8 +107,8 @@ bool Compressor<RAWDataHeader, verbose>::processHBF()
               << std::endl;
   }
 
-  mDecoderRDH = reinterpret_cast<const RAWDataHeader*>(mDecoderPointer);
-  mEncoderRDH = reinterpret_cast<RAWDataHeader*>(mEncoderPointer);
+  mDecoderRDH = reinterpret_cast<const RDH*>(mDecoderPointer);
+  mEncoderRDH = reinterpret_cast<RDH*>(mEncoderPointer);
   auto rdh = mDecoderRDH;
 
   /** loop until RDH close **/
@@ -132,7 +132,7 @@ bool Compressor<RAWDataHeader, verbose>::processHBF()
     mDecoderSaveBufferDataSize += drmPayload;
 
     /** move to next RDH **/
-    rdh = reinterpret_cast<const RAWDataHeader*>(reinterpret_cast<const char*>(rdh) + offsetToNext);
+    rdh = reinterpret_cast<const RDH*>(reinterpret_cast<const char*>(rdh) + offsetToNext);
 
     /** check next RDH is within buffer **/
     if (reinterpret_cast<const char*>(rdh) < mDecoderBuffer + mDecoderBufferSize)
@@ -181,7 +181,7 @@ bool Compressor<RAWDataHeader, verbose>::processHBF()
 
   /** copy RDH close to encoder buffer **/
   /** CAREFUL WITH THE PAGE COUNTER **/
-  mEncoderRDH = reinterpret_cast<RAWDataHeader*>(mEncoderPointer);
+  mEncoderRDH = reinterpret_cast<RDH*>(mEncoderPointer);
   std::memcpy(mEncoderRDH, rdh, rdh->headerSize);
   mEncoderRDH->memorySize = rdh->headerSize;
   mEncoderRDH->offsetToNext = mEncoderRDH->memorySize;
@@ -205,8 +205,8 @@ bool Compressor<RAWDataHeader, verbose>::processHBF()
   return true;
 }
 
-template <typename RAWDataHeader, bool verbose>
-bool Compressor<RAWDataHeader, verbose>::processDRM()
+template <typename RDH, bool verbose>
+bool Compressor<RDH, verbose>::processDRM()
 {
 
   if (verbose && mDecoderVerbose) {
@@ -476,6 +476,7 @@ bool Compressor<RAWDataHeader, verbose>::processDRM()
 
     /** decode error **/
     mDecoderError = true;
+    mDecoderSummary.drmDecodeError = true;
 
     if (verbose && mDecoderVerbose) {
       printf("%s %08x [ERROR] trying to recover DRM decode stream %s \n", colorRed, *mDecoderPointer, colorReset);
@@ -501,8 +502,8 @@ bool Compressor<RAWDataHeader, verbose>::processDRM()
   return false;
 }
 
-template <typename RAWDataHeader, bool verbose>
-bool Compressor<RAWDataHeader, verbose>::processLTM()
+template <typename RDH, bool verbose>
+bool Compressor<RDH, verbose>::processLTM()
 {
   /** process LTM **/
 
@@ -544,8 +545,8 @@ bool Compressor<RAWDataHeader, verbose>::processLTM()
   return false;
 }
 
-template <typename RAWDataHeader, bool verbose>
-bool Compressor<RAWDataHeader, verbose>::processTRM()
+template <typename RDH, bool verbose>
+bool Compressor<RDH, verbose>::processTRM()
 {
   /** process TRM **/
 
@@ -617,6 +618,7 @@ bool Compressor<RAWDataHeader, verbose>::processTRM()
 
     /** decode error **/
     mDecoderError = true;
+    mDecoderSummary.trmDecodeError[itrm] = true;
     if (verbose && mDecoderVerbose) {
       printf("%s %08x [ERROR] breaking TRM decode stream %s \n", colorRed, *mDecoderPointer, colorReset);
     }
@@ -633,8 +635,8 @@ bool Compressor<RAWDataHeader, verbose>::processTRM()
   return false;
 }
 
-template <typename RAWDataHeader, bool verbose>
-bool Compressor<RAWDataHeader, verbose>::processTRMchain(int itrm, int ichain)
+template <typename RDH, bool verbose>
+bool Compressor<RDH, verbose>::processTRMchain(int itrm, int ichain)
 {
   /** process TRM chain **/
 
@@ -714,6 +716,7 @@ bool Compressor<RAWDataHeader, verbose>::processTRMchain(int itrm, int ichain)
 
     /** decode error **/
     mDecoderError = true;
+    mDecoderSummary.trmDecodeError[itrm] = true;
     if (verbose && mDecoderVerbose) {
       printf("%s %08x [ERROR] breaking TRM Chain-%c decode stream %s \n", colorRed, *mDecoderPointer, ichain == 0 ? 'A' : 'B', colorReset);
     }
@@ -730,8 +733,8 @@ bool Compressor<RAWDataHeader, verbose>::processTRMchain(int itrm, int ichain)
   return false;
 }
 
-template <typename RAWDataHeader, bool verbose>
-bool Compressor<RAWDataHeader, verbose>::decoderParanoid()
+template <typename RDH, bool verbose>
+bool Compressor<RDH, verbose>::decoderParanoid()
 {
   /** decoder paranoid **/
 
@@ -743,8 +746,8 @@ bool Compressor<RAWDataHeader, verbose>::decoderParanoid()
   return false;
 }
 
-template <typename RAWDataHeader, bool verbose>
-void Compressor<RAWDataHeader, verbose>::encoderSpider(int itrm)
+template <typename RDH, bool verbose>
+void Compressor<RDH, verbose>::encoderSpider(int itrm)
 {
   /** encoder spider **/
 
@@ -850,8 +853,8 @@ void Compressor<RAWDataHeader, verbose>::encoderSpider(int itrm)
   }
 }
 
-template <typename RAWDataHeader, bool verbose>
-bool Compressor<RAWDataHeader, verbose>::checkerCheck()
+template <typename RDH, bool verbose>
+bool Compressor<RDH, verbose>::checkerCheck()
 {
   /** checker check **/
 
@@ -883,7 +886,26 @@ bool Compressor<RAWDataHeader, verbose>::checkerCheck()
     }
     mDecoderSummary = {nullptr};
     mCheckerSummary.nDiagnosticWords++;
+    for (int itrm = 0; itrm < 10; ++itrm) {
+      mDecoderSummary.trmDataHeader[itrm] = nullptr;
+      mDecoderSummary.trmDataTrailer[itrm] = nullptr;
+      for (int ichain = 0; ichain < 2; ++ichain) {
+        mDecoderSummary.trmChainHeader[itrm][ichain] = nullptr;
+        mDecoderSummary.trmChainTrailer[itrm][ichain] = nullptr;
+        mDecoderSummary.trmErrors[itrm][ichain] = 0;
+        mDecoderSummary.trmErrors[itrm][ichain] = 0;
+      }
+    }
     return true;
+  }
+
+  /** check DRM decode error **/
+  if (mDecoderSummary.drmDecodeError) {
+    mCheckerSummary.DiagnosticWord[0] |= diagnostic::DRM_DECODE_ERROR;
+    if (verbose && mCheckerVerbose) {
+      printf(" DRM decode error \n");
+    }
+    mDecoderSummary.drmDecodeError = false;
   }
 
   /** check DRM Data Trailer **/
@@ -897,6 +919,7 @@ bool Compressor<RAWDataHeader, verbose>::checkerCheck()
     }
     mDecoderSummary = {nullptr};
     mCheckerSummary.nDiagnosticWords++;
+
     return true;
   }
 
@@ -1053,7 +1076,18 @@ bool Compressor<RAWDataHeader, verbose>::checkerCheck()
       if (verbose && mCheckerVerbose) {
         printf(" Missing TRM Data Header (slotId=%u) \n", slotId);
       }
+      mDecoderSummary.trmErrors[itrm][0] = 0;
+      mDecoderSummary.trmErrors[itrm][1] = 0;
       continue;
+    }
+
+    /** check TRM decode error **/
+    if (mDecoderSummary.trmDecodeError[itrm]) {
+      mCheckerSummary.DiagnosticWord[iword] |= diagnostic::TRM_DECODE_ERROR;
+      if (verbose && mCheckerVerbose) {
+        printf(" Decode error in TRM (slotId=%u) \n", slotId);
+      }
+      mDecoderSummary.trmDecodeError[itrm] = false;
     }
 
     /** check TRM Data Trailer **/
@@ -1063,6 +1097,8 @@ bool Compressor<RAWDataHeader, verbose>::checkerCheck()
         printf(" Missing TRM Trailer (slotId=%u) \n", slotId);
       }
       mDecoderSummary.trmDataHeader[itrm] = nullptr;
+      mDecoderSummary.trmErrors[itrm][0] = 0;
+      mDecoderSummary.trmErrors[itrm][1] = 0;
       continue;
     }
 
@@ -1123,6 +1159,7 @@ bool Compressor<RAWDataHeader, verbose>::checkerCheck()
         if (verbose && mCheckerVerbose) {
           printf(" Missing TRM Chain Header (slotId=%u, chain=%d) \n", slotId, ichain);
         }
+        mDecoderSummary.trmErrors[itrm][ichain] = 0;
         continue;
       }
 
@@ -1133,6 +1170,7 @@ bool Compressor<RAWDataHeader, verbose>::checkerCheck()
           printf(" Missing TRM Chain Trailer (slotId=%u, chain=%d) \n", slotId, ichain);
         }
         mDecoderSummary.trmChainHeader[itrm][ichain] = nullptr;
+        mDecoderSummary.trmErrors[itrm][ichain] = 0;
         continue;
       }
 
@@ -1220,8 +1258,8 @@ bool Compressor<RAWDataHeader, verbose>::checkerCheck()
   return false;
 }
 
-template <typename RAWDataHeader, bool verbose>
-void Compressor<RAWDataHeader, verbose>::checkerCheckRDH()
+template <typename RDH, bool verbose>
+void Compressor<RDH, verbose>::checkerCheckRDH()
 {
 }
 
@@ -1319,8 +1357,8 @@ void Compressor<o2::header::RAWDataHeaderV6, false>::checkerCheckRDH()
   }
 }
 
-template <typename RAWDataHeader, bool verbose>
-void Compressor<RAWDataHeader, verbose>::resetCounters()
+template <typename RDH, bool verbose>
+void Compressor<RDH, verbose>::resetCounters()
 {
   mEventCounter = 0;
   mFatalCounter = 0;
@@ -1334,8 +1372,8 @@ void Compressor<RAWDataHeader, verbose>::resetCounters()
   }
 }
 
-template <typename RAWDataHeader, bool verbose>
-void Compressor<RAWDataHeader, verbose>::checkSummary()
+template <typename RDH, bool verbose>
+void Compressor<RDH, verbose>::checkSummary()
 {
   char chname[2] = {'a', 'b'};
 

@@ -100,8 +100,7 @@ class TOFDPLRecoWorkflowTask
       toflab = std::move(*toflabel);
     }
 
-    mMatcher.initWorkflow(tracksRO, clustersRO, toflab, itslab, tpclab);
-    mMatcher.run();
+    mMatcher.run(tracksRO, clustersRO, toflab, itslab, tpclab);
 
     // in run_match_tof aggiugnere esplicitamente la chiamata a fill del tree (nella classe MatchTOF) e il metodo per leggere i vettori di output
 
@@ -116,7 +115,7 @@ class TOFDPLRecoWorkflowTask
       pc.outputs().snapshot(Output{o2::header::gDataOriginTOF, "MATCHTPCINFOSMC", 0, Lifetime::Timeframe}, mMatcher.getMatchedTPCLabelsVector());
       pc.outputs().snapshot(Output{o2::header::gDataOriginTOF, "MATCHITSINFOSMC", 0, Lifetime::Timeframe}, mMatcher.getMatchedITSLabelsVector());
     }
-    pc.outputs().snapshot(Output{o2::header::gDataOriginTOF, "CALIBINFOS", 0, Lifetime::Timeframe}, mMatcher.getCalibVector());
+    pc.outputs().snapshot(Output{o2::header::gDataOriginTOF, "CALIBDATA", 0, Lifetime::Timeframe}, mMatcher.getCalibVector());
     mTimer.Stop();
   }
 
@@ -153,7 +152,7 @@ o2::framework::DataProcessorSpec getTOFRecoWorkflowSpec(bool useMC, bool useFIT)
     outputs.emplace_back(o2::header::gDataOriginTOF, "MATCHTPCINFOSMC", 0, Lifetime::Timeframe);
     outputs.emplace_back(o2::header::gDataOriginTOF, "MATCHITSINFOSMC", 0, Lifetime::Timeframe);
   }
-  outputs.emplace_back(o2::header::gDataOriginTOF, "CALIBINFOS", 0, Lifetime::Timeframe);
+  outputs.emplace_back(o2::header::gDataOriginTOF, "CALIBDATA", 0, Lifetime::Timeframe);
 
   return DataProcessorSpec{
     "TOFRecoWorkflow",

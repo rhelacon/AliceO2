@@ -16,8 +16,8 @@ if(pythia_FOUND)
   set(pythiaTarget MC::Pythia)
 endif()
 
-if(HepMC_FOUND)
-  set(hepmcTarget MC::HepMC)
+if(HepMC3_FOUND)
+  set(hepmcTarget MC::HepMC3)
 endif()
 
 o2_add_library(Generators
@@ -25,19 +25,25 @@ o2_add_library(Generators
 	       	       src/Trigger.cxx
 	       	       src/TriggerParticle.cxx
                        src/GeneratorTGenerator.cxx
+                       src/GeneratorExternalParam.cxx
                        src/GeneratorFromFile.cxx
                        src/PDG.cxx
                        src/PrimaryGenerator.cxx
                        src/InteractionDiamondParam.cxx
+                       src/TriggerExternalParam.cxx
                        src/TriggerParticleParam.cxx
                        src/BoxGunParam.cxx
 		       src/QEDGenParam.cxx
+                       src/GenCosmicsParam.cxx
                        src/GeneratorFactory.cxx
                        $<$<BOOL:${pythia6_FOUND}>:src/GeneratorPythia6.cxx>
                        $<$<BOOL:${pythia6_FOUND}>:src/GeneratorPythia6Param.cxx>
                        $<$<BOOL:${pythia_FOUND}>:src/GeneratorPythia8.cxx>
+                       $<$<BOOL:${pythia_FOUND}>:src/DecayerPythia8.cxx>
                        $<$<BOOL:${pythia_FOUND}>:src/GeneratorPythia8Param.cxx>
-                       $<$<BOOL:${HepMC_FOUND}>:src/GeneratorHepMC.cxx>
+                       $<$<BOOL:${pythia_FOUND}>:src/DecayerPythia8Param.cxx>
+                       $<$<BOOL:${HepMC3_FOUND}>:src/GeneratorHepMC.cxx>
+                       $<$<BOOL:${HepMC3_FOUND}>:src/GeneratorHepMCParam.cxx>
                PUBLIC_LINK_LIBRARIES FairRoot::Base O2::SimConfig O2::CommonUtils
                                      O2::SimulationDataFormat ${pythia6Target} ${pythiaTarget} ${hepmcTarget}
                                      FairRoot::Gen
@@ -51,7 +57,7 @@ if(pythia_FOUND)
   target_compile_definitions(${targetName} PUBLIC GENERATORS_WITH_PYTHIA8)
 endif()
 
-if(HepMC_FOUND)
+if(HepMC3_FOUND)
   target_compile_definitions(${targetName} PUBLIC GENERATORS_WITH_HEPMC3)
 endif()
 
@@ -60,14 +66,17 @@ set(headers
     include/Generators/Trigger.h
     include/Generators/TriggerParticle.h
     include/Generators/GeneratorTGenerator.h
+    include/Generators/GeneratorExternalParam.h
     include/Generators/GeneratorFromFile.h
     include/Generators/PDG.h
     include/Generators/PrimaryGenerator.h
     include/Generators/InteractionDiamondParam.h
+    include/Generators/TriggerExternalParam.h
     include/Generators/TriggerParticleParam.h
     include/Generators/ConfigurationMacroHelper.h
     include/Generators/BoxGunParam.h
-    include/Generators/QEDGenParam.h)
+    include/Generators/QEDGenParam.h
+    include/Generators/GenCosmicsParam.h)
 
 if (pythia6_FOUND)
    list(APPEND headers include/Generators/GeneratorPythia6.h
@@ -75,13 +84,17 @@ if (pythia6_FOUND)
 endif()
 
 if(pythia_FOUND)
-  list(APPEND headers include/Generators/GeneratorPythia8.h
+  list(APPEND headers 
+              include/Generators/GeneratorPythia8.h
+              include/Generators/DecayerPythia8.h
               include/Generators/GeneratorPythia8Param.h
+              include/Generators/DecayerPythia8Param.h
               include/Generators/GeneratorFactory.h)
 endif()
 
-if(HepMC_FOUND)
+if(HepMC3_FOUND)
   list(APPEND headers include/Generators/GeneratorHepMC.h)
+  list(APPEND headers include/Generators/GeneratorHepMCParam.h)
 endif()
 
 o2_target_root_dictionary(Generators HEADERS ${headers})
@@ -97,6 +110,11 @@ endif()
 
 if(doBuildSimulation)
   o2_add_test_root_macro(share/external/QEDLoader.C
+                         PUBLIC_LINK_LIBRARIES O2::Generators
+                                               O2::SimConfig
+                                               LABELS generators)
+
+  o2_add_test_root_macro(share/external/GenCosmicsLoader.C
                          PUBLIC_LINK_LIBRARIES O2::Generators
                                                O2::SimConfig
                                                LABELS generators)
@@ -120,14 +138,6 @@ o2_add_test_root_macro(share/egconfig/pythia8_userhooks_charm.C
                        LABELS generators)
 endif()		       
 		     
-install(FILES share/external/extgen.C share/external/pythia6.C
-              share/external/tgenerator.C share/external/QEDLoader.C share/external/QEDepem.C
-	      share/external/trigger_multiplicity.C
-	      share/external/trigger_mpi.C
-        DESTINATION share/Generators/external/)
-
-install(FILES share/egconfig/pythia8_inel.cfg
-              share/egconfig/pythia8_hf.cfg
-	      share/egconfig/pythia8_hi.cfg
-	      share/egconfig/pythia8_userhooks_charm.C
-        DESTINATION share/Generators/egconfig/)
+o2_data_file(COPY share/external DESTINATION Generators)
+o2_data_file(COPY share/egconfig DESTINATION Generators)
+o2_data_file(COPY share/pythia8 DESTINATION Generators)

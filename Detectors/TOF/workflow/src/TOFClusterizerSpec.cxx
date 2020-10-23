@@ -8,7 +8,7 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#include "TOFWorkflow/TOFClusterizerSpec.h"
+#include "TOFWorkflowUtils/TOFClusterizerSpec.h"
 #include "Framework/ControlService.h"
 #include "Framework/DataProcessorSpec.h"
 #include "Framework/DataRefUtils.h"
@@ -28,7 +28,11 @@
 #include <memory> // for make_shared, make_unique, unique_ptr
 #include <vector>
 
+// RSTODO to remove once the framework will start propagating the header.firstTForbit
+#include "DetectorsRaw/HBFUtils.h"
+
 using namespace o2::framework;
+using namespace o2::dataformats;
 
 namespace o2
 {
@@ -39,7 +43,6 @@ namespace tof
 // just need to implement 2 special methods init + run (there is no need to inherit from anything)
 class TOFDPLClustererTask
 {
-  using MCLabelContainer = o2::dataformats::MCTruthContainer<o2::MCCompLabel>;
   bool mUseMC = true;
   bool mUseCCDB = false;
 
@@ -58,6 +61,17 @@ class TOFDPLClustererTask
     // get digit data
     auto digits = pc.inputs().get<gsl::span<o2::tof::Digit>>("tofdigits");
     auto row = pc.inputs().get<std::vector<o2::tof::ReadoutWindowData>*>("readoutwin");
+
+    auto header = o2::header::get<o2::header::DataHeader*>(pc.inputs().get("tofdigits").header);
+    mClusterer.setFirstOrbit(header->firstTForbit);
+
+    //RSTODO: below is a hack, to remove once the framework will start propagating the header.firstTForbit
+    //Here I extract the orbit/BC from the abs.BC, since the triggerer orbit/bunch are not set. Then why they are needed?
+    if (digits.size()) {
+      auto bcabs = digits[0].getBC();
+      auto ir0 = o2::raw::HBFUtils::Instance().getFirstIRofTF({uint16_t(bcabs % Geo::BC_IN_ORBIT), uint32_t(bcabs / Geo::BC_IN_ORBIT)});
+      mClusterer.setFirstOrbit(ir0.orbit);
+    }
 
     auto labelvector = std::make_shared<std::vector<o2::dataformats::MCTruthContainer<o2::MCCompLabel>>>();
     if (mUseMC) {
@@ -101,7 +115,7 @@ class TOFDPLClustererTask
     mClustersArray.clear();
 
     for (int i = 0; i < row->size(); i++) {
-      printf("# TOF readout window for clusterization = %d/%lu (N digits = %d)\n", i, row->size(), row->at(i).size());
+      //printf("# TOF readout window for clusterization = %d/%lu (N digits = %d)\n", i, row->size(), row->at(i).size());
       auto digitsRO = row->at(i).getBunchChannelData(digits);
 
       mReader.setDigitArray(&digitsRO);
@@ -146,14 +160,20 @@ o2::framework::DataProcessorSpec getTOFClusterizerSpec(bool useMC, bool useCCDB)
     inputs.emplace_back("tofccdbLHCphase", o2::header::gDataOriginTOF, "LHCphase");
     inputs.emplace_back("tofccdbChannelCalib", o2::header::gDataOriginTOF, "ChannelCalib");
   }
-  if (useMC)
+  if (useMC) {
     inputs.emplace_back("tofdigitlabels", o2::header::gDataOriginTOF, "DIGITSMCTR", 0, Lifetime::Timeframe);
+  }
+
+  std::vector<OutputSpec> outputs;
+  outputs.emplace_back(o2::header::gDataOriginTOF, "CLUSTERS", 0, Lifetime::Timeframe);
+  if (useMC) {
+    outputs.emplace_back(o2::header::gDataOriginTOF, "CLUSTERSMCTR", 0, Lifetime::Timeframe);
+  }
 
   return DataProcessorSpec{
     "TOFClusterer",
     inputs,
-    Outputs{OutputSpec{o2::header::gDataOriginTOF, "CLUSTERS", 0, Lifetime::Timeframe},
-            OutputSpec{o2::header::gDataOriginTOF, "CLUSTERSMCTR", 0, Lifetime::Timeframe}},
+    outputs,
     AlgorithmSpec{adaptFromTask<TOFDPLClustererTask>(useMC, useCCDB)},
     Options{/* for the moment no options */}};
 }

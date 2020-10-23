@@ -22,6 +22,7 @@
 #include "MFTBase/Barrel.h"
 #include "MFTBase/PatchPanel.h"
 #include "MFTBase/MFTBaseParam.h"
+#include "MFTBase/PowerSupplyUnit.h"
 
 #include "TGeoVolume.h"
 #include "TGeoManager.h"
@@ -43,7 +44,7 @@ void GeometryBuilder::buildGeometry()
 
   LOG(INFO) << "GeometryBuilder::buildGeometry volume name = " << GeometryTGeo::getMFTVolPattern();
 
-  TGeoVolume* vALIC = gGeoManager->GetVolume("cave");
+  TGeoVolume* vALIC = gGeoManager->GetVolume("barrel");
   if (!vALIC) {
     LOG(FATAL) << "Could not find the top volume";
   }
@@ -60,7 +61,18 @@ void GeometryBuilder::buildGeometry()
     delete halfMFT;
   }
 
-  /// \todo Add the service, Barrel, etc Those objects will probably be defined into the COMMON ITSMFT area.
+  // Add the service, Barrel, etc
+  if (!mftBaseParam.minimal && mftBaseParam.buildPSU) {
+    auto* mPSU = new PowerSupplyUnit();
+    TGeoVolumeAssembly* mHalfPSU = mPSU->create();
+    TGeoTranslation* t_PSU = new TGeoTranslation("t_PSU", 0, 0.0, -72.6);
+    t_PSU->RegisterYourself();
+    auto* r_PSU = new TGeoRotation("rotation_PSU", 0.0, 0.0, 180.0);
+    auto* p_PSU = new TGeoCombiTrans(*t_PSU, *r_PSU);
+    volMFT->AddNode(mHalfPSU, 1, t_PSU);
+    volMFT->AddNode(mHalfPSU, 2, p_PSU);
+  }
+
   if (!mftBaseParam.minimal && mftBaseParam.buildCone) {
     auto* halfCone = new HalfCone();
     TGeoVolumeAssembly* halfCone1 = halfCone->createHalfCone(0);
@@ -100,5 +112,5 @@ void GeometryBuilder::buildGeometry()
     volMFT->AddNode(halfpatchpanel1, 1, p_patchpanel1);
   }
 
-  vALIC->AddNode(volMFT, 0);
+  vALIC->AddNode(volMFT, 0, new TGeoTranslation(0., 30., 0.));
 }

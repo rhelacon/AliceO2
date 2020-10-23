@@ -78,26 +78,16 @@ o2_add_dpl_workflow(test_CompletionPolicies
                   SOURCES src/test_CompletionPolicies.cxx
                   COMPONENT_NAME TestWorkflows)
 
-o2_data_file(COPY etc/exampleDataSamplingConfig.json DESTINATION etc)
-
-o2_add_dpl_workflow(datasampling-pod-and-root
-                  SOURCES src/dataSamplingPodAndRoot.cxx
-                  COMPONENT_NAME TestWorkflows)
-
-o2_add_dpl_workflow(datasampling-parallel
-                  SOURCES src/dataSamplingParallel.cxx
-                  COMPONENT_NAME TestWorkflows)
-
-o2_add_dpl_workflow(datasampling-time-pipeline
-                  SOURCES src/dataSamplingTimePipeline.cxx
-                  COMPONENT_NAME TestWorkflows)
-
 o2_add_dpl_workflow(ccdb-fetch-to-timeframe
                   SOURCES src/test_CCDBFetchToTimeframe.cxx
                   COMPONENT_NAME TestWorkflows)
 
-o2_add_dpl_workflow(datasampling-benchmark
-                  SOURCES src/dataSamplingBenchmark.cxx
+o2_add_dpl_workflow(simple-source
+                  SOURCES src/o2SimpleSource.cxx
+                  COMPONENT_NAME TestWorkflows)
+
+o2_add_dpl_workflow(simple-sink
+                  SOURCES src/o2SimpleSink.cxx
                   COMPONENT_NAME TestWorkflows)
 
 # Detector specific dummy workflows

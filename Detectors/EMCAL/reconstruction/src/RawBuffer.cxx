@@ -47,26 +47,30 @@ void RawBuffer::readFromMemoryBuffer(const gsl::span<const char> rawmemory)
   flush();
   auto address = reinterpret_cast<const uint32_t*>(rawmemory.data());
   for (auto iword = 0; iword < rawmemory.size() / sizeof(uint32_t); iword++) {
-    if ((address[iword] & 0xFFF) == 0x082) {
-      // Termination word
-      // should normally not be decoded in case the payload size
-      // is determined correctly
-      break;
-    }
+    // Run2 code, probably not needed for run3
+    // if ((address[iword] & 0xFFF) == 0x082) {
+    // Termination word
+    // should normally not be decoded in case the payload size
+    // is determined correctly
+    //std::cout << "Found termination word" << std::endl;
+    //break;
+    // }
     mDataWords[mNDataWords++] = address[iword];
   }
 }
 
 uint32_t RawBuffer::getWord(int index) const
 {
-  if (index >= mNDataWords)
+  if (index >= mNDataWords) {
     throw std::runtime_error("Index out of range");
+  }
   return mDataWords[index];
 }
 
 uint32_t RawBuffer::getNextDataWord()
 {
-  if (!hasNext())
+  if (!hasNext()) {
     throw std::runtime_error("No more data words in buffer");
+  }
   return mDataWords[mCurrentDataWord++];
 }

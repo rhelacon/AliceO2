@@ -16,11 +16,33 @@
 /// @brief  ProcessorSpec for the TPC cluster entropy encoding
 
 #include "Framework/DataProcessorSpec.h"
+#include "Framework/Task.h"
+#include "TPCReconstruction/CTFCoder.h"
+#include <TStopwatch.h>
 
 namespace o2
 {
 namespace tpc
 {
+
+class EntropyEncoderSpec : public o2::framework::Task
+{
+ public:
+  EntropyEncoderSpec(bool fromFile) : mFromFile(fromFile)
+  {
+    mTimer.Stop();
+    mTimer.Reset();
+  }
+  ~EntropyEncoderSpec() override = default;
+  void run(o2::framework::ProcessingContext& pc) final;
+  void init(o2::framework::InitContext& ic) final;
+  void endOfStream(o2::framework::EndOfStreamContext& ec) final;
+
+ private:
+  o2::tpc::CTFCoder mCTFCoder;
+  bool mFromFile = false;
+  TStopwatch mTimer;
+};
 
 /// create a processor spec
 framework::DataProcessorSpec getEntropyEncoderSpec(bool inputFromFile);

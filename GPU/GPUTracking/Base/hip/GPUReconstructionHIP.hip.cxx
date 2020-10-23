@@ -11,8 +11,10 @@
 /// \file GPUReconstructionHIP.hip.cxx
 /// \author David Rohr
 
+#define __HIP_ENABLE_DEVICE_MALLOC__ 1 //Fix SWDEV-239120
 #define GPUCA_GPUTYPE_VEGA
 #define GPUCA_UNROLL(CUDA, HIP) GPUCA_M_UNROLL_##HIP
+#define GPUdic(CUDA, HIP) GPUCA_GPUdic_select_##HIP()
 
 #include <hip/hip_runtime.h>
 #ifdef __CUDACC__
@@ -52,21 +54,12 @@ __global__ void gGPUConstantMemBuffer_dummy(int* p) { *p = *(int*)&gGPUConstantM
 
 using namespace GPUCA_NAMESPACE::gpu;
 
-__global__ void gHIPMemSetWorkaround(char* ptr, char val, size_t size)
-{
-  for (size_t i = get_global_id(); i < size; i += get_global_size()) {
-    ptr[i] = val;
-  }
-}
-
 __global__ void dummyInitKernel(void* foo) {}
 
 #if defined(HAVE_O2HEADERS) && !defined(GPUCA_NO_ITS_TRAITS)
 #include "ITStrackingHIP/VertexerTraitsHIP.h"
 #else
-namespace o2
-{
-namespace its
+namespace o2::its
 {
 class VertexerTraitsHIP : public VertexerTraits
 {
@@ -74,9 +67,46 @@ class VertexerTraitsHIP : public VertexerTraits
 class TrackerTraitsHIP : public TrackerTraits
 {
 };
-} // namespace its
-} // namespace o2
+} // namespace o2::its
 #endif
+
+class GPUDebugTiming
+{
+ public:
+  GPUDebugTiming(bool d, void** t, hipStream_t* s, GPUReconstruction::krnlSetup& x, GPUReconstructionHIPBackend* r = nullptr) : mDeviceTimers(t), mStreams(s), mXYZ(x), mRec(r), mDo(d)
+  {
+    if (mDo) {
+      if (mDeviceTimers) {
+        GPUFailedMsg(hipEventRecord((hipEvent_t)mDeviceTimers[0], mStreams[mXYZ.x.stream]));
+      } else {
+        mTimer.ResetStart();
+      }
+    }
+  }
+  ~GPUDebugTiming()
+  {
+    if (mDo) {
+      if (mDeviceTimers) {
+        GPUFailedMsg(hipEventRecord((hipEvent_t)mDeviceTimers[1], mStreams[mXYZ.x.stream]));
+        GPUFailedMsg(hipEventSynchronize((hipEvent_t)mDeviceTimers[1]));
+        float v;
+        GPUFailedMsg(hipEventElapsedTime(&v, (hipEvent_t)mDeviceTimers[0], (hipEvent_t)mDeviceTimers[1]));
+        mXYZ.t = v * 1.e-3;
+      } else {
+        GPUFailedMsg(hipStreamSynchronize(mStreams[mXYZ.x.stream]));
+        mXYZ.t = mTimer.GetCurrentElapsedTime();
+      }
+    }
+  }
+
+ private:
+  void** mDeviceTimers;
+  hipStream_t* mStreams;
+  GPUReconstruction::krnlSetup& mXYZ;
+  GPUReconstructionHIPBackend* mRec;
+  HighResTimer mTimer;
+  bool mDo;
+};
 
 #include "GPUReconstructionIncludesDevice.h"
 
@@ -91,7 +121,7 @@ GPUg() void runKernelHIP(GPUCA_CONSMEM_PTR int iSlice_internal, Args... args)
 */
 
 #undef GPUCA_KRNL_REG
-#define GPUCA_KRNL_REG(args) __launch_bounds__(GPUCA_M_STRIP(args))
+#define GPUCA_KRNL_REG(args) __launch_bounds__(GPUCA_M_MAX2_3(GPUCA_M_STRIP(args)))
 #undef GPUCA_KRNL_CUSTOM
 #define GPUCA_KRNL_CUSTOM(args) GPUCA_M_STRIP(args)
 #undef GPUCA_KRNL_BACKEND_XARGS
@@ -114,17 +144,17 @@ GPUg() void runKernelHIP(GPUCA_CONSMEM_PTR int iSlice_internal, Args... args)
 #include "GPUReconstructionKernels.h"
 #undef GPUCA_KRNL
 
-template <class T, int I, typename... Args>
-int GPUReconstructionHIPBackend::runKernelBackend(krnlSetup& _xyz, Args... args)
+template <>
+void GPUReconstructionHIPBackend::runKernelBackendInternal<GPUMemClean16, 0>(krnlSetup& _xyz, void* const& ptr, unsigned long const& size)
 {
-  auto& x = _xyz.x;
-  auto& z = _xyz.z;
-  if (z.evList) {
-    for (int k = 0; k < z.nEvents; k++) {
-      GPUFailedMsg(hipStreamWaitEvent(mInternals->Streams[x.stream], ((hipEvent_t*)z.evList)[k], 0));
-    }
-  }
-  if (mDeviceProcessingSettings.deviceTimers) {
+  GPUDebugTiming timer(mProcessingSettings.debugLevel, nullptr, mInternals->Streams, _xyz, this);
+  GPUFailedMsg(hipMemsetAsync(ptr, 0, size, mInternals->Streams[_xyz.x.stream]));
+}
+
+template <class T, int I, typename... Args>
+void GPUReconstructionHIPBackend::runKernelBackendInternal(krnlSetup& _xyz, const Args&... args)
+{
+  if (mProcessingSettings.deviceTimers && mProcessingSettings.debugLevel > 0) {
 #ifdef __CUDACC__
     GPUFailedMsg(hipEventRecord((hipEvent_t)mDebugEvents->DebugStart, mInternals->Streams[x.stream]));
 #endif
@@ -139,6 +169,19 @@ int GPUReconstructionHIPBackend::runKernelBackend(krnlSetup& _xyz, Args... args)
   } else {
     backendInternal<T, I>::runKernelBackendMacro(_xyz, this, nullptr, nullptr, args...);
   }
+}
+
+template <class T, int I, typename... Args>
+int GPUReconstructionHIPBackend::runKernelBackend(krnlSetup& _xyz, const Args&... args)
+{
+  auto& x = _xyz.x;
+  auto& z = _xyz.z;
+  if (z.evList) {
+    for (int k = 0; k < z.nEvents; k++) {
+      GPUFailedMsg(hipStreamWaitEvent(mInternals->Streams[x.stream], ((hipEvent_t*)z.evList)[k], 0));
+    }
+  }
+  runKernelBackendInternal<T, I>(_xyz, args...);
   GPUFailedMsg(hipGetLastError());
   if (z.ev) {
     GPUFailedMsg(hipEventRecord(*(hipEvent_t*)z.ev, mInternals->Streams[x.stream]));
@@ -146,12 +189,12 @@ int GPUReconstructionHIPBackend::runKernelBackend(krnlSetup& _xyz, Args... args)
   return 0;
 }
 
-GPUReconstructionHIPBackend::GPUReconstructionHIPBackend(const GPUSettingsProcessing& cfg) : GPUReconstructionDeviceBase(cfg, sizeof(GPUReconstructionDeviceBase))
+GPUReconstructionHIPBackend::GPUReconstructionHIPBackend(const GPUSettingsDeviceBackend& cfg) : GPUReconstructionDeviceBase(cfg, sizeof(GPUReconstructionDeviceBase))
 {
   if (mMaster == nullptr) {
     mInternals = new GPUReconstructionHIPInternals;
   }
-  mProcessingSettings.deviceType = DeviceType::HIP;
+  mDeviceBackendSettings.deviceType = DeviceType::HIP;
 }
 
 GPUReconstructionHIPBackend::~GPUReconstructionHIPBackend()
@@ -162,7 +205,7 @@ GPUReconstructionHIPBackend::~GPUReconstructionHIPBackend()
   }
 }
 
-GPUReconstruction* GPUReconstruction_Create_HIP(const GPUSettingsProcessing& cfg) { return new GPUReconstructionHIP(cfg); }
+GPUReconstruction* GPUReconstruction_Create_HIP(const GPUSettingsDeviceBackend& cfg) { return new GPUReconstructionHIP(cfg); }
 
 void GPUReconstructionHIPBackend::GetITSTraits(std::unique_ptr<o2::its::TrackerTraits>* trackerTraits, std::unique_ptr<o2::its::VertexerTraits>* vertexerTraits)
 {
@@ -189,37 +232,28 @@ int GPUReconstructionHIPBackend::InitDevice_Runtime()
       GPUError("Error getting HIP Device Count");
       return (1);
     }
-    if (mDeviceProcessingSettings.debugLevel >= 2) {
+    if (mProcessingSettings.debugLevel >= 2) {
       GPUInfo("Available HIP devices:");
     }
-    const int reqVerMaj = 2;
-    const int reqVerMin = 0;
     std::vector<bool> devicesOK(count, false);
     for (int i = 0; i < count; i++) {
-      if (mDeviceProcessingSettings.debugLevel >= 4) {
+      if (mProcessingSettings.debugLevel >= 4) {
         GPUInfo("Examining device %d", i);
       }
-      if (mDeviceProcessingSettings.debugLevel >= 4) {
+      if (mProcessingSettings.debugLevel >= 4) {
         GPUInfo("Obtained current memory usage for device %d", i);
       }
       if (GPUFailedMsgI(hipGetDeviceProperties(&hipDeviceProp, i))) {
         continue;
       }
-      if (mDeviceProcessingSettings.debugLevel >= 4) {
+      if (mProcessingSettings.debugLevel >= 4) {
         GPUInfo("Obtained device properties for device %d", i);
       }
       int deviceOK = true;
       const char* deviceFailure = "";
-      if (hipDeviceProp.major >= 9) {
-        deviceOK = false;
-        deviceFailure = "Invalid Revision";
-      } else if (hipDeviceProp.major < reqVerMaj || (hipDeviceProp.major == reqVerMaj && hipDeviceProp.minor < reqVerMin)) {
-        deviceOK = false;
-        deviceFailure = "Too low device revision";
-      }
 
       deviceSpeed = (double)hipDeviceProp.multiProcessorCount * (double)hipDeviceProp.clockRate * (double)hipDeviceProp.warpSize * (double)hipDeviceProp.major * (double)hipDeviceProp.major;
-      if (mDeviceProcessingSettings.debugLevel >= 2) {
+      if (mProcessingSettings.debugLevel >= 2) {
         GPUImportant("Device %s%2d: %s (Rev: %d.%d - Mem %lld)%s %s", deviceOK ? " " : "[", i, hipDeviceProp.name, hipDeviceProp.major, hipDeviceProp.minor, (long long int)hipDeviceProp.totalGlobalMem, deviceOK ? " " : " ]", deviceOK ? "" : deviceFailure);
       }
       if (!deviceOK) {
@@ -230,34 +264,32 @@ int GPUReconstructionHIPBackend::InitDevice_Runtime()
         bestDevice = i;
         bestDeviceSpeed = deviceSpeed;
       } else {
-        if (mDeviceProcessingSettings.debugLevel >= 2 && mDeviceProcessingSettings.deviceNum < 0) {
+        if (mProcessingSettings.debugLevel >= 2 && mProcessingSettings.deviceNum < 0) {
           GPUInfo("Skipping: Speed %f < %f\n", deviceSpeed, bestDeviceSpeed);
         }
       }
     }
     if (bestDevice == -1) {
-      GPUWarning("No %sHIP Device available, aborting HIP Initialisation", count ? "appropriate " : "");
-      GPUImportant("Requiring Revision %d.%d, Mem: %lld", reqVerMaj, reqVerMin, (long long int)mDeviceMemorySize);
+      GPUWarning("No %sHIP Device available, aborting HIP Initialisation (Required mem: %lld)", count ? "appropriate " : "", (long long int)mDeviceMemorySize);
       return (1);
     }
 
-    if (mDeviceProcessingSettings.deviceNum > -1) {
-      if (mDeviceProcessingSettings.deviceNum >= (signed)count) {
-        GPUWarning("Requested device ID %d does not exist", mDeviceProcessingSettings.deviceNum);
+    if (mProcessingSettings.deviceNum > -1) {
+      if (mProcessingSettings.deviceNum >= (signed)count) {
+        GPUWarning("Requested device ID %d does not exist", mProcessingSettings.deviceNum);
         return (1);
-      } else if (!devicesOK[mDeviceProcessingSettings.deviceNum]) {
-        GPUWarning("Unsupported device requested (%d)", mDeviceProcessingSettings.deviceNum);
+      } else if (!devicesOK[mProcessingSettings.deviceNum]) {
+        GPUWarning("Unsupported device requested (%d)", mProcessingSettings.deviceNum);
         return (1);
       } else {
-        bestDevice = mDeviceProcessingSettings.deviceNum;
+        bestDevice = mProcessingSettings.deviceNum;
       }
     }
     mDeviceId = bestDevice;
 
     GPUFailedMsgI(hipGetDeviceProperties(&hipDeviceProp, mDeviceId));
-    hipDeviceProp.totalConstMem = 65536; // TODO: Remove workaround, fixes incorrectly reported HIP constant memory
 
-    if (mDeviceProcessingSettings.debugLevel >= 2) {
+    if (mProcessingSettings.debugLevel >= 2) {
       GPUInfo("Using HIP Device %s with Properties:", hipDeviceProp.name);
       GPUInfo("\ttotalGlobalMem = %lld", (unsigned long long int)hipDeviceProp.totalGlobalMem);
       GPUInfo("\tsharedMemPerBlock = %lld", (unsigned long long int)hipDeviceProp.sharedMemPerBlock);
@@ -295,6 +327,10 @@ int GPUReconstructionHIPBackend::InitDevice_Runtime()
       GPUError("Could not set HIP Device!");
       return (1);
     }
+    if (GPUFailedMsgI(hipSetDeviceFlags(hipDeviceScheduleBlockingSync))) {
+      GPUError("Could not set HIP Device!");
+      return (1);
+    }
 
     /*if (GPUFailedMsgI(hipDeviceSetLimit(hipLimitStackSize, GPUCA_GPU_STACK_SIZE)))
     {
@@ -313,17 +349,13 @@ int GPUReconstructionHIPBackend::InitDevice_Runtime()
       GPUFailedMsgI(hipDeviceReset());
       return (1);
     }
-    if (mDeviceProcessingSettings.debugLevel >= 1) {
+    if (mProcessingSettings.debugLevel >= 1) {
       GPUInfo("Memory ptrs: GPU (%lld bytes): %p - Host (%lld bytes): %p", (long long int)mDeviceMemorySize, mDeviceMemoryBase, (long long int)mHostMemorySize, mHostMemoryBase);
       memset(mHostMemoryBase, 0, mHostMemorySize);
       if (GPUFailedMsgI(hipMemset(mDeviceMemoryBase, 0xDD, mDeviceMemorySize))) {
-        GPUError("Error during HIP memset, trying workaround with kernel");
-        hipLaunchKernelGGL(HIP_KERNEL_NAME(gHIPMemSetWorkaround), dim3(mBlockCount), dim3(256), 0, 0, (char*)mDeviceMemoryBase, 0xDD, mDeviceMemorySize);
-        if (GPUFailedMsgI(hipGetLastError()) || GPUFailedMsgI(hipDeviceSynchronize())) {
-          GPUError("Error during HIP memset");
-          GPUFailedMsgI(hipDeviceReset());
-          return (1);
-        }
+        GPUError("Error during HIP memset");
+        GPUFailedMsgI(hipDeviceReset());
+        return (1);
       }
     }
 
@@ -367,7 +399,7 @@ int GPUReconstructionHIPBackend::InitDevice_Runtime()
   for (unsigned int i = 0; i < mEvents.size(); i++) {
     hipEvent_t* events = (hipEvent_t*)mEvents[i].data();
     for (unsigned int j = 0; j < mEvents[i].size(); j++) {
-      if (GPUFailedMsgI(hipEventCreate(&events[j]))) {
+      if (GPUFailedMsgI(hipEventCreateWithFlags(&events[j], hipEventBlockingSync))) {
         GPUError("Error creating event");
         GPUFailedMsgI(hipDeviceReset());
         return 1;
@@ -417,7 +449,7 @@ int GPUReconstructionHIPBackend::ExitDevice_Runtime()
 
 size_t GPUReconstructionHIPBackend::GPUMemCpy(void* dst, const void* src, size_t size, int stream, int toGPU, deviceEvent* ev, deviceEvent* evList, int nEvents)
 {
-  if (mDeviceProcessingSettings.debugLevel >= 3) {
+  if (mProcessingSettings.debugLevel >= 3) {
     stream = -1;
   }
   if (stream == -1) {
@@ -441,12 +473,12 @@ size_t GPUReconstructionHIPBackend::GPUMemCpy(void* dst, const void* src, size_t
 size_t GPUReconstructionHIPBackend::TransferMemoryInternal(GPUMemoryResource* res, int stream, deviceEvent* ev, deviceEvent* evList, int nEvents, bool toGPU, const void* src, void* dst)
 {
   if (!(res->Type() & GPUMemoryResource::MEMORY_GPU)) {
-    if (mDeviceProcessingSettings.debugLevel >= 4) {
+    if (mProcessingSettings.debugLevel >= 4) {
       GPUInfo("Skipped transfer of non-GPU memory resource: %s", res->Name());
     }
     return 0;
   }
-  if (mDeviceProcessingSettings.debugLevel >= 3) {
+  if (mProcessingSettings.debugLevel >= 3) {
     GPUInfo("Copying to %s: %s - %lld bytes", toGPU ? "GPU" : "Host", res->Name(), (long long int)res->Size());
   }
   return GPUMemCpy(dst, src, res->Size(), stream, toGPU, ev, evList, nEvents);
@@ -513,20 +545,20 @@ bool GPUReconstructionHIPBackend::IsEventDone(deviceEvent* evList, int nEvents)
 int GPUReconstructionHIPBackend::GPUDebug(const char* state, int stream)
 {
   // Wait for HIP-Kernel to finish and check for HIP errors afterwards, in case of debugmode
-  if (mDeviceProcessingSettings.debugLevel == 0) {
-    return (0);
-  }
   hipError_t cuErr;
   cuErr = hipGetLastError();
   if (cuErr != hipSuccess) {
     GPUError("HIP Error %s while running kernel (%s) (Stream %d)", hipGetErrorString(cuErr), state, stream);
     return (1);
   }
+  if (mProcessingSettings.debugLevel <= 0) {
+    return (0);
+  }
   if (GPUFailedMsgI(hipDeviceSynchronize())) {
     GPUError("HIP Error while synchronizing (%s) (Stream %d)", state, stream);
     return (1);
   }
-  if (mDeviceProcessingSettings.debugLevel >= 3) {
+  if (mProcessingSettings.debugLevel >= 3) {
     GPUInfo("GPU Sync Done");
   }
   return (0);
@@ -542,9 +574,16 @@ int GPUReconstructionHIPBackend::unregisterMemoryForGPU(const void* ptr)
   return GPUFailedMsgI(hipHostUnregister((void*)ptr));
 }
 
+void* GPUReconstructionHIPBackend::getGPUPointer(void* ptr)
+{
+  void* retVal = nullptr;
+  GPUFailedMsg(hipHostGetDevicePointer(&retVal, ptr, 0));
+  return retVal;
+}
+
 void GPUReconstructionHIPBackend::PrintKernelOccupancies()
 {
-  unsigned int maxBlocks, threads, suggestedBlocks;
+  int maxBlocks, threads, suggestedBlocks;
 #define GPUCA_KRNL(x_class, x_attributes, x_arguments, x_forward) GPUCA_KRNL_WRAP(GPUCA_KRNL_LOAD_, x_class, x_attributes, x_arguments, x_forward)
 #define GPUCA_KRNL_LOAD_single(x_class, x_attributes, x_arguments, x_forward)                                                         \
   GPUFailedMsg(hipOccupancyMaxPotentialBlockSize(&suggestedBlocks, &threads, GPUCA_M_CAT(krnl_, GPUCA_M_KRNL_NAME(x_class)), 0, 0));  \

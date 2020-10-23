@@ -39,8 +39,8 @@ enum ChannelTypeZNP { Common,
 enum ChannelTypeZEM { ZEMCh1,
                       ZEMCh2 }; //  channel IDs for ZEMs
 
-constexpr int NTimeBinsPerBC = 12;                   //< number of samples per BC
-constexpr int NBCReadOut = 4;                        // N BCs read out per trigger
+constexpr int NTimeBinsPerBC = 12; //< number of samples per BC
+constexpr int NBCReadOut = 4;      // N BCs read out per trigger
 constexpr int NTimeBinsReadout = NTimeBinsPerBC * NBCReadOut;
 
 constexpr int NChannelsZN = 6;  //< number of channels stored per ZN
@@ -51,10 +51,13 @@ constexpr float ChannelTimeBinNS = 2.; //< bin length in NS
 constexpr float SampleLenghtNS = NTimeBinsPerBC * ChannelTimeBinNS;
 
 constexpr int NChannels = 2 * (NChannelsZN + NChannelsZP) + NChannelsZEM;
-constexpr uint32_t AllChannelsMask = (0x1 << NChannels) - 1;
+constexpr uint8_t ALICETriggerMask = 0x1;
 
 constexpr int NModules = 8;
-constexpr int MaxTriggerChannels = 10;
+constexpr int NChPerModule = 4;
+constexpr int NDigiChannels = NModules * NChPerModule;
+constexpr int NWPerBc = 3;
+constexpr int MaxTriggerChannels = NChannels;
 
 constexpr int MaxTDCValues = 5;  // max number of TDC values to store in reconstructed event
 constexpr int NTDCChannels = 10; // max number of TDC values to store in reconstructed event

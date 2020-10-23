@@ -271,7 +271,7 @@ Bool_t Detector::ProcessHits(FairVolume* v)
         // Fill hit with pad response ID and amplitude
         // hist will be sorted and merged later if necessary
         short detID = Geometry::relToAbsId(moduleNumber, kxg, kzg);
-        addHit(partID, detID, Point3D<float>(xyzm[0], xyzm[1], xyzm[2]), time, qpad);
+        addHit(partID, detID, math_utils::Point3D<float>(xyzm[0], xyzm[1], xyzm[2]), time, qpad);
       }
     }
   }
@@ -323,7 +323,7 @@ float Detector::CPVCumulPadResponse(float x, float y)
   return cumulPRF;
 }
 
-void Detector::addHit(int trackID, short detID, const Point3D<float>& pos, double time, float qdep)
+void Detector::addHit(int trackID, short detID, const math_utils::Point3D<float>& pos, double time, float qdep)
 {
   LOG(DEBUG) << "Adding hit for track " << trackID << " in a pad " << detID << " with position (" << pos.X() << ", "
              << pos.Y() << ", " << pos.Z() << "), time" << time << ", qdep =" << qdep << std::endl;
@@ -385,7 +385,7 @@ void Detector::ConstructGeometry()
     float pos[3] = {0};
     geomParams->GetModuleCenter(iModule, pos);
 
-    fMC->Gspos("CPV", iModule + 1, "cave", pos[0], pos[1], pos[2], idrotm[iModule], "ONLY");
+    fMC->Gspos("CPV", iModule + 1, "barrel", pos[0], pos[1] + 30., pos[2], idrotm[iModule], "ONLY");
   }
 
   //start filling CPV moodules
@@ -559,7 +559,7 @@ void Detector::addAlignableVolumes() const
 
   o2::detectors::DetID::ID idCPV = o2::detectors::DetID::CPV;
 
-  TString physModulePath = "/cave_1/CPV_";
+  TString physModulePath = "/cave_1/barrel_1/CPV_";
 
   TString symbModuleName = "CPV/Module";
 

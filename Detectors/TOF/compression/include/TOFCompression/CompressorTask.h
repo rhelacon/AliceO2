@@ -28,17 +28,20 @@ namespace o2
 namespace tof
 {
 
-template <typename RAWDataHeader, bool verbose>
+template <typename RDH, bool verbose>
 class CompressorTask : public Task
 {
  public:
-  CompressorTask() = default;
-  ~CompressorTask() override = default;
+  CompressorTask() { mBufferOut = new char[mBufferOutSize]; };
+  ~CompressorTask() override { delete[] mBufferOut; };
   void init(InitContext& ic) final;
   void run(ProcessingContext& pc) final;
 
  private:
-  Compressor<RAWDataHeader, verbose> mCompressor;
+  Compressor<RDH, verbose> mCompressor;
+
+  char* mBufferOut = nullptr;
+  const int mBufferOutSize = 33554432;
 };
 
 } // namespace tof

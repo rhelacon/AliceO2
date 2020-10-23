@@ -17,20 +17,26 @@ include(O2GetListOfMacros)
 #
 
 list(APPEND O2_ROOT_MACRO_EXCLUSION_LIST
-            Detectors/ITSMFT/ITS/macros/EVE/rootlogon.C
-            Detectors/ITSMFT/ITS/macros/test/rootlogon.C
+            Detectors/ITSMFT/ITS/macros/test/CheckLUtime.C # temporary exclude until fix for full Clusters elimination
+            Detectors/ITSMFT/ITS/macros/test/dictionary_integrity_test.C     # temporary exclude until fix for full Clusters elimination       
             Detectors/MUON/MCH/Simulation/macros/rootlogon.C
             Detectors/Passive/macro/PutFrameInTop.C
             Detectors/TPC/reconstruction/macro/addInclude.C
             Detectors/TPC/reconstruction/macro/getTPCTransformationExample.C
             Detectors/TRD/base/macros/OCDB2CCDB.C
             Detectors/TRD/base/macros/OCDB2CCDBTrapConfig.C
+            Detectors/TRD/base/macros/Readocdb.C
+            Detectors/TRD/base/macros/PrintTrapConfig.C
+            Detectors/TRD/base/macros/ConvertRun2DigitsAndTracklets.C
+            Detectors/TRD/macros/convertRun2ToRun3Digits.C
+            Detectors/TRD/macros/ParseTrapRawOutput.C
             Detectors/EMCAL/calib/macros/ReadTestBadChannelMap_CCDBApi.C
             GPU/GPUTracking/Merger/macros/checkPropagation.C # Needs AliRoot AliExternalTrackParam
             GPU/GPUTracking/Merger/macros/fitPolynomialFieldIts.C # Needs AliRoot AliMagF
             GPU/GPUTracking/Merger/macros/fitPolynomialFieldTpc.C # Needs AliRoot AliMagF
             GPU/GPUTracking/Merger/macros/fitPolynomialFieldTrd.C # Needs AliRoot AliMagF
             GPU/GPUTracking/Standalone/tools/dump.C # Needs AliRoot ALiHLTSystem
+            GPU/GPUTracking/Standalone/tools/dumpTRDClusterMatrices.C # Needs AliRoot AliCDBManager, AliGeomManager and AliTRDgeometry
             GPU/GPUTracking/TRDTracking/macros/checkDbgOutput.C # Needs AliRoot TStatToolkit
             GPU/TPCFastTransformation/alirootMacro/createTPCFastTransform.C # Needs AliTPCCalibDB
             GPU/TPCFastTransformation/alirootMacro/generateTPCDistortionNTupleAliRoot.C # Needs AliTPCCalibDB
@@ -41,11 +47,13 @@ list(APPEND O2_ROOT_MACRO_EXCLUSION_LIST
 	    Detectors/TOF/prototyping/ConvertRun2CalibrationToO2.C
             Generators/share/external/hijing.C
 	    Generators/share/external/QEDepem.C
+	    Generators/share/external/GenCosmics.C
             macro/SetIncludePath.C
             macro/loadExtDepLib.C
             macro/load_all_libs.C
             macro/putCondition.C
-            macro/rootlogon.C)
+            macro/rootlogon.C
+	    Detectors/DCS/test/processor_dpcom_o2.C)
 
 if(NOT BUILD_SIMULATION)
   # some complete sub_directories are not added to the build when not building
@@ -56,6 +64,7 @@ if(NOT BUILD_SIMULATION)
   o2_get_list_of_macros(${CMAKE_SOURCE_DIR}/Detectors/gconfig macros)
   list(APPEND O2_ROOT_MACRO_EXCLUSION_LIST ${macros})
   list(APPEND O2_ROOT_MACRO_EXCLUSION_LIST Generators/share/external/QEDLoader.C)
+  list(APPEND O2_ROOT_MACRO_EXCLUSION_LIST Generators/share/external/GenCosmicsLoader.C)
   list(APPEND O2_ROOT_MACRO_EXCLUSION_LIST Generators/share/egconfig/pythia8_userhooks_charm.C)
   list(APPEND O2_ROOT_MACRO_EXCLUSION_LIST Generators/share/external/trigger_mpi.C)
 endif()

@@ -24,6 +24,7 @@
 #include "Framework/Lifetime.h"
 #include "Framework/Output.h"
 #include "Framework/Task.h"
+#include "Framework/Logger.h"
 
 #include "MCHBase/ClusterBlock.h"
 #include "MCHBase/TrackBlock.h"
@@ -93,7 +94,7 @@ class TrackFitterTask
       try {
         mTrackFitter.fit(track);
       } catch (exception const& e) {
-        throw runtime_error(std::string("Track fit failed: ") + e.what());
+        throw std::runtime_error(std::string("Track fit failed: ") + e.what());
       }
 
       // write the refitted track to the ouput message

@@ -34,6 +34,10 @@ o2_check_cxx_features()
 
 include(O2DefineOptions)
 o2_define_options()
+# see if upgrade is enabled
+if (ENABLE_UPGRADES)
+  add_definitions(-DENABLE_UPGRADES)
+endif()
 
 include(O2DefineOutputPaths)
 o2_define_output_paths()
@@ -49,6 +53,10 @@ if (DPL_TESTS_BATCH_MODE)
   set(DPL_WORKFLOW_TESTS_EXTRA_OPTIONS -b)
 endif()
 
+if (DPL_ENABLE_TRACING)
+  add_definitions(-DDPL_ENABLE_TRACING)
+endif()
+
 # include macros and functions that are used in the following subdirectories'
 # CMakeLists.txt
 include(O2AddExecutable)
@@ -56,10 +64,12 @@ include(O2AddHeaderOnlyLibrary)
 include(O2AddLibrary)
 include(O2AddTest)
 include(O2AddTestRootMacro)
+include(O2ReportNonTestedMacros)
 include(O2TargetRootDictionary)
 include(O2DataFile)
 include(O2TargetManPage)
 include(O2AddWorkflow)
+include(O2SetROOTPCMDependencies)
 
 # Main targets of the project in various subdirectories. Order matters.
 add_subdirectory(Common)
@@ -100,9 +110,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   endif()
   if(BUILD_TEST_ROOT_MACROS)
     add_subdirectory(macro)
-    include(O2ReportNonTestedMacros)
     o2_report_non_tested_macros()
   endif()
   add_subdirectory(packaging)
-
 endif()
+
+set_root_pcm_dependencies()

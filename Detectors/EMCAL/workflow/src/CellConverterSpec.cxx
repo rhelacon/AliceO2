@@ -14,7 +14,7 @@
 #include "DataFormatsEMCAL/EMCALBlockHeader.h"
 #include "EMCALWorkflow/CellConverterSpec.h"
 #include "Framework/ControlService.h"
-#include "SimulationDataFormat/MCCompLabel.h"
+#include "DataFormatsEMCAL/MCLabel.h"
 #include "SimulationDataFormat/MCTruthContainer.h"
 
 using namespace o2::emcal::reco_workflow;
@@ -41,14 +41,15 @@ void CellConverterSpec::run(framework::ProcessingContext& ctx)
     gsl::span<const o2::emcal::Digit> digits(digitsAll.data() + trg.getFirstEntry(), trg.getNumberOfObjects());
     for (const auto& dig : digits) {
       ChannelType_t chantype;
-      if (dig.getHighGain())
+      if (dig.getHighGain()) {
         chantype = ChannelType_t::HIGH_GAIN;
-      else if (dig.getLowGain())
+      } else if (dig.getLowGain()) {
         chantype = ChannelType_t::LOW_GAIN;
-      else if (dig.getTRU())
+      } else if (dig.getTRU()) {
         chantype = ChannelType_t::TRU;
-      else if (dig.getLEDMon())
+      } else if (dig.getLEDMon()) {
         chantype = ChannelType_t::LEDMON;
+      }
       mOutputCells.emplace_back(dig.getTower(), dig.getEnergy(), dig.getTimeStamp(), chantype);
       ncellsTrigger++;
     }
@@ -62,7 +63,7 @@ void CellConverterSpec::run(framework::ProcessingContext& ctx)
   if (mPropagateMC) {
     // copy mc truth container without modification
     // as indexing doesn't change
-    auto truthcont = ctx.inputs().get<o2::dataformats::MCTruthContainer<o2::MCCompLabel>*>("digitsmctr");
+    auto truthcont = ctx.inputs().get<o2::dataformats::MCTruthContainer<o2::emcal::MCLabel>*>("digitsmctr");
     ctx.outputs().snapshot(o2::framework::Output{"EMC", "CELLSMCTR", 0, o2::framework::Lifetime::Timeframe}, *truthcont);
   }
 }

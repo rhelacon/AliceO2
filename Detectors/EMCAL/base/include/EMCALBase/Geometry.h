@@ -24,7 +24,7 @@
 
 #include "DataFormatsEMCAL/Constants.h"
 #include "EMCALBase/GeometryBase.h"
-#include "MathUtils/Cartesian3D.h"
+#include "MathUtils/Cartesian.h"
 
 namespace o2
 {
@@ -140,21 +140,21 @@ class Geometry
   /// Calculates the impact coordinates on EMCAL (centre of a tower/not on EMCAL surface)
   /// of a neutral particle emitted in the vertex vtx[3] with direction theta and phi in
   /// the global coordinate system
-  void ImpactOnEmcal(const Point3D<double>& vtx, Double_t theta, Double_t phi, Int_t& absId, Point3D<double>& vimpact) const;
+  void ImpactOnEmcal(const math_utils::Point3D<double>& vtx, Double_t theta, Double_t phi, Int_t& absId, math_utils::Point3D<double>& vimpact) const;
 
   /// \brief Checks whether point is inside the EMCal volume
   /// \param pnt Point to be checked
   /// \return True if the point is inside EMCAL, false otherwise
   ///
   /// See IsInEMCALOrDCAL for the definition of the acceptance check
-  Bool_t IsInEMCAL(const Point3D<double>& pnt) const;
+  Bool_t IsInEMCAL(const math_utils::Point3D<double>& pnt) const;
 
   /// \brief Checks whether point is inside the DCal volume
   /// \param pnt Point to be checked
   /// \return True if the point is inside DCAL, false otherwise
   ///
   /// See IsInEMCALOrDCAL for the definition of the acceptance check
-  Bool_t IsInDCAL(const Point3D<double>& pnt) const;
+  Bool_t IsInDCAL(const math_utils::Point3D<double>& pnt) const;
 
   /// \brief Checks whether point is inside the EMCal volume (included DCal)
   /// \param pnt Point to be checked
@@ -164,7 +164,7 @@ class Geometry
   ///
   /// Points behind EMCAl/DCal, i.e. R > outer radius, but eta, phi in acceptance
   /// are considered to inside
-  AcceptanceType_t IsInEMCALOrDCAL(const Point3D<double>& pnt) const;
+  AcceptanceType_t IsInEMCALOrDCAL(const math_utils::Point3D<double>& pnt) const;
 
   //////////////////////////////////////
   // Return EMCAL geometrical parameters
@@ -186,9 +186,19 @@ class Geometry
   Float_t GetDCALStandardPhiMax() const { return mDCALStandardPhiMax; }
   Int_t GetNECLayers() const { return mNECLayers; }
   Float_t GetDCALInnerExtandedEta() const { return mDCALInnerExtandedEta; }
+
+  /// \brief Get the number of modules in supermodule in z- (beam) direction
+  /// \return Number of modules
   Int_t GetNZ() const { return mNZ; }
+
+  /// \brief Get the number of modules in supermodule in #eta direction
+  /// \return Number of modules
   Int_t GetNEta() const { return mNZ; }
+
+  /// \brief Get the number of modules in supermodule in #phi direction
+  /// \return Number of modules
   Int_t GetNPhi() const { return mNPhi; }
+
   Float_t GetECPbRadThick() const { return mECPbRadThickness; }
   Float_t GetECScintThick() const { return mECScintThick; }
   Float_t GetSampling() const { return mSampling; }
@@ -229,8 +239,9 @@ class Geometry
   //
   EMCALSMType GetSMType(Int_t nSupMod) const
   {
-    if (nSupMod >= mNumberOfSuperModules)
+    if (nSupMod >= mNumberOfSuperModules) {
       throw SupermoduleIndexException(nSupMod, mNumberOfSuperModules);
+    }
     return mEMCSMSystem[nSupMod];
   }
 
@@ -336,17 +347,41 @@ class Geometry
   /// \brief get (Column,Row) pair of cell in global numbering scheme
   /// \param cellID Absolute cell ID
   /// \return tuple with position in global numbering scheme (0 - row, 1 - column)
+  /// \throw InvalidCellIDException
   std::tuple<int, int> GlobalRowColFromIndex(int cellID) const;
 
   /// \brief Get column number of cell in global numbering scheme
   /// \param cellID Absolute cell ID
   /// \return Column number in global numbering scheme
+  /// \throw InvalidCellIDException
   int GlobalCol(int cellID) const;
 
   /// \brief Get row number of cell in global numbering scheme
   /// \param cellID Absolute cell ID
   /// \return Row number in global numbering scheme
+  /// \throw InvalidCellIDException
   int GlobalRow(int cellID) const;
+
+  /// \brief Get the absolute cell ID from global position in the EMCAL
+  /// \param row Global row ID
+  /// \param col Global col ID
+  /// \return absolute cell ID
+  /// \throw RowColException
+  int GetCellAbsIDFromGlobalRowCol(int row, int col) const;
+
+  /// \brief Get the posision (row, col) of a global row-col position
+  /// \param row Global row ID
+  /// \param col Global col ID
+  /// \return Position in supermodule: [0 - supermodule ID, 1 - row in supermodule - col in supermodule]
+  /// \throw RowColException
+  std::tuple<int, int, int> GetPositionInSupermoduleFromGlobalRowCol(int col, int row) const;
+
+  /// \brief Get the cell indices from global position in the EMCAL
+  /// \param row Global row ID
+  /// \param col Global col ID
+  /// \return Cell indices [0 - supermodule, 1 - module, 2 - phi in module, 3 - eta in module]
+  /// \throw RowColException
+  std::tuple<int, int, int, int> GetCellIndexFromGlobalRowCol(int row, int col) const;
 
   /// \brief Given a global eta/phi point check if it belongs to a supermodule covered region.
   /// \param eta pseudorapidity location
@@ -421,14 +456,15 @@ class Geometry
   Int_t GetSuperModuleNumber(Int_t absId) const;
   Int_t GetNumberOfModuleInPhiDirection(Int_t nSupMod) const
   {
-    if (GetSMType(nSupMod) == EMCAL_HALF)
+    if (GetSMType(nSupMod) == EMCAL_HALF) {
       return mNPhi / 2;
-    else if (GetSMType(nSupMod) == EMCAL_THIRD)
+    } else if (GetSMType(nSupMod) == EMCAL_THIRD) {
       return mNPhi / 3;
-    else if (GetSMType(nSupMod) == DCAL_EXT)
+    } else if (GetSMType(nSupMod) == DCAL_EXT) {
       return mNPhi / 3;
-    else
+    } else {
       return mNPhi;
+    }
   }
 
   /// \brief Transition from cell indexes (iphi, ieta) to module indexes (iphim, ietam, nModule)
@@ -457,13 +493,13 @@ class Geometry
   ///
   /// Same as RelPosCellInSModule(Int_t absId, Double_t &xr, Double_t &yr, Double_t &zr)
   /// but taking into account position of shower max.
-  Point3D<double> RelPosCellInSModule(Int_t absId, Double_t distEf) const;
+  math_utils::Point3D<double> RelPosCellInSModule(Int_t absId, Double_t distEf) const;
 
   /// \brief Look to see what the relative position inside a given cell is for a recpoint.
   /// \param absId cell absolute id. number, input
   /// \return Point3D with x,y,z coordinates of cell with absId inside SM
   /// \throw InvalidCellIDException if cell ID does not exist
-  Point3D<double> RelPosCellInSModule(Int_t absId) const;
+  math_utils::Point3D<double> RelPosCellInSModule(Int_t absId) const;
 
   std::vector<EMCALSMType> GetEMCSystem() const { return mEMCSMSystem; } // EMC System, SM type list
   // Local Coordinates of SM
@@ -643,10 +679,11 @@ class Geometry
 
 inline Bool_t Geometry::CheckAbsCellId(Int_t absId) const
 {
-  if (absId < 0 || absId >= mNCells)
+  if (absId < 0 || absId >= mNCells) {
     return kFALSE;
-  else
+  } else {
     return kTRUE;
+  }
 }
 } // namespace emcal
 } // namespace o2

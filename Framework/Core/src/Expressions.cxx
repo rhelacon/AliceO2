@@ -11,6 +11,7 @@
 #include "../src/ExpressionHelpers.h"
 #include "Framework/VariantHelpers.h"
 #include "Framework/Logger.h"
+#include "Framework/RuntimeError.h"
 #include "gandiva/tree_expr_builder.h"
 #include "arrow/table.h"
 #include "fmt/format.h"
@@ -46,19 +47,51 @@ struct OpNodeHelper {
     return ColumnOperationSpec{node.op};
   }
 };
+
+struct PlaceholderNodeHelper {
+  DatumSpec operator()(PlaceholderNode node) const
+  {
+    return DatumSpec{node.value, node.type};
+  }
+};
 } // namespace
 
 std::shared_ptr<arrow::DataType> concreteArrowType(atype::type type)
 {
-  if (type == atype::INT32)
-    return arrow::int32();
-  if (type == atype::FLOAT)
-    return arrow::float32();
-  if (type == atype::DOUBLE)
-    return arrow::float64();
-  if (type == atype::BOOL)
-    return arrow::boolean();
-  return nullptr;
+  switch (type) {
+    case atype::UINT8:
+      return arrow::uint8();
+    case atype::INT8:
+      return arrow::int8();
+    case atype::INT16:
+      return arrow::int16();
+    case atype::INT32:
+      return arrow::int32();
+    case atype::FLOAT:
+      return arrow::float32();
+    case atype::DOUBLE:
+      return arrow::float64();
+    case atype::BOOL:
+      return arrow::boolean();
+    default:
+      return nullptr;
+  }
+}
+
+std::string upcastTo(atype::type f)
+{
+  switch (f) {
+    case atype::INT32:
+      return "castINT";
+    case atype::INT64:
+      return "castBIGINT";
+    case atype::FLOAT:
+      return "castFLOAT4";
+    case atype::DOUBLE:
+      return "castFLOAT8";
+    default:
+      throw runtime_error_f("Do not know how to cast to %d", f);
+  }
 }
 
 bool operator==(DatumSpec const& lhs, DatumSpec const& rhs)
@@ -82,16 +115,47 @@ std::ostream& operator<<(std::ostream& os, DatumSpec const& spec)
   return os;
 }
 
-namespace
+void updatePlaceholders(Filter& filter, InitContext& context)
 {
-/// helper struct used to parse trees
-struct NodeRecord {
-  /// pointer to the actual tree node
-  Node* node_ptr = nullptr;
-  size_t index = 0;
-  explicit NodeRecord(Node* node_, size_t index_) : node_ptr(node_), index{index_} {}
-};
-} // namespace
+  std::stack<NodeRecord> path;
+
+  // insert the top node into stack
+  path.emplace(filter.node.get(), 0);
+
+  auto updateNode = [&](Node* node) {
+    if (node->self.index() == 3) {
+      std::get_if<3>(&node->self)->reset(context);
+    }
+  };
+
+  auto isLeaf = [](Node const* const node) {
+    return ((node->left == nullptr) && (node->right == nullptr));
+  };
+
+  // while the stack is not empty
+  while (path.empty() == false) {
+    auto& top = path.top();
+
+    updateNode(top.node_ptr);
+
+    path.pop();
+
+    if (top.node_ptr->left != nullptr) {
+      if (isLeaf(top.node_ptr->left.get())) {
+        updateNode(top.node_ptr->left.get());
+      } else {
+        path.emplace(top.node_ptr->left.get(), 0);
+      }
+    }
+    if (top.node_ptr->right != nullptr) {
+      if (isLeaf(top.node_ptr->right.get())) {
+        updateNode(top.node_ptr->right.get());
+      } else {
+        path.emplace(top.node_ptr->right.get(), 0);
+      }
+    }
+  }
+}
 
 Operations createOperations(Filter const& expression)
 {
@@ -106,6 +170,7 @@ Operations createOperations(Filter const& expression)
       overloaded{
         [lh = LiteralNodeHelper{}](LiteralNode node) { return lh(node); },
         [bh = BindingNodeHelper{}](BindingNode node) { return bh(node); },
+        [ph = PlaceholderNodeHelper{}](PlaceholderNode node) { return ph(node); },
         [](auto&&) { return DatumSpec{}; }},
       node->self);
   };
@@ -140,11 +205,13 @@ Operations createOperations(Filter const& expression)
     }
 
     decltype(left) right = nullptr;
-    if (top.node_ptr->right != nullptr)
+    if (top.node_ptr->right != nullptr) {
       right = top.node_ptr->right.get();
+    }
     bool rightLeaf = true;
-    if (right != nullptr)
+    if (right != nullptr) {
       rightLeaf = isLeaf(right);
+    }
     size_t ri = 0;
     auto isUnary = false;
     if (top.node_ptr->right == nullptr) {
@@ -160,10 +227,12 @@ Operations createOperations(Filter const& expression)
     }
 
     OperationSpecs.push_back(std::move(operationSpec));
-    if (!leftLeaf)
+    if (!leftLeaf) {
       path.emplace(left, li);
-    if (!isUnary && !rightLeaf)
+    }
+    if (!isUnary && !rightLeaf) {
       path.emplace(right, ri);
+    }
   }
   // at this stage the operations vector is created, but the field types are
   // only set for the logical operations and leaf nodes
@@ -173,44 +242,55 @@ Operations createOperations(Filter const& expression)
   auto inferResultType = [&resultTypes](DatumSpec& left, DatumSpec& right) {
     // if the left datum is monostate (error)
     if (left.datum.index() == 0) {
-      throw std::runtime_error("Malformed operation spec: empty left datum");
+      throw runtime_error("Malformed operation spec: empty left datum");
     }
 
     // check if the datums are references
-    if (left.datum.index() == 1)
+    if (left.datum.index() == 1) {
       left.type = resultTypes[std::get<size_t>(left.datum)];
+    }
 
-    if (right.datum.index() == 1)
+    if (right.datum.index() == 1) {
       right.type = resultTypes[std::get<size_t>(right.datum)];
+    }
 
     auto t1 = left.type;
     auto t2 = right.type;
     // if the right datum is monostate (unary op)
     if (right.datum.index() == 0) {
-      if (t1 == atype::DOUBLE)
+      if (t1 == atype::DOUBLE) {
         return atype::DOUBLE;
+      }
       return atype::FLOAT;
     }
 
-    if (t1 == t2)
+    if (t1 == t2) {
       return t1;
+    }
 
-    if (t1 == atype::INT32) {
-      if (t2 == atype::FLOAT)
+    if (t1 == atype::INT32 || t1 == atype::INT8 || t1 == atype::INT16 || t1 == atype::UINT8) {
+      if (t2 == atype::INT32 || t2 == atype::INT8 || t2 == atype::INT16 || t2 == atype::UINT8) {
         return atype::FLOAT;
-      if (t2 == atype::DOUBLE)
+      }
+      if (t2 == atype::FLOAT) {
+        return atype::FLOAT;
+      }
+      if (t2 == atype::DOUBLE) {
         return atype::DOUBLE;
+      }
     }
     if (t1 == atype::FLOAT) {
-      if (t2 == atype::INT32)
+      if (t2 == atype::INT32 || t2 == atype::INT8 || t2 == atype::INT16 || t2 == atype::UINT8) {
         return atype::FLOAT;
-      if (t2 == atype::DOUBLE)
+      }
+      if (t2 == atype::DOUBLE) {
         return atype::DOUBLE;
+      }
     }
     if (t1 == atype::DOUBLE) {
       return atype::DOUBLE;
     }
-    throw std::runtime_error(fmt::format("Invalid combination of argument types {} and {}", t1, t2));
+    throw runtime_error_f("Invalid combination of argument types %d and %d", t1, t2);
   };
 
   for (auto it = OperationSpecs.rbegin(); it != OperationSpecs.rend(); ++it) {
@@ -225,9 +305,14 @@ Operations createOperations(Filter const& expression)
   return OperationSpecs;
 }
 
-gandiva::ConditionPtr createCondition(gandiva::NodePtr node)
+gandiva::ConditionPtr makeCondition(gandiva::NodePtr node)
 {
   return gandiva::TreeExprBuilder::MakeCondition(node);
+}
+
+gandiva::ExpressionPtr makeExpression(gandiva::NodePtr node, gandiva::FieldPtr result)
+{
+  return gandiva::TreeExprBuilder::MakeExpression(node, result);
 }
 
 std::shared_ptr<gandiva::Filter>
@@ -235,11 +320,12 @@ std::shared_ptr<gandiva::Filter>
 {
   std::shared_ptr<gandiva::Filter> filter;
   auto s = gandiva::Filter::Make(Schema,
-                                 createCondition(createExpressionTree(opSpecs, Schema)),
+                                 makeCondition(createExpressionTree(opSpecs, Schema)),
                                  &filter);
-  if (s.ok())
-    return filter;
-  throw std::runtime_error(fmt::format("Failed to create filter: {}", s));
+  if (!s.ok()) {
+    throw runtime_error_f("Failed to create filter: %s", s.ToString().c_str());
+  }
+  return filter;
 }
 
 std::shared_ptr<gandiva::Filter>
@@ -249,9 +335,29 @@ std::shared_ptr<gandiva::Filter>
   auto s = gandiva::Filter::Make(Schema,
                                  condition,
                                  &filter);
-  if (s.ok())
-    return filter;
-  throw std::runtime_error(fmt::format("Failed to create filter: {}", s));
+  if (!s.ok()) {
+    throw runtime_error_f("Failed to create filter: %s", s.ToString().c_str());
+  }
+  return filter;
+}
+
+std::shared_ptr<gandiva::Projector>
+  createProjector(gandiva::SchemaPtr const& Schema, Operations const& opSpecs, gandiva::FieldPtr result)
+{
+  std::shared_ptr<gandiva::Projector> projector;
+  auto s = gandiva::Projector::Make(Schema,
+                                    {makeExpression(createExpressionTree(opSpecs, Schema), result)},
+                                    &projector);
+  if (!s.ok()) {
+    throw runtime_error_f("Failed to create projector: %s", s.ToString().c_str());
+  }
+  return projector;
+}
+
+std::shared_ptr<gandiva::Projector>
+  createProjector(gandiva::SchemaPtr const& Schema, Projector&& p, gandiva::FieldPtr result)
+{
+  return createProjector(std::move(Schema), createOperations(std::move(p)), std::move(result));
 }
 
 Selection createSelection(std::shared_ptr<arrow::Table> table, std::shared_ptr<gandiva::Filter> gfilter)
@@ -260,30 +366,56 @@ Selection createSelection(std::shared_ptr<arrow::Table> table, std::shared_ptr<g
   auto s = gandiva::SelectionVector::MakeInt64(table->num_rows(),
                                                arrow::default_memory_pool(),
                                                &selection);
-  if (!s.ok())
-    throw std::runtime_error(fmt::format("Cannot allocate selection vector {}", s));
+  if (!s.ok()) {
+    throw runtime_error_f("Cannot allocate selection vector %s", s.ToString().c_str());
+  }
+  if (table->num_rows() == 0) {
+    return selection;
+  }
   arrow::TableBatchReader reader(*table);
   std::shared_ptr<arrow::RecordBatch> batch;
   while (true) {
     s = reader.ReadNext(&batch);
     if (!s.ok()) {
-      throw std::runtime_error(fmt::format("Cannot read batches from table {}", s));
+      throw runtime_error_f("Cannot read batches from table %s", s.ToString().c_str());
     }
     if (batch == nullptr) {
       break;
     }
     s = gfilter->Evaluate(*batch, selection);
-    if (!s.ok())
-      throw std::runtime_error(fmt::format("Cannot apply filter {}", s));
+    if (!s.ok()) {
+      throw runtime_error_f("Cannot apply filter %s", s.ToString().c_str());
+    }
   }
 
   return selection;
 }
 
 Selection createSelection(std::shared_ptr<arrow::Table> table,
-                          Filter const& expression)
+                          const Filter& expression)
 {
-  return createSelection(table, createFilter(table->schema(), createOperations(expression)));
+  return createSelection(table, createFilter(table->schema(), createOperations(std::move(expression))));
+}
+
+auto createProjection(std::shared_ptr<arrow::Table> table, std::shared_ptr<gandiva::Projector> gprojector)
+{
+  arrow::TableBatchReader reader(*table);
+  std::shared_ptr<arrow::RecordBatch> batch;
+  std::shared_ptr<arrow::ArrayVector> v;
+  while (true) {
+    auto s = reader.ReadNext(&batch);
+    if (!s.ok()) {
+      throw runtime_error_f("Cannot read batches from table %s", s.ToString().c_str());
+    }
+    if (batch == nullptr) {
+      break;
+    }
+    s = gprojector->Evaluate(*batch, arrow::default_memory_pool(), v.get());
+    if (!s.ok()) {
+      throw runtime_error_f("Cannot apply projector %s", s.ToString().c_str());
+    }
+  }
+  return v;
 }
 
 gandiva::NodePtr createExpressionTree(Operations const& opSpecs,
@@ -295,39 +427,73 @@ gandiva::NodePtr createExpressionTree(Operations const& opSpecs,
   std::unordered_map<std::string, gandiva::NodePtr> fieldNodes;
 
   auto datumNode = [Schema, &opNodes, &fieldNodes](DatumSpec const& spec) {
+    if (spec.datum.index() == 0) {
+      return gandiva::NodePtr(nullptr);
+    }
     if (spec.datum.index() == 1) {
       return opNodes[std::get<size_t>(spec.datum)];
     }
 
     if (spec.datum.index() == 2) {
       auto content = std::get<LiteralNode::var_t>(spec.datum);
-      if (content.index() == 0)
+      if (content.index() == 0) {
         return gandiva::TreeExprBuilder::MakeLiteral(static_cast<int32_t>(std::get<int>(content)));
-      if (content.index() == 1)
+      }
+      if (content.index() == 1) {
         return gandiva::TreeExprBuilder::MakeLiteral(std::get<bool>(content));
-      if (content.index() == 2)
+      }
+      if (content.index() == 2) {
         return gandiva::TreeExprBuilder::MakeLiteral(std::get<float>(content));
-      if (content.index() == 3)
+      }
+      if (content.index() == 3) {
         return gandiva::TreeExprBuilder::MakeLiteral(std::get<double>(content));
-      throw std::runtime_error("Malformed LiteralNode");
+      }
+      if (content.index() == 4) {
+        return gandiva::TreeExprBuilder::MakeLiteral(std::get<uint8_t>(content));
+      }
+      throw runtime_error("Malformed LiteralNode");
     }
 
     if (spec.datum.index() == 3) {
       auto name = std::get<std::string>(spec.datum);
       auto lookup = fieldNodes.find(name);
-      if (lookup != fieldNodes.end())
+      if (lookup != fieldNodes.end()) {
         return lookup->second;
-      auto node = gandiva::TreeExprBuilder::MakeField(Schema->GetFieldByName(name));
+      }
+      auto field = Schema->GetFieldByName(name);
+      if (field == nullptr) {
+        throw runtime_error_f("Cannot find field \"%s\"", name.c_str());
+      }
+      auto node = gandiva::TreeExprBuilder::MakeField(field);
       fieldNodes.insert({name, node});
       return node;
     }
-    throw std::runtime_error("Malformed DatumSpec");
+    throw runtime_error("Malformed DatumSpec");
   };
 
   gandiva::NodePtr tree = nullptr;
   for (auto it = opSpecs.rbegin(); it != opSpecs.rend(); ++it) {
     auto leftNode = datumNode(it->left);
     auto rightNode = datumNode(it->right);
+
+    auto insertUpcastNode = [&](gandiva::NodePtr node, atype::type t) {
+      if (t != it->type) {
+        auto upcast = gandiva::TreeExprBuilder::MakeFunction(upcastTo(it->type), {node}, concreteArrowType(it->type));
+        node = upcast;
+      }
+      return node;
+    };
+
+    auto insertEqualizeUpcastNode = [&](gandiva::NodePtr& node1, gandiva::NodePtr& node2, atype::type t1, atype::type t2) {
+      if (t2 > t1) {
+        auto upcast = gandiva::TreeExprBuilder::MakeFunction(upcastTo(t2), {node1}, concreteArrowType(t2));
+        node1 = upcast;
+      } else if (t1 > t2) {
+        auto upcast = gandiva::TreeExprBuilder::MakeFunction(upcastTo(t1), {node2}, concreteArrowType(t1));
+        node2 = upcast;
+      }
+    };
+
     switch (it->op) {
       case BasicOp::LogicalOr:
         tree = gandiva::TreeExprBuilder::MakeOr({leftNode, rightNode});
@@ -336,9 +502,16 @@ gandiva::NodePtr createExpressionTree(Operations const& opSpecs,
         tree = gandiva::TreeExprBuilder::MakeAnd({leftNode, rightNode});
         break;
       default:
-        if (it->op <= BasicOp::Exp) {
+        if (it->op < BasicOp::Sqrt) {
+          if (it->type != atype::BOOL) {
+            leftNode = insertUpcastNode(leftNode, it->left.type);
+            rightNode = insertUpcastNode(rightNode, it->right.type);
+          } else if (it->op == BasicOp::Equal || it->op == BasicOp::NotEqual) {
+            insertEqualizeUpcastNode(leftNode, rightNode, it->left.type, it->right.type);
+          }
           tree = gandiva::TreeExprBuilder::MakeFunction(binaryOperationsMap[it->op], {leftNode, rightNode}, concreteArrowType(it->type));
         } else {
+          leftNode = insertUpcastNode(leftNode, it->left.type);
           tree = gandiva::TreeExprBuilder::MakeFunction(binaryOperationsMap[it->op], {leftNode}, concreteArrowType(it->type));
         }
         break;
@@ -353,10 +526,12 @@ bool isSchemaCompatible(gandiva::SchemaPtr const& Schema, Operations const& opSp
 {
   std::set<std::string> opFieldNames;
   for (auto& spec : opSpecs) {
-    if (spec.left.datum.index() == 3)
+    if (spec.left.datum.index() == 3) {
       opFieldNames.insert(std::get<std::string>(spec.left.datum));
-    if (spec.right.datum.index() == 3)
+    }
+    if (spec.right.datum.index() == 3) {
       opFieldNames.insert(std::get<std::string>(spec.right.datum));
+    }
   }
 
   std::set<std::string> schemaFieldNames;
@@ -371,7 +546,7 @@ bool isSchemaCompatible(gandiva::SchemaPtr const& Schema, Operations const& opSp
 void updateExpressionInfos(expressions::Filter const& filter, std::vector<ExpressionInfo>& eInfos)
 {
   if (eInfos.empty()) {
-    throw std::runtime_error("Empty expression info vector.");
+    throw runtime_error("Empty expression info vector.");
   }
   Operations ops = createOperations(filter);
   for (auto& info : eInfos) {

@@ -28,12 +28,14 @@
 #include "TRDSimulation/TrapConfigHandler.h"
 #include "TRDSimulation/TrapConfig.h"
 #include "TRDSimulation/TrapSimulator.h"
+#include "DataFormatsTRD/Constants.h"
 #include "TMath.h"
 #include "TGeoMatrix.h"
 #include "TGraph.h"
 
 using namespace std;
 using namespace o2::trd;
+using namespace o2::trd::constants;
 
 TrapConfigHandler::TrapConfigHandler(TrapConfig* cfg) : mFeeParam(), mRestrictiveMask((0x3ffff << 11) | (0x1f << 6) | 0x3f), mTrapConfig(cfg), mGtbl()
 {
@@ -276,7 +278,7 @@ int TrapConfigHandler::loadConfig(std::string filename)
     if (cmd != 999 && addr != -1 && extali != -1) {
 
       if (cmd == mgkScsnCmdWrite) {
-        for (int det = 0; det < kNdet; det++) {
+        for (int det = 0; det < MAXCHAMBER; det++) {
           unsigned int rocpos = (1 << (TRDGeometry::getSector(det) + 11)) | (1 << (TRDGeometry::getStack(det) + 6)) | (1 << TRDGeometry::getLayer(det));
           LOG(debug) << "checking restriction: mask=0x" << hex << std::setw(8) << mRestrictiveMask << " rocpos=0x" << hex << std::setw(8) << rocpos;
           if ((mRestrictiveMask & rocpos) == rocpos) {
@@ -304,7 +306,7 @@ int TrapConfigHandler::loadConfig(std::string filename)
       else if (cmd == mgkScsnCmdSetHC) {
         int fullVersion = ((data & 0x7F00) >> 1) | (data & 0x7f);
 
-        for (int iDet = 0; iDet < kNdet; iDet++) {
+        for (int iDet = 0; iDet < MAXCHAMBER; iDet++) {
           int smls = (TRDGeometry::getSector(iDet) << 6) | (TRDGeometry::getLayer(iDet) << 3) | TRDGeometry::getStack(iDet);
 
           for (int iRob = 0; iRob < 8; iRob++) {
@@ -351,16 +353,18 @@ int TrapConfigHandler::loadConfig(std::string filename)
       ignoredLines++;
     }
 
-    if (!infile.eof())
+    if (!infile.eof()) {
       infile.clear();
+    }
   }
 
   infile.close();
 
   LOG(debug3) << "Ignored lines: " << ignoredLines << ", ignored cmds: " << ignoredCmds;
 
-  if (ignoredLines > readLines)
+  if (ignoredLines > readLines) {
     LOG(error) << "More than 50 %% of the input file could not be processed. Perhaps you should check the input file %s", filename.c_str();
+  }
 
   return true;
 }
@@ -381,7 +385,7 @@ void TrapConfigHandler::processLTUparam(int dest, int addr, unsigned int data)
   switch (dest) {
 
     case 0: // set the parameters in TrapConfig
-      for (int det = 0; det < kNdet; det++) {
+      for (int det = 0; det < MAXCHAMBER; det++) {
         configureDyCorr(det);
         configureDRange(det);    // deflection range
         configureNTimebins(det); // timebins in the drift region
@@ -549,10 +553,10 @@ void TrapConfigHandler::configurePIDcorr(int det)
   int MaxRows;
   FeeParam* feeparam = FeeParam::instance();
   if (TRDGeometry::getStack(det) == 2)
-    MaxRows = FeeParam::mgkNrowC0;
+    MaxRows = NROWC0;
   else
-    MaxRows = FeeParam::mgkNrowC1;
-  int MaxCols = FeeParam::mgkNcol;
+    MaxRows = NROWC1;
+  int MaxCols = NCOLUMN;
   for (int row = 0; row < MaxRows; row++) { //TODO put this back to rob/mcm and not row/col as done in TrapSimulator
     for (int col = 0; col < MaxCols; col++) {
       readoutboard = feeparam->getROBfromPad(row, col);

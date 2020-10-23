@@ -40,9 +40,6 @@ void Clusterer::process(DataReader& reader, std::vector<Cluster>& clusters, MCLa
 
   LOG(DEBUG) << "We had " << totNumDigits << " digits in this event";
   timerProcess.Stop();
-  printf("Timing:\n");
-  printf("Clusterer::process:        ");
-  timerProcess.Print();
 }
 
 //__________________________________________________
@@ -53,6 +50,7 @@ void Clusterer::calibrateStrip()
   for (int idig = 0; idig < mStripData.digits.size(); idig++) {
     //    LOG(DEBUG) << "Checking digit " << idig;
     Digit* dig = &mStripData.digits[idig];
+    dig->setBC(dig->getBC() - mBCOffset); // RS Don't use raw BC, always start from the beginning of the TF
     double calib = mCalibApi->getTimeCalibration(dig->getChannel(), dig->getTOT() * Geo::TOTBIN_NS);
     //printf("channel %d) isProblematic = %d, fractionUnderPeak = %f\n",dig->getChannel(),mCalibApi->isProblematic(dig->getChannel()),mCalibApi->getFractionUnderPeak(dig->getChannel())); // toberem
     dig->setIsProblematic(mCalibApi->isProblematic(dig->getChannel()));
@@ -81,8 +79,9 @@ void Clusterer::processStrip(std::vector<Cluster>& clusters, MCLabelContainer co
 
     mNumberOfContributingDigits = 0;
     dig->getPhiAndEtaIndex(iphi, ieta);
-    if (mStripData.digits.size() > 1)
+    if (mStripData.digits.size() > 1) {
       LOG(DEBUG) << "idig = " << idig;
+    }
 
     // first we make a cluster out of the digit
     int noc = clusters.size();
@@ -256,4 +255,11 @@ void Clusterer::buildCluster(Cluster& c, MCLabelContainer const* digitMCTruth)
   c.setErrors(errY2, errZ2, errYZ);
 
   return;
+}
+
+//_____________________________________________________________________
+void Clusterer::setFirstOrbit(uint32_t orb)
+{
+  mFirstOrbit = orb;
+  mBCOffset = orb * o2::constants::lhc::LHCMaxBunches;
 }

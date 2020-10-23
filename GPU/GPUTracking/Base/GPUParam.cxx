@@ -32,10 +32,10 @@ void GPUParam::SetDefaults(float solenoidBz)
 {
   memset((void*)this, 0, sizeof(*this));
   new (&tpcGeometry) GPUTPCGeometry;
-  rec.SetDefaults();
+  new (&rec) GPUSettingsRec;
 
   // clang-format off
-  float const kParamS0Par[2][3][6] =
+  const float kParamS0Par[2][3][6] =
   {
     { { 6.45913474727e-04, 2.51547407970e-05, 1.57551113516e-02, 1.99872811635e-08, -5.86769729853e-03, 9.16301505640e-05 },
     { 9.71546804067e-04, 1.70938055817e-05, 2.17084009200e-02, 3.90275758377e-08, -1.68631039560e-03, 8.40498323669e-05 },
@@ -45,8 +45,7 @@ void GPUParam::SetDefaults(float solenoidBz)
     { 1.15970033221e-03, 1.30452335725e-05, 1.87015570700e-02, 5.39766737973e-08, 1.64790824056e-02, 1.44115634612e-04 },
     { 6.27940462437e-04, 1.78520094778e-05, 2.83537860960e-02, 1.16867742150e-08, 5.02607785165e-02, 1.88510020962e-04 } }
   };
-
-  float const kParamRMS0[2][3][4] =
+  const float kParamRMS0[2][3][4] =
   {
     { { 4.17516864836e-02, 1.87623649254e-04, 5.63788712025e-02, 5.38373768330e-01, },
     { 8.29434990883e-02, 2.03291710932e-04, 6.81538805366e-02, 9.70965325832e-01, },
@@ -120,13 +119,13 @@ void GPUParam::SetDefaults(float solenoidBz)
   GPUTPCGMPolynomialFieldManager::GetPolynomialField(BzkG, polynomialField);
 }
 
-void GPUParam::UpdateEventSettings(const GPUSettingsEvent* e, const GPUSettingsDeviceProcessing* p)
+void GPUParam::UpdateEventSettings(const GPUSettingsEvent* e, const GPUSettingsProcessing* p)
 {
   if (e) {
     AssumeConstantBz = e->constBz;
     ToyMCEventsFlag = e->homemadeEvents;
     ContinuousTracking = e->continuousMaxTimeBin != 0;
-    continuousMaxTimeBin = e->continuousMaxTimeBin == -1 ? (0.023 * 5e6) : e->continuousMaxTimeBin;
+    continuousMaxTimeBin = e->continuousMaxTimeBin == -1 ? GPUSettings::TPC_MAX_TF_TIME_BIN : e->continuousMaxTimeBin;
     polynomialField.Reset();
     if (AssumeConstantBz) {
       GPUTPCGMPolynomialFieldManager::GetPolynomialField(GPUTPCGMPolynomialFieldManager::kUniform, BzkG, polynomialField);
@@ -141,7 +140,7 @@ void GPUParam::UpdateEventSettings(const GPUSettingsEvent* e, const GPUSettingsD
   earlyTpcTransform = rec.ForceEarlyTPCTransform == -1 ? (!ContinuousTracking) : rec.ForceEarlyTPCTransform;
 }
 
-void GPUParam::SetDefaults(const GPUSettingsEvent* e, const GPUSettingsRec* r, const GPUSettingsDeviceProcessing* p, const GPURecoStepConfiguration* w)
+void GPUParam::SetDefaults(const GPUSettingsEvent* e, const GPUSettingsRec* r, const GPUSettingsProcessing* p, const GPURecoStepConfiguration* w)
 {
   SetDefaults(e->solenoidBz);
   if (w) {

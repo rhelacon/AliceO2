@@ -17,6 +17,8 @@
 #include "Framework/Lifetime.h"
 #include "Headers/DataHeader.h"
 #include "Steer/HitProcessingManager.h"
+#include "Steer/InteractionSampler.h"
+#include "CommonDataFormat/InteractionRecord.h"
 #include "DataFormatsTPC/TPCSectorHeader.h"
 #include <FairMQLogger.h>
 #include <TMessage.h> // object serialization
@@ -29,6 +31,8 @@
 #include <algorithm>
 
 using namespace o2::framework;
+namespace o2lhc = o2::constants::lhc;
+
 using SubSpecificationType = o2::framework::DataAllocator::SubSpecificationType;
 namespace o2
 {
@@ -81,6 +85,10 @@ DataProcessorSpec getSimReaderSpec(SubspecRange range, const std::vector<std::st
     // initialize fundamental objects
     auto& mgr = steer::HitProcessingManager::instance();
 
+    // init gRandom to random start
+    // TODO: offer option to set seed
+    gRandom->SetSeed(0);
+
     if (simprefixes.size() == 0) {
       LOG(ERROR) << "No simulation prefix available";
     } else {
@@ -108,22 +116,71 @@ DataProcessorSpec getSimReaderSpec(SubspecRange range, const std::vector<std::st
       LOG(INFO) << "Imposing hadronic interaction rate " << intRate << "Hz";
       mgr.getInteractionSampler().setInteractionRate(intRate);
 
+      int bc0 = ctx.options().get<int>("firstBC");
+      int orbit0 = ctx.options().get<int>("firstOrbit");
+      if (bc0 < 0 || orbit0 < 0) {
+        throw std::runtime_error("negative 1st orbit or BC provided");
+      }
+      mgr.getInteractionSampler().setFirstIR({uint16_t(bc0 % o2lhc::LHCMaxBunches), orbit0 + uint32_t(bc0 / o2lhc::LHCMaxBunches)});
+
       auto bcPatternFile = ctx.options().get<std::string>("bcPatternFile");
       if (!bcPatternFile.empty()) {
         mgr.getInteractionSampler().setBunchFilling(bcPatternFile);
       }
 
       mgr.getInteractionSampler().init();
+      mgr.getInteractionSampler().print();
       // doing a random event selection/subsampling?
       mgr.setRandomEventSequence(ctx.options().get<int>("randomsample") > 0);
 
-      // number of collisions asked?
+      // finalize collisions (with number of collisions asked)
       auto col = ctx.options().get<int>("ncollisions");
       if (col != 0) {
         mgr.setupRun(col);
       } else {
         mgr.setupRun();
       }
+
+      // --- we add QED contributions to the digitization context
+      // --- for now in between first and last real collision
+      auto qedprefix = ctx.options().get<std::string>("simPrefixQED");
+      if (qedprefix.size() > 0) {
+        o2::steer::InteractionSampler qedInteractionSampler;
+
+        // get first and last "hadronic" interaction records and let
+        // QED events range from the first bunch crossing to the last bunch crossing
+        // in this range
+        auto first = mgr.getDigitizationContext().getEventRecords().front();
+        auto last = mgr.getDigitizationContext().getEventRecords().back();
+        first.bc = 0;
+        last.bc = o2::constants::lhc::LHCMaxBunches;
+
+        const float ratio = ctx.options().get<float>("qed-x-section-ratio");
+        if (ratio <= 0.) {
+          throw std::runtime_error("no meaningful qed-x-section-ratio was provided");
+        }
+        const float hadronicrate = ctx.options().get<float>("interactionRate");
+        const float qedrate = ratio * hadronicrate;
+        LOG(INFO) << "QED RATE " << qedrate;
+        qedInteractionSampler.setInteractionRate(qedrate);
+        qedInteractionSampler.setFirstIR(first);
+        qedInteractionSampler.init();
+        qedInteractionSampler.print();
+        std::vector<o2::InteractionTimeRecord> qedinteractionrecords;
+        o2::InteractionTimeRecord t;
+        LOG(INFO) << "GENERATING COL TIMES";
+        t = qedInteractionSampler.generateCollisionTime();
+        while ((t = qedInteractionSampler.generateCollisionTime()) < last) {
+          qedinteractionrecords.push_back(t);
+        }
+        LOG(INFO) << "DONE GENERATING COL TIMES";
+
+        // get digitization context and add QED stuff
+        mgr.getDigitizationContext().fillQED(qedprefix, qedinteractionrecords);
+        mgr.getDigitizationContext().printCollisionSummary(true);
+      }
+      // --- end addition of QED contributions
+
       LOG(INFO) << "Initializing Spec ... have " << mgr.getDigitizationContext().getEventRecords().size() << " times ";
       LOG(INFO) << "Serializing Context for later reuse";
       mgr.writeDigitizationContext(ctx.options().get<std::string>("outcontext").c_str());
@@ -150,8 +207,11 @@ DataProcessorSpec getSimReaderSpec(SubspecRange range, const std::vector<std::st
     /* OPTIONS */
     Options{
       {"interactionRate", VariantType::Float, 50000.0f, {"Total hadronic interaction rate (Hz)"}},
+      {"firstBC", VariantType::Int, 0, {"First BC in interaction sampling, will affect 1st orbit if > LHCMaxBunches"}},
+      {"firstOrbit", VariantType::Int, 1, {"First orbit in interaction sampling"}},
       {"bcPatternFile", VariantType::String, "", {"Interacting BC pattern file (e.g. from CreateBCPattern.C)"}},
-      {"simFileQED", VariantType::String, "", {"Sim (QED) input filename"}},
+      {"simPrefixQED", VariantType::String, "", {"Sim (QED) input prefix (example: path/o2qed). The prefix allows to find files like path/o2qed_Kine.root etc."}},
+      {"qed-x-section-ratio", VariantType::Float, -1.f, {"Ratio of cross sections QED/hadronic events. Determines QED interaction rate from hadronic interaction rate."}},
       {"outcontext", VariantType::String, "collisioncontext.root", {"Output file for collision context"}},
       {"incontext", VariantType::String, "", {"Take collision context from this file"}},
       {"ncollisions,n",

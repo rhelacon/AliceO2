@@ -30,8 +30,10 @@
 
 namespace o2
 {
+class MCCompLabel;
 namespace dataformats
 {
+
 /// @struct MCTruthHeaderElement
 /// @brief Simple struct having information about truth elements for particular indices:
 /// how many associations we have and where they start in the storage
@@ -165,6 +167,16 @@ class MCTruthContainer
     mTruthArray.clear();
   }
 
+  // clear and force freeing the memory
+  void clear_andfreememory()
+  {
+    clear();
+    // this forces the desctructor being called on existing buffers
+    mHeaderArray = std::vector<MCTruthHeaderElement>();
+    mTruthArray = std::vector<TruthElement>();
+    mStreamerData = std::vector<char>();
+  }
+
   // add element for a particular dataindex
   // at the moment only strictly consecutive modes are supported
   void addElement(uint32_t dataindex, TruthElement const& element)
@@ -283,12 +295,34 @@ class MCTruthContainer
     }
   }
 
+  // merge part of another container ("n" entries starting from "from") to the back of this one
+  void mergeAtBack(MCTruthContainer<TruthElement> const& other, size_t from, size_t n)
+  {
+    const auto oldtruthsize = mTruthArray.size();
+    const auto oldheadersize = mHeaderArray.size();
+    auto endIdx = from + n;
+    assert(endIdx <= other.mHeaderArray.size());
+    const auto* headBeg = &other.mHeaderArray[from];
+    const auto* headEnd = headBeg + n;
+    const auto* trtArrBeg = &other.mTruthArray[other.getMCTruthHeader(from).index];
+    const auto* trtArrEnd = (endIdx == other.mHeaderArray.size()) ? (&other.mTruthArray.back()) + 1 : &other.mTruthArray[other.getMCTruthHeader(endIdx).index];
+
+    // copy from other
+    std::copy(headBeg, headEnd, std::back_inserter(mHeaderArray));
+    std::copy(trtArrBeg, trtArrEnd, std::back_inserter(mTruthArray));
+    long offset = long(oldtruthsize) - other.getMCTruthHeader(from).index;
+    // adjust information of newly attached part
+    for (uint32_t i = oldheadersize; i < mHeaderArray.size(); ++i) {
+      mHeaderArray[i].index += offset;
+    }
+  }
+
   /// Flatten the internal arrays to the provided container
   /// Copies the content of the two vectors of PODs to a contiguous container.
   /// The flattened data starts with a specific header @ref FlatHeader describing
   /// size and content of the two vectors within the raw buffer.
   template <typename ContainerType>
-  size_t flatten_to(ContainerType& container)
+  size_t flatten_to(ContainerType& container) const
   {
     size_t bufferSize = sizeof(FlatHeader) + sizeof(MCTruthHeaderElement) * mHeaderArray.size() + sizeof(TruthElement) * mTruthArray.size();
     container.resize((bufferSize / sizeof(typename ContainerType::value_type)) + ((bufferSize % sizeof(typename ContainerType::value_type)) > 0 ? 1 : 0));
@@ -382,6 +416,8 @@ class MCTruthContainer
 
   ClassDefNV(MCTruthContainer, 2);
 }; // end class
+
+using MCLabelContainer = o2::dataformats::MCTruthContainer<o2::MCCompLabel>;
 
 } // namespace dataformats
 } // namespace o2

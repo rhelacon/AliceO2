@@ -54,7 +54,7 @@ void TPCInterpolationDPL::run(ProcessingContext& pc)
   //---------------------------->> TPC Clusters loading >>------------------------------------------
   int operation = 0;
   uint64_t activeSectors = 0;
-  std::bitset<o2::tpc::Constants::MAXSECTOR> validSectors = 0;
+  std::bitset<o2::tpc::constants::MAXSECTOR> validSectors = 0;
   std::map<int, DataRef> datarefs;
   std::vector<InputSpec> filter = {
     {"check", ConcreteDataTypeMatcher{"TPC", "CLUSTERNATIVE"}, Lifetime::Timeframe},
@@ -67,7 +67,7 @@ void TPCInterpolationDPL::run(ProcessingContext& pc)
       throw std::runtime_error("sector header missing on header stack");
     }
     const int& sector = sectorHeader->sector();
-    std::bitset<o2::tpc::Constants::MAXSECTOR> sectorMask(sectorHeader->sectorBits);
+    std::bitset<o2::tpc::constants::MAXSECTOR> sectorMask(sectorHeader->sectorBits);
     LOG(INFO) << "Reading TPC cluster data, sector mask is " << sectorMask;
     if ((validSectors & sectorMask).any()) {
       // have already data for this sector, this should not happen in the current
@@ -86,7 +86,7 @@ void TPCInterpolationDPL::run(ProcessingContext& pc)
               << std::endl                                                                   //
               << "  input status:   " << validSectors                                        //
               << std::endl                                                                   //
-              << "  active sectors: " << std::bitset<o2::tpc::Constants::MAXSECTOR>(activeSectors);
+              << "  active sectors: " << std::bitset<o2::tpc::constants::MAXSECTOR>(activeSectors);
   };
 
   if (activeSectors == 0 || (activeSectors & validSectors.to_ulong()) != activeSectors) {
@@ -145,7 +145,9 @@ void TPCInterpolationDPL::run(ProcessingContext& pc)
   o2::tpc::ClusterNativeAccess clusterIndex;
   std::unique_ptr<o2::tpc::ClusterNative[]> clusterBuffer;
   memset(&clusterIndex, 0, sizeof(clusterIndex));
-  o2::tpc::ClusterNativeHelper::Reader::fillIndex(clusterIndex, clusterBuffer, clustersTPC);
+  o2::tpc::ClusterNativeHelper::ConstMCLabelContainerViewWithBuffer dummyMCOutput;
+  std::vector<o2::tpc::ClusterNativeHelper::ConstMCLabelContainerView> dummyMCInput;
+  o2::tpc::ClusterNativeHelper::Reader::fillIndex(clusterIndex, clusterBuffer, dummyMCOutput, clustersTPC, dummyMCInput);
   //----------------------------<< TPC Clusters loading <<------------------------------------------
 
   // pass input data to TrackInterpolation object
@@ -162,7 +164,7 @@ void TPCInterpolationDPL::run(ProcessingContext& pc)
     // not yet implemented
   }
 
-  printf("TPC Interpolation Workflow initialized. Start processing...\n");
+  LOG(INFO) << "TPC Interpolation Workflow initialized. Start processing...";
 
   mInterpolation.process();
 

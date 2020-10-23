@@ -19,7 +19,7 @@
 #include "Steer/HitProcessingManager.h" // for DigitizationContext
 #include "TChain.h"
 #include <SimulationDataFormat/MCCompLabel.h>
-#include <SimulationDataFormat/MCTruthContainer.h>
+#include <SimulationDataFormat/ConstMCTruthContainer.h>
 #include "Framework/Task.h"
 #include "DataFormatsParameters/GRPObject.h"
 #include "TRDBase/Digit.h" // for the Digit type
@@ -68,7 +68,7 @@ class TRDDPLDigitizerTask : public o2::base::BaseDPLDigitizer
     auto& irecords = context->getEventRecords();
 
     for (auto& record : irecords) {
-      LOG(INFO) << "TRD TIME RECEIVED " << record.timeNS;
+      LOG(INFO) << "TRD TIME RECEIVED " << record.getTimeNS();
     }
 
     auto& eventParts = context->getEventParts();
@@ -85,7 +85,7 @@ class TRDDPLDigitizerTask : public o2::base::BaseDPLDigitizer
     // loop over all composite collisions given from context
     // (aka loop over all the interaction records)
     for (int collID = 0; collID < irecords.size(); ++collID) {
-      mDigitizer.setEventTime(irecords[collID].timeNS);
+      mDigitizer.setEventTime(irecords[collID].getTimeNS());
 
       // for each collision, loop over the constituents event and source IDs
       // (background signal merging is basically taking place here)
@@ -99,6 +99,7 @@ class TRDDPLDigitizerTask : public o2::base::BaseDPLDigitizer
         LOG(INFO) << "For collision " << collID << " eventID " << part.entryID << " found TRD " << hits.size() << " hits ";
 
         mDigitizer.process(hits, digits, labels);
+        assert(digits.size() == labels.getIndexedSize());
 
         // Add trigger record
         triggers.emplace_back(irecords[collID], digitsAccum.size(), digits.size());
@@ -111,9 +112,10 @@ class TRDDPLDigitizerTask : public o2::base::BaseDPLDigitizer
         labels.clear();
       }
     }
-
     // Force flush of the digits that remain in the digitizer cache
     mDigitizer.flush(digits, labels);
+    assert(digits.size() == labels.getIndexedSize());
+
     triggers.emplace_back(irecords[irecords.size() - 1], digitsAccum.size(), digits.size());
     std::copy(digits.begin(), digits.end(), std::back_inserter(digitsAccum));
     if (mctruth) {
@@ -126,13 +128,14 @@ class TRDDPLDigitizerTask : public o2::base::BaseDPLDigitizer
     pc.outputs().snapshot(Output{"TRD", "DIGITS", 0, Lifetime::Timeframe}, digitsAccum);
     if (mctruth) {
       LOG(INFO) << "TRD: Sending " << labelsAccum.getNElements() << " labels";
-      pc.outputs().snapshot(Output{"TRD", "LABELS", 0, Lifetime::Timeframe}, labelsAccum);
+      // we are flattening the labels and write to managed shared memory container for further communication
+      auto& sharedlabels = pc.outputs().make<o2::dataformats::ConstMCTruthContainer<o2::trd::MCLabel>>(Output{"TRD", "LABELS", 0, Lifetime::Timeframe});
+      labelsAccum.flatten_to(sharedlabels);
     }
     LOG(INFO) << "TRD: Sending ROMode= " << mROMode << " to GRPUpdater";
     pc.outputs().snapshot(Output{"TRD", "ROMode", 0, Lifetime::Timeframe}, mROMode);
     LOG(INFO) << "TRD: Sending trigger records";
     pc.outputs().snapshot(Output{"TRD", "TRGRDIG", 0, Lifetime::Timeframe}, triggers);
-
     // we should be only called once; tell DPL that this process is ready to exit
     pc.services().get<ControlService>().readyToQuit(QuitRequest::Me);
     finished = true;
@@ -142,7 +145,7 @@ class TRDDPLDigitizerTask : public o2::base::BaseDPLDigitizer
   Digitizer mDigitizer;
   std::vector<TChain*> mSimChains;
   // RS: at the moment using hardcoded flag for continuos readout
-  o2::parameters::GRPObject::ROMode mROMode = o2::parameters::GRPObject::CONTINUOUS; // readout mode
+  o2::parameters::GRPObject::ROMode mROMode = o2::parameters::GRPObject::PRESENT; // readout mode
 };
 
 o2::framework::DataProcessorSpec getTRDDigitizerSpec(int channel, bool mctruth)

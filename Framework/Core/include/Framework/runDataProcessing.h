@@ -13,15 +13,13 @@
 #include "Framework/ChannelConfigurationPolicy.h"
 #include "Framework/CompletionPolicy.h"
 #include "Framework/DispatchPolicy.h"
-#include "Framework/ConfigParamsHelper.h"
 #include "Framework/DataProcessorSpec.h"
 #include "Framework/WorkflowSpec.h"
 #include "Framework/ConfigContext.h"
 #include "Framework/BoostOptionsRetriever.h"
 #include "Framework/CustomWorkflowTerminationHook.h"
-
-#include <boost/program_options/options_description.hpp>
-#include <boost/program_options/variables_map.hpp>
+#include "Framework/CommonServices.h"
+#include "Framework/Logger.h"
 
 #include <unistd.h>
 #include <vector>
@@ -33,16 +31,12 @@ namespace boost
 class exception;
 }
 
-namespace o2
-{
-namespace framework
+namespace o2::framework
 {
 using Inputs = std::vector<InputSpec>;
 using Outputs = std::vector<OutputSpec>;
 using Options = std::vector<ConfigParamSpec>;
-
-} // namespace framework
-} // namespace o2
+} // namespace o2::framework
 
 /// To be implemented by the user to specify one or more DataProcessorSpec.
 ///
@@ -75,6 +69,11 @@ void defaultConfiguration(std::vector<o2::framework::ChannelConfigurationPolicy>
 void defaultConfiguration(std::vector<o2::framework::ConfigParamSpec>& globalWorkflowOptions) {}
 void defaultConfiguration(std::vector<o2::framework::CompletionPolicy>& completionPolicies) {}
 void defaultConfiguration(std::vector<o2::framework::DispatchPolicy>& dispatchPolicies) {}
+void defaultConfiguration(std::vector<o2::framework::ServiceSpec>& services)
+{
+  services = o2::framework::CommonServices::defaultServices();
+}
+
 void defaultConfiguration(o2::framework::OnWorkflowTerminationHook& hook)
 {
   hook = [](const char*) {};
@@ -127,6 +126,15 @@ int main(int argc, char** argv)
     UserCustomizationsHelper::userDefinedCustomization(workflowOptions, 0);
     workflowOptions.push_back(ConfigParamSpec{"readers", VariantType::Int64, 1ll, {"number of parallel readers to use"}});
     workflowOptions.push_back(ConfigParamSpec{"pipeline", VariantType::String, "", {"override default pipeline size"}});
+    workflowOptions.push_back(ConfigParamSpec{"dangling-outputs-policy", VariantType::String, "file", {"what to do with dangling outputs. file: write to file, fairmq: send to output proxy"}});
+
+    // options for AOD writer
+    workflowOptions.push_back(ConfigParamSpec{"aod-writer-json", VariantType::String, "", {"Name of the json configuration file"}});
+    workflowOptions.push_back(ConfigParamSpec{"aod-writer-resfile", VariantType::String, "", {"Default name of the output file"}});
+    workflowOptions.push_back(ConfigParamSpec{"aod-writer-resmode", VariantType::String, "", {"Creation mode of the result files: NEW, CREATE, RECREATE, UPDATE"}});
+    workflowOptions.push_back(ConfigParamSpec{"aod-writer-ntfmerge", VariantType::Int, -1, {"Number of time frames to merge into one file"}});
+    workflowOptions.push_back(ConfigParamSpec{"aod-writer-keep", VariantType::String, "", {"Comma separated list of ORIGIN/DESCRIPTION/SUBSPECIFICATION:treename:col1/col2/..:filename"}});
+
     std::vector<ChannelConfigurationPolicy> channelPolicies;
     UserCustomizationsHelper::userDefinedCustomization(channelPolicies, 0);
     auto defaultChannelPolicies = ChannelConfigurationPolicy::createDefaultPolicies();
@@ -152,6 +160,9 @@ int main(int argc, char** argv)
     ConfigContext configContext(workflowOptionsRegistry, argc, argv);
     o2::framework::WorkflowSpec specs = defineDataProcessing(configContext);
     overridePipeline(configContext, specs);
+    for (auto& spec : specs) {
+      UserCustomizationsHelper::userDefinedCustomization(spec.requiredServices, 0);
+    }
     result = doMain(argc, argv, specs, channelPolicies, completionPolicies, dispatchPolicies, workflowOptions, configContext);
   } catch (boost::exception& e) {
     doBoostException(e);

@@ -26,14 +26,17 @@ Digitizer::BCCache::BCCache()
 
 Digitizer::ModuleConfAux::ModuleConfAux(const Module& md) : id(md.id)
 {
+  if (md.id < 0 || md.id >= NModules) {
+    LOG(FATAL) << "Module id = " << md.id << " not in allowed range [0:" << NModules << ")";
+  }
   // construct aux helper from full module description
   for (int ic = Module::MaxChannels; ic--;) {
     if (md.channelID[ic] >= IdDummy) {
       if (md.readChannel[ic]) {
-        readChannels |= 0x1 << md.channelID[ic];
+        readChannels |= 0x1 << (NChPerModule * md.id + ic);
       }
       if (md.trigChannel[ic]) {
-        trigChannels |= 0x1 << md.channelID[ic];
+        trigChannels |= 0x1 << (NChPerModule * md.id + ic);
       }
     }
   }
@@ -73,7 +76,7 @@ void Digitizer::process(const std::vector<o2::zdc::Hit>& hits,
     }
 
     double hTime = hit.GetTime() - getTOFCorrection(detID); // account for TOF to detector
-    hTime += mIR.timeNS;
+    hTime += mIR.getTimeNS();
     //
     o2::InteractionRecord irHit(hTime); // BC in which the hit appears (might be different from interaction BC for slow particles)
 
@@ -179,9 +182,10 @@ void Digitizer::generatePedestal()
 void Digitizer::digitizeBC(BCCache& bc)
 {
   auto& bcdata = bc.data;
+  auto& bcdigi = bc.digi;
   // apply gain
   for (int idet : {ZNA, ZPA, ZNC, ZPC}) {
-    for (int ic : {Ch1, Ch2, Ch3, Ch4}) {
+    for (int ic : {Common, Ch1, Ch2, Ch3, Ch4}) {
       int chan = toChannel(idet, ic);
       auto gain = mSimCondition->channels[chan].gain;
       for (int ib = NTimeBinsPerBC; ib--;) {
@@ -193,7 +197,7 @@ void Digitizer::digitizeBC(BCCache& bc)
     bcdata[IdZEM1][ib] *= mSimCondition->channels[IdZEM1].gain;
     bcdata[IdZEM2][ib] *= mSimCondition->channels[IdZEM2].gain;
   }
-  //
+  // Prepare sum of towers before adding noise
   for (int ib = NTimeBinsPerBC; ib--;) {
     bcdata[IdZNASum][ib] = mSimCondition->channels[IdZNASum].gain *
                            (bcdata[IdZNA1][ib] + bcdata[IdZNA2][ib] + bcdata[IdZNA3][ib] + bcdata[IdZNA4][ib]);
@@ -204,15 +208,29 @@ void Digitizer::digitizeBC(BCCache& bc)
     bcdata[IdZPCSum][ib] = mSimCondition->channels[IdZPCSum].gain *
                            (bcdata[IdZPC1][ib] + bcdata[IdZPC2][ib] + bcdata[IdZPC3][ib] + bcdata[IdZPC4][ib]);
   }
-  for (int chan = NChannels; chan--;) {
-    const auto& chanConf = mSimCondition->channels[chan];
-    auto pedBaseLine = mSimCondition->channels[chan].pedestal;
-    for (int ib = NTimeBinsPerBC; ib--;) {
-      bcdata[chan][ib] += gRandom->Gaus(pedBaseLine + mPedestalBLFluct[chan], chanConf.pedestalNoise);
-      int adc = std::nearbyint(bcdata[chan][ib]);
-      bcdata[chan][ib] = adc < ADCMax ? (adc > ADCMin ? adc : ADCMin) : ADCMax;
+  // Digitize the signals connected to each channel of the different modules
+  for (const auto& md : mModuleConfig->modules) {
+    if (md.id >= 0 && md.id < NModules) {
+      for (int ic = Module::MaxChannels; ic--;) {
+        int id = md.channelID[ic];
+        if (id >= 0 && id < NChannels) {
+          const auto& chanConf = mSimCondition->channels[id];
+          auto pedBaseLine = mSimCondition->channels[id].pedestal;
+          // Geographical position of signal in the setup
+          auto ipos = NChPerModule * md.id + ic;
+          for (int ib = NTimeBinsPerBC; ib--;) {
+            bcdigi[ipos][ib] = bcdata[id][ib] + gRandom->Gaus(pedBaseLine + mPedestalBLFluct[id], chanConf.pedestalNoise);
+            int adc = std::nearbyint(bcdigi[ipos][ib]);
+            bcdigi[ipos][ib] = adc < ADCMax ? (adc > ADCMin ? adc : ADCMin) : ADCMax;
+          }
+          LOG(DEBUG) << "md " << md.id << " ch " << ic << " sig " << id << " " << ChannelNames[id]
+                     << bcdigi[ipos][0] << " " << bcdigi[ipos][1] << " " << bcdigi[ipos][2] << " " << bcdigi[ipos][3] << " " << bcdigi[ipos][4] << " " << bcdigi[ipos][5] << " "
+                     << bcdigi[ipos][6] << " " << bcdigi[ipos][7] << " " << bcdigi[ipos][8] << " " << bcdigi[ipos][9] << " " << bcdigi[ipos][10] << " " << bcdigi[ipos][11];
+        }
+      }
     }
   }
+
   bc.digitized = true;
 }
 
@@ -222,36 +240,46 @@ bool Digitizer::triggerBC(int ibc)
   auto& bcCached = *mFastCache[ibc];
 
   LOG(DEBUG) << "CHECK TRIGGER " << ibc << " IR=" << bcCached;
-  if (mIsContinuous) {
-    for (int ic = mTriggerConfig.size(); ic--;) {
-      const auto& trigCh = mTriggerConfig[ic];
-      bool okPrev = false;
-      int last1 = trigCh.last + 2;
-      // look for 2 consecutive bins (the 1st one spanning trigCh.first : trigCh.last range) so that
-      // signal[bin]-signal[bin+trigCh.shift] > trigCh.threshold
-      for (int ib = trigCh.first; ib < last1; ib++) { // ib may be negative, so we shift by offs and look in the ADC cache
-        int binF, bcFidx = ibc + binHelper(ib, binF);
-        int binL, bcLidx = ibc + binHelper(ib + trigCh.shift, binL);
-        const auto& bcF = (bcFidx < 0 || !mFastCache[bcFidx]) ? mDummyBC : *mFastCache[bcFidx];
-        const auto& bcL = (bcLidx < 0 || !mFastCache[bcLidx]) ? mDummyBC : *mFastCache[bcLidx];
-        bool ok = bcF.data[trigCh.id][binF] - bcL.data[trigCh.id][binL] > trigCh.threshold;
-        if (ok && okPrev) {                          // trigger ok!
-          bcCached.trigChanMask |= 0x1 << trigCh.id; // register trigger mask
-          LOG(DEBUG) << " triggering channel " << int(trigCh.id) << " => " << bcCached.trigChanMask;
-          break;
+
+  // Check trigger condition regardless of run type, will apply later the trigger mask
+  for (const auto& md : mModuleConfig->modules) {
+    if (md.id >= 0 && md.id < NModules) {
+      for (int ic = Module::MaxChannels; ic--;) {
+        //int id=md.channelID[ic];
+        auto trigCh = md.trigChannelConf[ic];
+        int id = trigCh.id;
+        if (id >= 0 && id < NChannels) {
+          auto ipos = NChPerModule * md.id + ic;
+          bool okPrev = false;
+          int last1 = trigCh.last + 2; // To be modified. The new requirement is 3 consecutive samples
+          // look for 2 consecutive bins (the 1st one spanning trigCh.first : trigCh.last range) so that
+          // signal[bin]-signal[bin+trigCh.shift] > trigCh.threshold
+          for (int ib = trigCh.first; ib < last1; ib++) { // ib may be negative, so we shift by offs and look in the ADC cache
+            int binF, bcFidx = ibc + binHelper(ib, binF);
+            int binL, bcLidx = ibc + binHelper(ib + trigCh.shift, binL);
+            const auto& bcF = (bcFidx < 0 || !mFastCache[bcFidx]) ? mDummyBC : *mFastCache[bcFidx];
+            const auto& bcL = (bcLidx < 0 || !mFastCache[bcLidx]) ? mDummyBC : *mFastCache[bcLidx];
+            bool ok = bcF.digi[ipos][binF] - bcL.digi[ipos][binL] > trigCh.threshold;
+            if (ok && okPrev) {                                            // trigger ok!
+              bcCached.trigChanMask |= 0x1 << (NChPerModule * md.id + ic); // register trigger mask
+              LOG(DEBUG) << bcF.digi[ipos][binF] << " - " << bcL.digi[ipos][binL] << " = " << bcF.digi[ipos][binF] - bcL.digi[ipos][binL] << " > " << trigCh.threshold;
+              LOG(DEBUG) << " hit [" << md.id << "," << ic << "] " << int(id) << "(" << ChannelNames[id] << ") => " << bcCached.trigChanMask;
+              break;
+            }
+            okPrev = ok;
+          }
         }
-        okPrev = ok;
       }
-    } // loop over trigger channels
-  } else {
-    // just check if this BC IR corresponds to externall trigger
-    if (!mIRExternalTrigger.empty() && mIRExternalTrigger.front() == bcCached) {
-      bcCached.trigChanMask = AllChannelsMask;
-      mIRExternalTrigger.pop_front(); // suppress accounted external trigger
     }
   }
 
-  if (bcCached.trigChanMask) { // there are triggered channels, flag modules/channels to read
+  // just check if this BC IR corresponds to external trigger
+  if (!mIRExternalTrigger.empty() && mIRExternalTrigger.front() == bcCached) {
+    bcCached.extTrig = ALICETriggerMask;
+    mIRExternalTrigger.pop_front(); // suppress accounted external trigger
+  }
+  // This works in autotrigger mode, partially for triggered mode
+  if (bcCached.trigChanMask & mTriggerableChanMask) { // there are triggered channels, flag modules/channels to read
     for (int ibcr = ibc - mNBCAHead; ibcr <= ibc; ibcr++) {
       auto& bcr = mStoreChanMask[ibcr + mNBCAHead];
       for (const auto& mdh : mModConfAux) {
@@ -276,14 +304,20 @@ void Digitizer::storeBC(const BCCache& bc, uint32_t chan2Store,
   LOG(DEBUG) << "Storing ch: " << chanPattern(chan2Store) << " trigger: " << chanPattern(bc.trigChanMask) << " for BC " << bc;
 
   int first = digitsCh.size(), nSto = 0;
-  for (int ic = 0; ic < NChannels; ic++) {
-    if (chan2Store & (0x1 << ic)) {
-      digitsCh.emplace_back(ic, bc.data[ic]);
-      nSto++;
+  for (const auto& md : mModuleConfig->modules) {
+    if (md.id >= 0 && md.id < NModules) {
+      for (int ic = 0; ic < Module::MaxChannels; ic++) {
+        auto ipos = NChPerModule * md.id + ic;
+        if (chan2Store & (0x1 << ipos)) {
+          digitsCh.emplace_back(md.channelID[ic], bc.digi[ipos]);
+          nSto++;
+        }
+      }
     }
   }
+
   int nBC = digitsBC.size();
-  digitsBC.emplace_back(first, nSto, bc, chan2Store, bc.trigChanMask);
+  digitsBC.emplace_back(first, nSto, bc, chan2Store, bc.trigChanMask, bc.extTrig);
   // TODO clarify if we want to store MC labels for all channels or only for stored ones
   for (const auto& lbl : bc.labels) {
     if (chan2Store & (0x1 << lbl.getChannel())) {
@@ -314,7 +348,7 @@ void Digitizer::phe2Sample(int nphe, int parID, double timeHit, std::array<o2::I
         break;
       }
       if (sample >= 0) {
-        auto signal = chanConfig.shape[sample] * nphe; // signal accounting for the gain
+        auto signal = chanConfig.shape[sample] * nphe; // signal not accounting for the gain
         (*bcCache).data[channel][ib] += signal;
         added = true;
       }
@@ -396,41 +430,39 @@ void Digitizer::refreshCCDB()
     mTriggerConfig.clear();
     mModConfAux.clear();
     for (const auto& md : mModuleConfig->modules) {
-      if (md.id >= 0) {
+      if (md.id >= 0 && md.id < NModules) {
         mModConfAux.emplace_back(md);
-        //
         for (int ic = Module::MaxChannels; ic--;) {
-          if (md.trigChannel[ic]) { // check if this triggering channel was already registered
-            bool skip = false;
-            for (int is = mTriggerConfig.size(); is--;) {
-              if (mTriggerConfig[is].id == md.channelID[ic]) {
-                skip = true;
-                break;
-              }
+          // We consider all channels that can produce a hit
+          if (md.trigChannel[ic] || (md.trigChannelConf[ic].shift > 0 && md.trigChannelConf[ic].threshold > 0)) {
+            const auto& trgChanConf = md.trigChannelConf[ic];
+            if (trgChanConf.last + trgChanConf.shift + 1 >= NTimeBinsPerBC) {
+              LOG(FATAL) << "Wrong trigger settings";
             }
-            if (!skip) {
-              const auto& trgChanConf = md.trigChannelConf[ic];
-              if (trgChanConf.last + trgChanConf.shift + 1 >= NTimeBinsPerBC) {
-                LOG(FATAL) << "Wrong trigger settings";
-              }
-              mTriggerConfig.emplace_back(trgChanConf);
-              LOG(INFO) << "Adding channel " << int(trgChanConf.id) << '(' << channelName(trgChanConf.id) << ") as triggering one";
-              if (trgChanConf.first < mTrigBinMin) {
-                mTrigBinMin = trgChanConf.first;
-              }
-              if (trgChanConf.last + trgChanConf.shift > mTrigBinMax) {
-                mTrigBinMax = trgChanConf.last + trgChanConf.shift;
-              }
+            mTriggerConfig.emplace_back(trgChanConf);
+            // We insert in the trigger mask only the channels that are actually triggering
+            // Trigger mask is geographical, bit position is relative to the module and channel
+            // where signal is connected
+            if (md.trigChannel[ic]) {
+              LOG(INFO) << "Adding channel [" << md.id << "," << ic << "] " << int(trgChanConf.id) << '(' << channelName(trgChanConf.id) << ") as triggering one";
+              // TODO insert check if bit is already used. Should never happen
+              mTriggerableChanMask |= 0x1 << (NChPerModule * md.id + ic);
+            } else {
+              LOG(INFO) << "Adding channel [" << md.id << "," << ic << "] " << int(trgChanConf.id) << '(' << channelName(trgChanConf.id) << ") as discriminator";
+            }
+            if (trgChanConf.first < mTrigBinMin) {
+              mTrigBinMin = trgChanConf.first;
+            }
+            if (trgChanConf.last + trgChanConf.shift > mTrigBinMax) {
+              mTrigBinMax = trgChanConf.last + trgChanConf.shift;
             }
           }
         }
+      } else {
+        LOG(FATAL) << "Module id: " << md.id << " is out of range";
       }
     }
-    if (int(mTriggerConfig.size()) > MaxTriggerChannels) {
-      LOG(FATAL) << "Too many triggering channels (" << mTriggerConfig.size() << ')';
-    }
     mModuleConfig->print();
-    //
   }
 
   if (!mSimCondition) { // load this only once

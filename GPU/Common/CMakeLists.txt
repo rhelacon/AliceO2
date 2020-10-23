@@ -24,7 +24,8 @@ set(HDRS_INSTALL
     GPUDefGPUParameters.h
     GPUDefOpenCL12Templates.h
     GPULogging.h
-    GPUDefMacros.h)
+    GPUDefMacros.h
+    GPUROOTCartesianFwd.h)
 
 if(ALIGPU_BUILD_TYPE STREQUAL "O2")
   o2_add_library(${MODULE}
@@ -42,7 +43,7 @@ if(ALIGPU_BUILD_TYPE STREQUAL "O2")
   if(CUDA_ENABLED)
     o2_add_test(GPUsortCUDA NAME test_GPUsortCUDA
                 SOURCES test/testGPUsortCUDA.cu
-                PUBLIC_LINK_LIBRARIES O2::${MODULE} cub::cub
+                PUBLIC_LINK_LIBRARIES O2::${MODULE}
                 COMPONENT_NAME GPU
                 LABELS gpu)
   endif()

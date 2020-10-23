@@ -20,14 +20,14 @@
 #include "FairLogger.h"
 
 #include "ITSReconstruction/TrivialVertexer.h"
-#include "DataFormatsITSMFT/Cluster.h"
+#include "DataFormatsITSMFT/CompCluster.h"
 #include "SimulationDataFormat/MCCompLabel.h"
 #include "SimulationDataFormat/MCTruthContainer.h"
 
 using namespace o2::itsmft;
 using namespace o2::its;
 
-using Point3Df = Point3D<float>;
+using Point3Df = o2::math_utils::Point3D<float>;
 
 TrivialVertexer::TrivialVertexer() = default;
 
@@ -64,7 +64,7 @@ Bool_t TrivialVertexer::openInputFile(const Char_t* fname)
   return kTRUE;
 }
 
-void TrivialVertexer::process(const std::vector<Cluster>& clusters, std::vector<std::array<Double_t, 3>>& vertices)
+void TrivialVertexer::process(const std::vector<CompCluster>& clusters, std::vector<std::array<Double_t, 3>>& vertices)
 {
   if (mClsLabels == nullptr) {
     LOG(INFO) << "TrivialVertexer::process() : "

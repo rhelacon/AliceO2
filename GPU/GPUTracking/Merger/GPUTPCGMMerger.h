@@ -68,7 +68,6 @@ class GPUTPCGMMerger : public GPUProcessor
     GPUAtomic(unsigned int) nUnpackedTracks;
     GPUAtomic(unsigned int) nOutputTracks;
     GPUAtomic(unsigned int) nOutputTrackClusters;
-    GPUAtomic(unsigned int) nSlowTracks;
     const GPUTPCTrack* firstGlobalTracks[NSLICES];
     GPUAtomic(unsigned int) tmpCounter[2 * NSLICES];
   };
@@ -78,11 +77,6 @@ class GPUTPCGMMerger : public GPUProcessor
     unsigned char row;
     unsigned char slice;
     unsigned char leg;
-  };
-
-  struct GPUResolveSharedMemory : public GPUKernelTemplate::GPUSharedMemoryScan64<short, GPUCA_GET_THREAD_COUNT(GPUCA_LB_GPUTPCGMMergerResolve_step3)> {
-    int iTrack1[GPUCA_GET_THREAD_COUNT(GPUCA_LB_GPUTPCGMMergerResolve_step3)];
-    int iTrack2[GPUCA_GET_THREAD_COUNT(GPUCA_LB_GPUTPCGMMergerResolve_step3)];
   };
 
   void InitializeProcessor();
@@ -109,20 +103,18 @@ class GPUTPCGMMerger : public GPUProcessor
   GPUhd() unsigned int NMaxOutputTrackClusters() const { return mNMaxOutputTrackClusters; }
   GPUhd() unsigned int NOutputTrackClusters() const { return mMemory->nOutputTrackClusters; }
   GPUhd() const GPUTPCGMMergedTrackHit* Clusters() const { return mClusters; }
-  GPUhd() GPUTPCGMMergedTrackHit* Clusters()
-  {
-    return (mClusters);
-  }
+  GPUhd() GPUTPCGMMergedTrackHit* Clusters() { return (mClusters); }
+  GPUhd() const GPUTPCGMMergedTrackHitXYZ* ClustersXYZ() const { return mClustersXYZ; }
+  GPUhd() GPUTPCGMMergedTrackHitXYZ* ClustersXYZ() { return (mClustersXYZ); }
   GPUhdi() GPUAtomic(unsigned int) * ClusterAttachment() const { return mClusterAttachment; }
   GPUhdi() unsigned int* TrackOrderAttach() const { return mTrackOrderAttach; }
   GPUhdi() unsigned int* TrackOrderProcess() const { return mTrackOrderProcess; }
-  GPUhdi() unsigned int NSlowTracks() const { return mMemory->nSlowTracks; }
   GPUhdi() unsigned int* RetryRefitIds() const { return mRetryRefitIds; }
   GPUhdi() GPUTPCGMLoopData* LoopData() const { return mLoopData; }
   GPUhdi() memory* Memory() const { return mMemory; }
   GPUhdi() GPUAtomic(unsigned int) * TmpCounter() { return mMemory->tmpCounter; }
   GPUhdi() uint4* TmpMem() { return mTmpMem; }
-  GPUhdi() GPUTPCGMBorderTrack::Range* BorderRange(int i) { return mBorderRange[i]; }
+  GPUhdi() gputpcgmmergertypes::GPUTPCGMBorderRange* BorderRange(int i) { return mBorderRange[i]; }
 
   GPUd() unsigned short MemoryResMemory() { return mMemoryResMemory; }
   GPUd() unsigned short MemoryResOutput() const { return mMemoryResOutput; }
@@ -143,7 +135,7 @@ class GPUTPCGMMerger : public GPUProcessor
   GPUd() void MergeBorderTracks(int nBlocks, int nThreads, int iBlock, int iThread, int iSlice, char withinSlice, char mergeMode);
   GPUd() void MergeBorderTracksSetup(int& n1, int& n2, GPUTPCGMBorderTrack*& b1, GPUTPCGMBorderTrack*& b2, int& jSlice, int iSlice, char withinSlice, char mergeMode);
   template <int I>
-  GPUd() void MergeBorderTracks(int nBlocks, int nThreads, int iBlock, int iThread, GPUTPCGMBorderTrack::Range* range, int N, int cmpMax);
+  GPUd() void MergeBorderTracks(int nBlocks, int nThreads, int iBlock, int iThread, gputpcgmmergertypes::GPUTPCGMBorderRange* range, int N, int cmpMax);
   GPUd() void SortTracks(int nBlocks, int nThreads, int iBlock, int iThread);
   GPUd() void SortTracksQPt(int nBlocks, int nThreads, int iBlock, int iThread);
   GPUd() void SortTracksPrepare(int nBlocks, int nThreads, int iBlock, int iThread);
@@ -156,9 +148,10 @@ class GPUTPCGMMerger : public GPUProcessor
   GPUd() void Finalize1(int nBlocks, int nThreads, int iBlock, int iThread);
   GPUd() void Finalize2(int nBlocks, int nThreads, int iBlock, int iThread);
   GPUd() void ResolveFindConnectedComponentsSetup(int nBlocks, int nThreads, int iBlock, int iThread);
-  GPUd() void ResolveFindConnectedComponentsHook(int nBlocks, int nThreads, int iBlock, int iThread);
+  GPUd() void ResolveFindConnectedComponentsHookNeighbors(int nBlocks, int nThreads, int iBlock, int iThread);
+  GPUd() void ResolveFindConnectedComponentsHookLinks(int nBlocks, int nThreads, int iBlock, int iThread);
   GPUd() void ResolveFindConnectedComponentsMultiJump(int nBlocks, int nThreads, int iBlock, int iThread);
-  GPUd() void ResolveMergeSlices(GPUResolveSharedMemory& smem, int nBlocks, int nThreads, int iBlock, int iThread, char useOrigTrackParam, char mergeAll);
+  GPUd() void ResolveMergeSlices(gputpcgmmergertypes::GPUResolveSharedMemory& smem, int nBlocks, int nThreads, int iBlock, int iThread, char useOrigTrackParam, char mergeAll);
 
 #ifndef GPUCA_GPUCODE
   void DumpSliceTracks(std::ostream& out);
@@ -176,7 +169,7 @@ class GPUTPCGMMerger : public GPUProcessor
   template <int I>
   GPUd() void MergeBorderTracks(int nBlocks, int nThreads, int iBlock, int iThread, int iSlice1, GPUTPCGMBorderTrack* B1, int N1, int iSlice2, GPUTPCGMBorderTrack* B2, int N2, int mergeMode = 0);
 
-  GPUd() void MergeCEFill(const GPUTPCGMSliceTrack* track, const GPUTPCGMMergedTrackHit& cls, int itr);
+  GPUd() void MergeCEFill(const GPUTPCGMSliceTrack* track, const GPUTPCGMMergedTrackHit& cls, const GPUTPCGMMergedTrackHitXYZ* clsXYZ, int itr);
 
   void CheckMergedTracks();
 #ifndef GPUCA_GPUCODE
@@ -195,6 +188,7 @@ class GPUTPCGMMerger : public GPUProcessor
   GPUdi() int SliceTrackInfoTotal() { return mSliceTrackInfoIndex[2 * NSLICES]; }
 
   GPUdi() void setBlockRange(int elems, int nBlocks, int iBlock, int& start, int& end);
+  GPUdi() void hookEdge(int u, int v);
 
   int mNextSliceInd[NSLICES];
   int mPrevSliceInd[NSLICES];
@@ -219,6 +213,7 @@ class GPUTPCGMMerger : public GPUProcessor
   GPUTPCGMSliceTrack* mSliceTrackInfos; //* additional information for slice tracks
   int* mSliceTrackInfoIndex;
   GPUTPCGMMergedTrackHit* mClusters;
+  GPUTPCGMMergedTrackHitXYZ* mClustersXYZ;
   int* mGlobalClusterIDs;
   GPUAtomic(unsigned int) * mClusterAttachment;
   unsigned int* mTrackOrderAttach;
@@ -226,8 +221,8 @@ class GPUTPCGMMerger : public GPUProcessor
   uint4* mTmpMem;
   GPUTPCGMBorderTrack* mBorderMemory; // memory for border tracks
   GPUTPCGMBorderTrack* mBorder[2 * NSLICES];
-  GPUTPCGMBorderTrack::Range* mBorderRangeMemory;    // memory for border tracks
-  GPUTPCGMBorderTrack::Range* mBorderRange[NSLICES]; // memory for border tracks
+  gputpcgmmergertypes::GPUTPCGMBorderRange* mBorderRangeMemory;    // memory for border tracks
+  gputpcgmmergertypes::GPUTPCGMBorderRange* mBorderRange[NSLICES]; // memory for border tracks
   memory* mMemory;
   unsigned int* mRetryRefitIds;
   GPUTPCGMLoopData* mLoopData;

@@ -17,9 +17,7 @@
 #include "clusterFinderDefs.h"
 #include "ChargePos.h"
 
-namespace GPUCA_NAMESPACE
-{
-namespace gpu
+namespace GPUCA_NAMESPACE::gpu
 {
 
 template <typename T, typename Layout>
@@ -50,46 +48,41 @@ class TilingLayout
   enum {
     Height = Grid::Height,
     Width = Grid::Width,
+    WidthInTiles = (TPC_NUM_OF_PADS + Width - 1) / Width,
   };
 
-  GPUhdi() static size_t idx(const ChargePos& p)
+  GPUdi() static tpccf::SizeT idx(const ChargePos& p)
   {
-    const size_t widthInTiles = (TPC_NUM_OF_PADS + Width - 1) / Width;
+    const tpccf::SizeT tilePad = p.gpad / Width;
+    const tpccf::SizeT tileTime = p.timePadded / Height;
 
-    const size_t tilePad = p.gpad / Width;
-    const size_t tileTime = p.timePadded / Height;
+    const tpccf::SizeT inTilePad = p.gpad % Width;
+    const tpccf::SizeT inTileTime = p.timePadded % Height;
 
-    const size_t inTilePad = p.gpad % Width;
-    const size_t inTileTime = p.timePadded % Height;
-
-    return (tileTime * widthInTiles + tilePad) * (Width * Height) + inTileTime * Width + inTilePad;
+    return (tileTime * WidthInTiles + tilePad) * (Width * Height) + inTileTime * Width + inTilePad;
   }
 
-#if !defined(__OPENCL__)
-  GPUh() static size_t items()
+  GPUd() static size_t items()
   {
     return (TPC_NUM_OF_PADS + Width - 1) / Width * Width * (TPC_MAX_FRAGMENT_LEN_PADDED + Height - 1) / Height * Height;
   }
-#endif
 };
 
 class LinearLayout
 {
  public:
-  GPUdi() static size_t idx(const ChargePos& p)
+  GPUdi() static tpccf::SizeT idx(const ChargePos& p)
   {
     return TPC_NUM_OF_PADS * p.timePadded + p.gpad;
   }
 
-#if !defined(__OPENCL__)
-  GPUh() static size_t items()
+  GPUd() static size_t items()
   {
     return TPC_NUM_OF_PADS * TPC_MAX_FRAGMENT_LEN_PADDED;
   }
-#endif
 };
 
-template <size_t S>
+template <tpccf::SizeT S>
 struct GridSize;
 
 template <>
@@ -127,7 +120,6 @@ using TPCMapMemoryLayout = LinearLayout;
 template <typename T>
 using Array2D = AbstractArray2D<T, TPCMapMemoryLayout<T>>;
 
-} // namespace gpu
-} // namespace GPUCA_NAMESPACE
+} // namespace GPUCA_NAMESPACE::gpu
 
 #endif

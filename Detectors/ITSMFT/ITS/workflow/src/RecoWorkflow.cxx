@@ -18,6 +18,7 @@
 #include "ITSWorkflow/TrackerSpec.h"
 #include "ITSWorkflow/CookedTrackerSpec.h"
 #include "ITSWorkflow/TrackWriterSpec.h"
+#include "ITSMFTWorkflow/EntropyEncoderSpec.h"
 
 namespace o2
 {
@@ -27,8 +28,9 @@ namespace its
 namespace reco_workflow
 {
 
-framework::WorkflowSpec getWorkflow(bool useMC, bool useCAtracker, o2::gpu::GPUDataTypes::DeviceType dtype,
-                                    bool upstreamDigits, bool upstreamClusters, bool disableRootOutput)
+framework::WorkflowSpec getWorkflow(bool useMC, bool useCAtracker, bool async, o2::gpu::GPUDataTypes::DeviceType dtype,
+                                    bool upstreamDigits, bool upstreamClusters, bool disableRootOutput,
+                                    bool eencode)
 {
   framework::WorkflowSpec specs;
 
@@ -43,12 +45,16 @@ framework::WorkflowSpec getWorkflow(bool useMC, bool useCAtracker, o2::gpu::GPUD
     specs.emplace_back(o2::its::getClusterWriterSpec(useMC));
   }
   if (useCAtracker) {
-    specs.emplace_back(o2::its::getTrackerSpec(useMC, dtype));
+    specs.emplace_back(o2::its::getTrackerSpec(useMC, async, dtype));
   } else {
     specs.emplace_back(o2::its::getCookedTrackerSpec(useMC));
   }
   if (!disableRootOutput) {
     specs.emplace_back(o2::its::getTrackWriterSpec(useMC));
+  }
+
+  if (eencode) {
+    specs.emplace_back(o2::itsmft::getEntropyEncoderSpec("ITS"));
   }
   return specs;
 }

@@ -13,15 +13,13 @@
 
 #include "DetectorsCommonDataFormats/DetID.h"
 #include "ITSReconstruction/ClustererTask.h"
-#include "MathUtils/Cartesian3D.h"
+#include "MathUtils/Cartesian.h"
 #include "MathUtils/Utils.h"
 #include "FairLogger.h"
 #include <TFile.h>
 #include <TTree.h>
 
 using namespace o2::its;
-using namespace o2::base;
-using namespace o2::utils;
 
 //_____________________________________________________________________
 ClustererTask::ClustererTask(bool useMC, bool raw) : mRawDataMode(raw),
@@ -36,7 +34,6 @@ ClustererTask::ClustererTask(bool useMC, bool raw) : mRawDataMode(raw),
 //_____________________________________________________________________
 ClustererTask::~ClustererTask()
 {
-  mFullClus.clear();
   mCompClus.clear();
   mClsLabels.clear();
 }
@@ -59,11 +56,6 @@ void ClustererTask::Init()
     mReader = mReaderMC.get();
   }
 
-  GeometryTGeo* geom = GeometryTGeo::Instance();
-  geom->fillMatrixCache(o2::utils::bit2Mask(o2::TransformType::T2L)); // make sure T2L matrices are loaded
-  mGeometry = geom;
-  mClusterer.setGeometry(geom);
-
   mClusterer.print();
 
   return;
@@ -78,7 +70,7 @@ void ClustererTask::run(const std::string inpName, const std::string outName)
   if (mRawDataMode) {
 
     mReaderRaw->openInput(inpName);
-    mClusterer.process(1, *mReaderRaw.get(), &mFullClus, &mCompClus, &mPatterns, &mROFRecVec, nullptr);
+    mClusterer.process(1, *mReaderRaw.get(), &mCompClus, &mPatterns, &mROFRecVec, nullptr);
 
     auto basename = outName.substr(0, outName.size() - sizeof("root"));
     auto nFiles = int(mROFRecVec.size() / maxROframe);
@@ -98,13 +90,6 @@ void ClustererTask::run(const std::string inpName, const std::string outName)
     }
 
     TTree outTree("o2sim", "ITS Clusters");
-
-    auto fullClusPtr = &mFullClus;
-    if (mClusterer.getWantFullClusters()) {
-      outTree.Branch("ITSCluster", &fullClusPtr);
-    } else {
-      LOG(INFO) << Class()->GetName() << " output of full clusters is not requested";
-    }
 
     auto compClusPtr = &mCompClus;
     outTree.Branch("ITSClusterComp", &compClusPtr);
@@ -135,7 +120,7 @@ void ClustererTask::run(const std::string inpName, const std::string outName)
 
     // loop over entries of the input tree
     while (mReaderMC->readNextEntry()) {
-      mClusterer.process(1, *mReaderMC.get(), &mFullClus, &mCompClus, &mPatterns, &mROFRecVec, &mClsLabels);
+      mClusterer.process(1, *mReaderMC.get(), &mCompClus, &mPatterns, &mROFRecVec, &mClsLabels);
     }
 
     outTree.Fill();
@@ -162,14 +147,6 @@ void ClustererTask::writeTree(std::string basename, int i)
 
   auto first = rofRecBuffer[0].getFirstEntry();
   auto last = rofRecBuffer.back().getFirstEntry() + rofRecBuffer.back().getNEntries();
-
-  std::vector<Cluster> fullClusBuffer, *fullClusPtr = &fullClusBuffer;
-  if (mClusterer.getWantFullClusters()) {
-    fullClusBuffer.assign(&mFullClus[first], &mFullClus[last]);
-    outTree.Branch("ITSCluster", &fullClusPtr);
-  } else {
-    LOG(INFO) << Class()->GetName() << " output of full clusters is not requested";
-  }
 
   std::vector<CompClusterExt> compClusBuffer, *compClusPtr = &compClusBuffer;
   compClusBuffer.assign(&mCompClus[first], &mCompClus[last]);

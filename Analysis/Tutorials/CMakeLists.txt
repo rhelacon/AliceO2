@@ -57,8 +57,18 @@ o2_add_dpl_workflow(histograms
                   PUBLIC_LINK_LIBRARIES O2::Framework
                   COMPONENT_NAME AnalysisTutorial)
 
+o2_add_dpl_workflow(histograms-full-tracks
+                  SOURCES src/histogramsFullTracks.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework
+                  COMPONENT_NAME AnalysisTutorial)
+
 o2_add_dpl_workflow(filters
                   SOURCES src/filters.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(partitions
+                  SOURCES src/partitions.cxx
                   PUBLIC_LINK_LIBRARIES O2::Framework
                   COMPONENT_NAME AnalysisTutorial)
 
@@ -82,12 +92,78 @@ o2_add_dpl_workflow(jet-analysis
                   PUBLIC_LINK_LIBRARIES O2::Framework O2::AnalysisDataModel
                   COMPONENT_NAME AnalysisTutorial)
 
-o2_add_executable(tracks-combinations
+o2_add_dpl_workflow(tracks-combinations
                   SOURCES src/tracksCombinations.cxx
                   PUBLIC_LINK_LIBRARIES O2::Framework O2::AnalysisDataModel
                   COMPONENT_NAME AnalysisTutorial)
 
-o2_add_executable(event-mixing
+o2_add_dpl_workflow(event-mixing
                   SOURCES src/eventMixing.cxx
                   PUBLIC_LINK_LIBRARIES O2::Framework O2::AnalysisDataModel
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(mc-histograms
+                  SOURCES src/mcHistograms.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework O2::AnalysisDataModel O2::AnalysisCore
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(ccdbaccess
+                  SOURCES src/ccdbaccess.cxx
+                  PUBLIC_LINK_LIBRARIES O2::AnalysisCore O2::CCDB O2::Framework O2::AnalysisDataModel
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(weak-decay-iteration
+                  SOURCES src/weakDecayIteration.cxx
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(extended-columns
+                  SOURCES src/extendedColumns.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(zdc-vzero-iteration
+                  SOURCES src/ZDCVZeroIteration.cxx
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(hist-helpers-test
+                    SOURCES src/histHelpersTest.cxx
+                    PUBLIC_LINK_LIBRARIES O2::AnalysisDataModel O2::AnalysisCore
+                    COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(histogram-registry
+                  SOURCES src/histogramRegistry.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework O2::AnalysisCore O2::AnalysisDataModel
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_library(ConfigurableCut
+               SOURCES  src/configurableCut.cxx
+               PUBLIC_LINK_LIBRARIES O2::AnalysisCore)
+
+o2_target_root_dictionary(ConfigurableCut
+                          HEADERS include/Analysis/configurableCut.h
+                          LINKDEF src/ConfigurableCutLinkDef.h)
+
+o2_add_dpl_workflow(configurable-objects
+                    SOURCES src/configurableObjects.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2::ConfigurableCut
+                    COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(muon-iteration
+                  SOURCES src/muonIteration.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework O2::AnalysisCore O2::AnalysisDataModel
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(schema-evolution
+                  SOURCES src/schemaEvolution.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework O2::AnalysisCore O2::AnalysisDataModel
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(efficiency-per-run
+                  SOURCES src/efficiencyPerRun.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework O2::AnalysisCore O2::AnalysisDataModel
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2_add_dpl_workflow(efficiency-global
+                  SOURCES src/efficiencyGlobal.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework O2::AnalysisCore O2::AnalysisDataModel
                   COMPONENT_NAME AnalysisTutorial)

@@ -63,8 +63,8 @@ void CookedTrackerDPL::init(InitContext& ic)
 
     o2::base::GeometryManager::loadGeometry();
     o2::its::GeometryTGeo* geom = o2::its::GeometryTGeo::Instance();
-    geom->fillMatrixCache(o2::utils::bit2Mask(o2::TransformType::T2L, o2::TransformType::T2GRot,
-                                              o2::TransformType::T2G));
+    geom->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::T2GRot,
+                                                   o2::math_utils::TransformType::T2G));
     mTracker.setGeometry(geom);
 
     double origD[3] = {0., 0., 0.};
@@ -92,7 +92,6 @@ void CookedTrackerDPL::run(ProcessingContext& pc)
   mTimer.Start(false);
   auto compClusters = pc.inputs().get<gsl::span<o2::itsmft::CompClusterExt>>("compClusters");
   gsl::span<const unsigned char> patterns = pc.inputs().get<gsl::span<unsigned char>>("patterns");
-  auto clusters = pc.inputs().get<gsl::span<o2::itsmft::Cluster>>("clusters");
 
   // code further down does assignment to the rofs and the altered object is used for output
   // we therefore need a copy of the vector rather than an object created directly on the input data,
@@ -113,7 +112,7 @@ void CookedTrackerDPL::run(ProcessingContext& pc)
 
   LOG(INFO) << "ITSCookedTracker pulled " << compClusters.size() << " clusters, in " << rofs.size() << " RO frames";
 
-  o2::dataformats::MCTruthContainer<o2::MCCompLabel> trackLabels;
+  std::vector<o2::MCCompLabel> trackLabels;
   if (mUseMC) {
     mTracker.setMCTruthContainers(labels.get(), &trackLabels);
   }
@@ -201,8 +200,7 @@ DataProcessorSpec getCookedTrackerSpec(bool useMC)
   std::vector<InputSpec> inputs;
   inputs.emplace_back("compClusters", "ITS", "COMPCLUSTERS", 0, Lifetime::Timeframe);
   inputs.emplace_back("patterns", "ITS", "PATTERNS", 0, Lifetime::Timeframe);
-  inputs.emplace_back("clusters", "ITS", "CLUSTERS", 0, Lifetime::Timeframe);
-  inputs.emplace_back("ROframes", "ITS", "ITSClusterROF", 0, Lifetime::Timeframe);
+  inputs.emplace_back("ROframes", "ITS", "CLUSTERSROF", 0, Lifetime::Timeframe);
 
   std::vector<OutputSpec> outputs;
   outputs.emplace_back("ITS", "TRACKS", 0, Lifetime::Timeframe);
@@ -213,7 +211,7 @@ DataProcessorSpec getCookedTrackerSpec(bool useMC)
 
   if (useMC) {
     inputs.emplace_back("labels", "ITS", "CLUSTERSMCTR", 0, Lifetime::Timeframe);
-    inputs.emplace_back("MC2ROframes", "ITS", "ITSClusterMC2ROF", 0, Lifetime::Timeframe);
+    inputs.emplace_back("MC2ROframes", "ITS", "CLUSTERSMC2ROF", 0, Lifetime::Timeframe);
     outputs.emplace_back("ITS", "TRACKSMCTR", 0, Lifetime::Timeframe);
     outputs.emplace_back("ITS", "ITSTrackMC2ROF", 0, Lifetime::Timeframe);
   }

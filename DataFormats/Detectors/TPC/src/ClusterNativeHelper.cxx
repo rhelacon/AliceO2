@@ -20,6 +20,7 @@
 #include <iostream>
 
 using namespace o2::tpc;
+using namespace o2::tpc::constants;
 
 void ClusterNativeHelper::convert(const char* fromFile, const char* toFile, const char* toTreeName)
 {
@@ -30,7 +31,7 @@ void ClusterNativeHelper::convert(const char* fromFile, const char* toFile, cons
   size_t nEntries = reader.getTreeSize();
   ClusterNativeAccess clusterIndex;
   std::unique_ptr<ClusterNative[]> clusterBuffer;
-  MCLabelContainer mcBuffer;
+  ConstMCLabelContainerViewWithBuffer mcBuffer;
 
   int result = 0;
   int nClusters = 0;
@@ -113,10 +114,13 @@ void ClusterNativeHelper::Reader::init(const char* filename, const char* treenam
     LOG(ERROR) << "can not find tree " << mTreeName << " in file " << filename;
     return;
   }
+
+  const bool singleBranch = mTree->GetBranch(mDataBranchName.data());
+
   size_t nofDataBranches = 0;
   size_t nofMCBranches = 0;
   for (size_t sector = 0; sector < NSectors; ++sector) {
-    auto branchname = mDataBranchName + "_" + std::to_string(sector);
+    auto branchname = singleBranch ? mDataBranchName : mDataBranchName + "_" + std::to_string(sector);
     TBranch* branch = mTree->GetBranch(branchname.c_str());
     if (branch) {
       TBranch* sizebranch = mTree->GetBranch((branchname + "Size").c_str());
@@ -128,12 +132,15 @@ void ClusterNativeHelper::Reader::init(const char* filename, const char* treenam
         LOG(ERROR) << "can not find corresponding 'Size' branch for data branch " << branchname << ", skipping it";
       }
     }
-    branchname = mMCBranchName + "_" + std::to_string(sector);
+    branchname = singleBranch ? mMCBranchName : mMCBranchName + "_" + std::to_string(sector);
     branch = mTree->GetBranch(branchname.c_str());
     if (branch) {
-      mSectorMCPtr[sector] = &mSectorMC[sector];
       branch->SetAddress(&mSectorMCPtr[sector]);
       ++nofMCBranches;
+    }
+
+    if (singleBranch) {
+      break;
     }
   }
   LOG(INFO) << "reading " << nofDataBranches << " data branch(es) and " << nofMCBranches << " mc branch(es)";
@@ -160,24 +167,34 @@ void ClusterNativeHelper::Reader::clear()
 }
 
 int ClusterNativeHelper::Reader::fillIndex(ClusterNativeAccess& clusterIndex, std::unique_ptr<ClusterNative[]>& clusterBuffer,
-                                           MCLabelContainer& mcBuffer)
+                                           ConstMCLabelContainerViewWithBuffer& mcBuffer)
 {
+  std::vector<gsl::span<const char>> clustersTPC;
+  std::vector<ConstMCLabelContainer> constMCLabelContainers;
+  std::vector<ConstMCLabelContainerView> constMCLabelContainerViews;
+
   for (size_t index = 0; index < mSectorRaw.size(); ++index) {
-    if (mSectorRaw[index] && mSectorRaw[index]->size() != mSectorRawSize[index]) {
-      LOG(ERROR) << "inconsistent raw size for sector " << index << ": " << mSectorRaw[index]->size() << " v.s. " << mSectorRawSize[index];
-      mSectorRaw[index]->clear();
+    if (mSectorRaw[index]) {
+      if (mSectorRaw[index]->size() != mSectorRawSize[index]) {
+        LOG(ERROR) << "inconsistent raw size for sector " << index << ": " << mSectorRaw[index]->size() << " v.s. " << mSectorRawSize[index];
+        mSectorRaw[index]->clear();
+      } else {
+        clustersTPC.emplace_back(mSectorRaw[index]->data(), mSectorRawSize[index]);
+      }
+    }
+    if (mSectorMCPtr[index]) {
+      auto& view = constMCLabelContainers.emplace_back();
+      mSectorMCPtr[index]->copyandflatten(view);
+      constMCLabelContainerViews.emplace_back(view);
     }
   }
-  // after changing this ClusterNative transport format, this functionality needs
-  // to be adapted
-  throw std::runtime_error("code path currently not supported");
-  //int result = fillIndex(clusterIndex, clusterBuffer, mcBuffer, mSectorRaw, mSectorMC, [](auto&) { return true; });
-  //return result;
-  return 0;
+
+  int result = fillIndex(clusterIndex, clusterBuffer, mcBuffer, clustersTPC, constMCLabelContainerViews, [](auto&) { return true; });
+  return result;
 }
 
-int ClusterNativeHelper::Reader::parseSector(const char* buffer, size_t size, gsl::span<MCLabelContainer const> const& mcinput, ClusterNativeAccess& clusterIndex,
-                                             const MCLabelContainer* (&clustersMCTruth)[Constants::MAXSECTOR])
+int ClusterNativeHelper::Reader::parseSector(const char* buffer, size_t size, gsl::span<ConstMCLabelContainerView const> const& mcinput, ClusterNativeAccess& clusterIndex,
+                                             const ConstMCLabelContainerView* (&clustersMCTruth)[MAXSECTOR])
 {
   if (!buffer || size < sizeof(ClusterCountIndex)) {
     return 0;
@@ -187,9 +204,9 @@ int ClusterNativeHelper::Reader::parseSector(const char* buffer, size_t size, gs
   ClusterCountIndex const& counts = *reinterpret_cast<const ClusterCountIndex*>(buffer);
   ClusterNative const* clusters = reinterpret_cast<ClusterNative const*>(buffer + sizeof(ClusterCountIndex));
   size_t numberOfClusters = 0;
-  for (int i = 0; i < Constants::MAXSECTOR; i++) {
+  for (int i = 0; i < MAXSECTOR; i++) {
     int nSectorClusters = 0;
-    for (int j = 0; j < Constants::MAXGLOBALPADROW; j++) {
+    for (int j = 0; j < MAXGLOBALPADROW; j++) {
       if (counts.nClusters[i][j] == 0) {
         continue;
       }
@@ -246,8 +263,8 @@ int ClusterNativeHelper::TreeWriter::fillFrom(ClusterNativeAccess const& cluster
     return -1;
   }
   int result = 0;
-  for (size_t sector = 0; sector < Constants::MAXSECTOR; ++sector) {
-    for (size_t padrow = 0; padrow < Constants::MAXGLOBALPADROW; ++padrow) {
+  for (size_t sector = 0; sector < MAXSECTOR; ++sector) {
+    for (size_t padrow = 0; padrow < MAXGLOBALPADROW; ++padrow) {
       int locres = fillFrom(sector, padrow, clusterIndex.clusters[sector][padrow], clusterIndex.nClusters[sector][padrow]);
       if (result >= 0 && locres >= 0) {
         result += locres;

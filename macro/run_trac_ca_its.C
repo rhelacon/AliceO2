@@ -12,11 +12,13 @@
 #include <FairEventHeader.h>
 #include <FairGeoParSet.h>
 #include <FairLogger.h>
+#include "DetectorsCommonDataFormats/NameConf.h"
 
 #include "SimulationDataFormat/MCEventHeader.h"
 
+#include "DataFormatsITSMFT/TopologyDictionary.h"
+#include "DataFormatsITSMFT/CompCluster.h"
 #include "DetectorsCommonDataFormats/DetID.h"
-#include "DataFormatsITSMFT/Cluster.h"
 #include "DataFormatsParameters/GRPObject.h"
 #include "DetectorsBase/GeometryManager.h"
 #include "DetectorsBase/Propagator.h"
@@ -54,12 +56,13 @@ using MCLabCont = o2::dataformats::MCTruthContainer<o2::MCCompLabel>;
 void run_trac_ca_its(std::string path = "./",
                      std::string outputfile = "o2trac_its.root",
                      std::string inputClustersITS = "o2clus_its.root",
+                     std::string dictfile = "",
                      std::string inputGRP = "o2sim_grp.root")
 {
 
   gSystem->Load("libO2ITStracking.so");
 
-  // std::unique_ptr<GPUReconstruction> rec(GPUReconstruction::CreateInstance());
+  //std::unique_ptr<GPUReconstruction> rec(GPUReconstruction::CreateInstance());
   std::unique_ptr<GPUReconstruction> rec(GPUReconstruction::CreateInstance("CUDA", true)); // for GPU with CUDA
   auto* chainITS = rec->AddChain<GPUChainITS>();
   rec->Init();
@@ -95,32 +98,62 @@ void run_trac_ca_its(std::string path = "./",
   LOG(INFO) << "ITS is in " << (isContITS ? "CONTINUOS" : "TRIGGERED") << " readout mode";
 
   auto gman = o2::its::GeometryTGeo::Instance();
-  gman->fillMatrixCache(o2::utils::bit2Mask(o2::TransformType::T2L, o2::TransformType::T2GRot,
-                                            o2::TransformType::L2G)); // request cached transforms
-
+  gman->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::T2GRot,
+                                                 o2::math_utils::TransformType::L2G)); // request cached transforms
 
   //>>>---------- attach input data --------------->>>
   TChain itsClusters("o2sim");
   itsClusters.AddFile((path + inputClustersITS).data());
 
-  //<<<---------- attach input data ---------------<<<
-  if (!itsClusters.GetBranch("ITSCluster")) {
-    LOG(FATAL) << "Did not find ITS clusters branch ITSCluster in the input tree";
+  if (!itsClusters.GetBranch("ITSClusterComp")) {
+    LOG(FATAL) << "Did not find ITS clusters branch ITSClusterComp in the input tree";
   }
-  std::vector<o2::itsmft::Cluster>* clusters = nullptr;
-  itsClusters.SetBranchAddress("ITSCluster", &clusters);
+  std::vector<o2::itsmft::CompClusterExt>* cclusters = nullptr;
+  itsClusters.SetBranchAddress("ITSClusterComp", &cclusters);
 
-  if (!itsClusters.GetBranch("ITSClusterMCTruth")) {
-    LOG(FATAL) << "Did not find ITS clusters branch ITSClusterMCTruth in the input tree";
+  if (!itsClusters.GetBranch("ITSClusterPatt")) {
+    LOG(FATAL) << "Did not find ITS cluster patterns branch ITSClusterPatt in the input tree";
   }
-  o2::dataformats::MCTruthContainer<o2::MCCompLabel>* labels = nullptr;
-  itsClusters.SetBranchAddress("ITSClusterMCTruth", &labels);
+  std::vector<unsigned char>* patterns = nullptr;
+  itsClusters.SetBranchAddress("ITSClusterPatt", &patterns);
+
+  MCLabCont* labels = nullptr;
+  if (!itsClusters.GetBranch("ITSClusterMCTruth")) {
+    LOG(WARNING) << "Did not find ITS clusters branch ITSClusterMCTruth in the input tree";
+  } else {
+    itsClusters.SetBranchAddress("ITSClusterMCTruth", &labels);
+  }
+
+  if (!itsClusters.GetBranch("ITSClustersROF")) {
+    LOG(FATAL) << "Did not find ITS clusters branch ITSClustersROF in the input tree";
+  }
 
   std::vector<o2::itsmft::MC2ROFRecord>* mc2rofs = nullptr;
   if (!itsClusters.GetBranch("ITSClustersMC2ROF")) {
     LOG(FATAL) << "Did not find ITS clusters branch ITSClustersROF in the input tree";
   }
   itsClusters.SetBranchAddress("ITSClustersMC2ROF", &mc2rofs);
+
+  std::vector<o2::itsmft::ROFRecord>* rofs = nullptr;
+  itsClusters.SetBranchAddress("ITSClustersROF", &rofs);
+
+  itsClusters.GetEntry(0);
+
+  //-------------------------------------------------
+
+  o2::itsmft::TopologyDictionary dict;
+  if (dictfile.empty()) {
+    dictfile = o2::base::NameConf::getDictionaryFileName(o2::detectors::DetID::ITS, "", ".bin");
+  }
+  std::ifstream file(dictfile.c_str());
+  if (file.good()) {
+    LOG(INFO) << "Running with dictionary: " << dictfile.c_str();
+    dict.readBinaryFile(dictfile);
+  } else {
+    LOG(INFO) << "Running without dictionary !";
+  }
+
+  //-------------------------------------------------
 
   std::vector<o2::its::TrackITSExt> tracks;
   // create/attach output tree
@@ -131,7 +164,7 @@ void run_trac_ca_its(std::string path = "./",
   std::vector<o2::itsmft::ROFRecord> vertROFvec, *vertROFvecPtr = &vertROFvec;
   std::vector<Vertex> vertices, *verticesPtr = &vertices;
 
-  MCLabCont trackLabels, *trackLabelsPtr = &trackLabels;
+  std::vector<o2::MCCompLabel> trackLabels, *trackLabelsPtr = &trackLabels;
   outTree.Branch("ITSTrack", &tracksITSPtr);
   outTree.Branch("ITSTrackClusIdx", &trackClIdxPtr);
   outTree.Branch("ITSTrackMCTruth", &trackLabelsPtr);
@@ -141,9 +174,6 @@ void run_trac_ca_its(std::string path = "./",
   if (!itsClusters.GetBranch("ITSClustersROF")) {
     LOG(FATAL) << "Did not find ITS clusters branch ITSClustersROF in the input tree";
   }
-  std::vector<o2::itsmft::ROFRecord>* rofs = nullptr;
-  itsClusters.SetBranchAddress("ITSClustersROF", &rofs);
-  itsClusters.GetEntry(0);
 
   o2::its::VertexerTraits* traits = o2::its::createVertexerTraits();
   o2::its::Vertexer vertexer(traits);
@@ -164,11 +194,15 @@ void run_trac_ca_its(std::string path = "./",
   tracker.setParameters(memParams, trackParams);
 
   int currentEvent = -1;
+  gsl::span<const unsigned char> patt(patterns->data(), patterns->size());
+  auto pattIt = patt.begin();
+  auto clSpan = gsl::span(cclusters->data(), cclusters->size());
+
   for (auto& rof : *rofs) {
 
     auto start = std::chrono::high_resolution_clock::now();
-
-    o2::its::ioutils::loadROFrameData(rof, event, gsl::span(clusters->data(), clusters->size()), labels);
+    auto it = pattIt;
+    o2::its::ioutils::loadROFrameData(rof, event, clSpan, pattIt, dict, labels);
 
     vertexer.initialiseVertexer(&event);
     vertexer.findTracklets();

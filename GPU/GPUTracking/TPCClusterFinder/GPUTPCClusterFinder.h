@@ -18,6 +18,7 @@
 #include "GPUProcessor.h"
 #include "GPUDataTypes.h"
 #include "CfFragment.h"
+#include "TPCCFCalibration.h"
 
 namespace o2
 {
@@ -28,6 +29,8 @@ namespace dataformats
 {
 template <typename TruthElement>
 class MCTruthContainer;
+template <typename TruthElement>
+class ConstMCTruthContainerView;
 } // namespace dataformats
 
 namespace tpc
@@ -38,11 +41,10 @@ class Digit;
 
 } // namespace o2
 
-namespace GPUCA_NAMESPACE
-{
-namespace gpu
+namespace GPUCA_NAMESPACE::gpu
 {
 struct GPUTPCClusterMCInterim;
+struct TPCCFCalibration;
 
 struct ChargePos;
 
@@ -52,11 +54,11 @@ class GPUTPCClusterFinder : public GPUProcessor
   struct Memory {
     struct counters_t {
       size_t nDigits = 0;
-      size_t nPositions = 0; // TODO use this instead of nDigits
-      size_t nPeaks = 0;
-      size_t nClusters = 0;
+      tpccf::SizeT nDigitsInFragment = 0; // num of digits in fragment can differ from nPositions if ZS is active
+      tpccf::SizeT nPositions = 0;
+      tpccf::SizeT nPeaks = 0;
+      tpccf::SizeT nClusters = 0;
       unsigned int maxTimeBin = 0;
-      unsigned int nPages = 0;
       unsigned int nPagesSubslice = 0;
     } counters;
     CfFragment fragment;
@@ -82,10 +84,11 @@ class GPUTPCClusterFinder : public GPUProcessor
   void* SetPointersOutput(void* mem);
   void* SetPointersScratch(void* mem);
   void* SetPointersMemory(void* mem);
+  void* SetPointersZS(void* mem);
   void* SetPointersZSOffset(void* mem);
 
   unsigned int getNSteps(size_t items) const;
-  void SetNMaxDigits(size_t nDigits, size_t nPages);
+  void SetNMaxDigits(size_t nDigits, size_t nPages, size_t nDigitsFragment);
 
   void PrepareMC();
   void clearMCMemory();
@@ -98,6 +101,9 @@ class GPUTPCClusterFinder : public GPUProcessor
   ChargePos* mPpeakPositions = nullptr;
   ChargePos* mPfilteredPeakPositions = nullptr;
   unsigned char* mPisPeak = nullptr;
+  uint* mPclusterPosInRow = nullptr; // store the index where the corresponding cluster is stored in a bucket.
+                                     // Required when MC are enabled to write the mc data to the correct position.
+                                     // Set to >= mNMaxClusterPerRow if cluster was discarded.
   ushort* mPchargeMap = nullptr;
   unsigned char* mPpeakMap = nullptr;
   uint* mPindexMap = nullptr;
@@ -107,9 +113,10 @@ class GPUTPCClusterFinder : public GPUProcessor
   int* mPbuf = nullptr;
   Memory* mPmemory = nullptr;
 
-  o2::dataformats::MCTruthContainer<o2::MCCompLabel> const* mPinputLabels = nullptr;
-  uint* mPlabelHeaderOffset = nullptr;
-  uint* mPlabelDataOffset = nullptr;
+  o2::dataformats::ConstMCTruthContainerView<o2::MCCompLabel> const* mPinputLabels = nullptr;
+  uint* mPlabelsInRow = nullptr;
+  uint mPlabelsHeaderGlobalOffset = 0;
+  uint mPlabelsDataGlobalOffset = 0;
 
   int mISlice = 0;
   constexpr static int mScanWorkGroupSize = GPUCA_THREAD_COUNT_SCAN;
@@ -117,13 +124,18 @@ class GPUTPCClusterFinder : public GPUProcessor
   unsigned int mNMaxClusters = 0;
   size_t mNMaxPages = 0;
   size_t mNMaxDigits = 0;
+  size_t mNMaxDigitsFragment = 0;
   size_t mNMaxPeaks = 0;
   size_t mBufSize = 0;
   unsigned int mNBufs = 0;
 
   short mMemoryId = -1;
+  short mScratchId = -1;
+  short mZSId = -1;
   short mZSOffsetId = -1;
   short mOutputId = -1;
+
+  GPUdi() float getGainCorrection(tpccf::Row, tpccf::Pad) const;
 
 #ifndef GPUCA_GPUCODE
   void DumpDigits(std::ostream& out);
@@ -137,7 +149,6 @@ class GPUTPCClusterFinder : public GPUProcessor
 #endif
 };
 
-} // namespace gpu
-} // namespace GPUCA_NAMESPACE
+} // namespace GPUCA_NAMESPACE::gpu
 
 #endif

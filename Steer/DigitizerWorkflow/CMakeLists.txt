@@ -18,7 +18,6 @@ o2_add_executable(digitizer-workflow
                           src/FDDDigitizerSpec.cxx
                           src/GRPUpdaterSpec.cxx
                           src/HMPIDDigitizerSpec.cxx
-                          src/ITSMFTDigitWriterSpec.cxx
                           src/ITSMFTDigitizerSpec.cxx
                           src/MCHDigitizerSpec.cxx
                           src/MIDDigitizerSpec.cxx
@@ -39,6 +38,7 @@ o2_add_executable(digitizer-workflow
                                         O2::HMPIDSimulation
                                         O2::ITSMFTSimulation
                                         O2::ITSSimulation
+                                        O2::ITSMFTWorkflow
                                         O2::MCHSimulation
                                         O2::MCHBase
                                         O2::MFTSimulation
@@ -46,12 +46,20 @@ o2_add_executable(digitizer-workflow
                                         O2::PHOSSimulation
                                         O2::CPVSimulation
                                         O2::TOFSimulation
-					                    O2::TOFCalibration
+                                        O2::TOFCalibration
                                         O2::TOFReconstruction
                                         O2::TOFWorkflowUtils
                                         O2::TPCSimulation
-                                        O2::TPCWorkflow
                                         O2::TRDSimulation
                                         O2::TRDWorkflow
                                         O2::DataFormatsTRD
                                         O2::ZDCSimulation)
+
+
+o2_add_executable(mctruth-testworkflow
+                  COMPONENT_NAME sim
+                  SOURCES src/MCTruthTestWorkflow.cxx
+		          src/MCTruthSourceSpec.cxx
+	                  src/MCTruthWriterSpec.cxx
+                  PUBLIC_LINK_LIBRARIES O2::Framework
+                                        O2::SimulationDataFormat)

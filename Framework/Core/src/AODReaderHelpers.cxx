@@ -10,12 +10,15 @@
 
 #include "Framework/TableTreeHelpers.h"
 #include "Framework/AODReaderHelpers.h"
-#include "Framework/AnalysisDataModel.h"
+#include "AnalysisDataModelHelpers.h"
 #include "DataProcessingHelpers.h"
+#include "ExpressionHelpers.h"
 #include "Framework/RootTableBuilderHelpers.h"
 #include "Framework/AlgorithmSpec.h"
 #include "Framework/ConfigParamRegistry.h"
 #include "Framework/ControlService.h"
+#include "Framework/CallbackService.h"
+#include "Framework/EndOfStreamContext.h"
 #include "Framework/DeviceSpec.h"
 #include "Framework/RawDeviceService.h"
 #include "Framework/DataSpecUtils.h"
@@ -24,8 +27,8 @@
 #include "Framework/ChannelInfo.h"
 #include "Framework/Logger.h"
 
-#include <FairMQDevice.h>
 #include <ROOT/RDataFrame.hxx>
+#include <TGrid.h>
 #include <TFile.h>
 
 #include <arrow/ipc/reader.h>
@@ -38,204 +41,158 @@
 
 namespace o2::framework::readers
 {
-
-enum AODTypeMask : uint64_t {
-  None = 0,
-  Track = 1 << 0,
-  TrackCov = 1 << 1,
-  TrackExtra = 1 << 2,
-  Calo = 1 << 3,
-  CaloTrigger = 1 << 4,
-  Muon = 1 << 5,
-  MuonCluster = 1 << 6,
-  Zdc = 1 << 7,
-  BC = 1 << 8,
-  Collision = 1 << 9,
-  FT0 = 1 << 10,
-  FV0 = 1 << 11,
-  FDD = 1 << 12,
-  UnassignedTrack = 1 << 13,
-  Run2V0 = 1 << 14,
-  McCollision = 1 << 15,
-  McTrackLabel = 1 << 16,
-  McCaloLabel = 1 << 17,
-  McParticle = 1 << 18,
-  Unknown = 1 << 19
-};
-
-uint64_t getMask(header::DataDescription description)
+AlgorithmSpec AODReaderHelpers::aodSpawnerCallback(std::vector<InputSpec> requested)
 {
+  return AlgorithmSpec::InitCallback{[requested](InitContext& ic) {
+    auto& callbacks = ic.services().get<CallbackService>();
+    auto endofdatacb = [](EndOfStreamContext& eosc) {
+      auto& control = eosc.services().get<ControlService>();
+      control.endOfStream();
+      control.readyToQuit(QuitRequest::Me);
+    };
+    callbacks.set(CallbackService::Id::EndOfStream, endofdatacb);
 
-  if (description == header::DataDescription{"TRACKPAR"}) {
-    return AODTypeMask::Track;
-  } else if (description == header::DataDescription{"TRACKPARCOV"}) {
-    return AODTypeMask::TrackCov;
-  } else if (description == header::DataDescription{"TRACKEXTRA"}) {
-    return AODTypeMask::TrackExtra;
-  } else if (description == header::DataDescription{"CALO"}) {
-    return AODTypeMask::Calo;
-  } else if (description == header::DataDescription{"CALOTRIGGER"}) {
-    return AODTypeMask::CaloTrigger;
-  } else if (description == header::DataDescription{"MUON"}) {
-    return AODTypeMask::Muon;
-  } else if (description == header::DataDescription{"MUONCLUSTER"}) {
-    return AODTypeMask::MuonCluster;
-  } else if (description == header::DataDescription{"ZDC"}) {
-    return AODTypeMask::Zdc;
-  } else if (description == header::DataDescription{"BC"}) {
-    return AODTypeMask::BC;
-  } else if (description == header::DataDescription{"COLLISION"}) {
-    return AODTypeMask::Collision;
-  } else if (description == header::DataDescription{"FT0"}) {
-    return AODTypeMask::FT0;
-  } else if (description == header::DataDescription{"FV0"}) {
-    return AODTypeMask::FV0;
-  } else if (description == header::DataDescription{"FDD"}) {
-    return AODTypeMask::FDD;
-  } else if (description == header::DataDescription{"UNASSIGNEDTRACK"}) {
-    return AODTypeMask::UnassignedTrack;
-  } else if (description == header::DataDescription{"RUN2V0"}) {
-    return AODTypeMask::Run2V0;
-  } else if (description == header::DataDescription{"MCCOLLISION"}) {
-    return AODTypeMask::McCollision;
-  } else if (description == header::DataDescription{"MCTRACKLABEL"}) {
-    return AODTypeMask::McTrackLabel;
-  } else if (description == header::DataDescription{"MCCALOLABEL"}) {
-    return AODTypeMask::McCaloLabel;
-  } else if (description == header::DataDescription{"MCPARTICLE"}) {
-    return AODTypeMask::McParticle;
-  } else {
-    LOG(DEBUG) << "This is a tree of unknown type! " << description.str;
-    return AODTypeMask::Unknown;
-  }
-}
+    return [requested](ProcessingContext& pc) {
+      auto outputs = pc.outputs();
+      // spawn tables
+      for (auto& input : requested) {
+        auto description = std::visit(
+          overloaded{
+            [](ConcreteDataMatcher const& matcher) { return matcher.description; },
+            [](auto&&) { return header::DataDescription{""}; }},
+          input.matcher);
 
-uint64_t calculateReadMask(std::vector<OutputRoute> const& routes, header::DataOrigin const& origin)
-{
-  uint64_t readMask = None;
-  for (auto& route : routes) {
-    auto concrete = DataSpecUtils::asConcreteDataTypeMatcher(route.matcher);
-    auto description = concrete.description;
+        auto origin = std::visit(
+          overloaded{
+            [](ConcreteDataMatcher const& matcher) { return matcher.origin; },
+            [](auto&&) { return header::DataOrigin{""}; }},
+          input.matcher);
 
-    readMask |= getMask(description);
-  }
-  return readMask;
-}
+        auto maker = [&](auto metadata) {
+          using metadata_t = decltype(metadata);
+          using expressions = typename metadata_t::expression_pack_t;
+          auto original_table = pc.inputs().get<TableConsumer>(input.binding)->asArrowTable();
+          return o2::framework::spawner(expressions{}, original_table.get());
+        };
 
-std::vector<OutputRoute> getListOfUnknown(std::vector<OutputRoute> const& routes)
-{
-
-  std::vector<OutputRoute> unknows;
-  for (auto& route : routes) {
-    auto concrete = DataSpecUtils::asConcreteDataTypeMatcher(route.matcher);
-
-    if (getMask(concrete.description) == AODTypeMask::Unknown)
-      unknows.push_back(route);
-  }
-  return unknows;
+        if (description == header::DataDescription{"TRACK:PAR"}) {
+          outputs.adopt(Output{origin, description}, maker(o2::aod::TracksExtensionMetadata{}));
+        } else if (description == header::DataDescription{"TRACK:PARCOV"}) {
+          outputs.adopt(Output{origin, description}, maker(o2::aod::TracksCovExtensionMetadata{}));
+        } else if (description == header::DataDescription{"MUON"}) {
+          outputs.adopt(Output{origin, description}, maker(o2::aod::MuonsExtensionMetadata{}));
+        } else {
+          throw runtime_error("Not an extended table");
+        }
+      }
+    };
+  }};
 }
 
 AlgorithmSpec AODReaderHelpers::rootFileReaderCallback()
 {
   auto callback = AlgorithmSpec{adaptStateful([](ConfigParamRegistry const& options,
                                                  DeviceSpec const& spec) {
+    if (!options.isSet("aod-file")) {
+      LOGP(ERROR, "No input file defined!");
+      throw std::runtime_error("Processing is stopped!");
+    }
+
     auto filename = options.get<std::string>("aod-file");
 
     // create a DataInputDirector
     auto didir = std::make_shared<DataInputDirector>(filename);
-    if (options.isSet("json-file")) {
-      auto jsonFile = options.get<std::string>("json-file");
+    if (options.isSet("aod-reader-json")) {
+      auto jsonFile = options.get<std::string>("aod-reader-json");
       if (!didir->readJson(jsonFile)) {
         LOGP(ERROR, "Check the JSON document! Can not be properly parsed!");
       }
     }
 
-    // analyze type of requested tables
-    uint64_t readMask = calculateReadMask(spec.outputs, header::DataOrigin{"AOD"});
-    std::vector<OutputRoute> unknowns;
-    if (readMask & AODTypeMask::Unknown) {
-      unknowns = getListOfUnknown(spec.outputs);
-    }
+    // get the run time watchdog
+    auto* watchdog = new RuntimeWatchdog(options.get<int64_t>("time-limit"));
 
-    auto counter = std::make_shared<int>(0);
-    return adaptStateless([readMask,
-                           unknowns,
-                           counter,
+    // create list of requested tables
+    std::vector<OutputRoute> requestedTables(spec.outputs);
+
+    auto fileCounter = std::make_shared<int>(0);
+    auto numTF = std::make_shared<int>(-1);
+    return adaptStateless([requestedTables,
+                           fileCounter,
+                           numTF,
+                           watchdog,
                            didir](DataAllocator& outputs, ControlService& control, DeviceSpec const& device) {
-      // Each parallel reader reads the files whose index is associated to
-      // their inputTimesliceId
-      assert(device.inputTimesliceId < device.maxInputTimeslices);
-      size_t fi = (*counter * device.maxInputTimeslices) + device.inputTimesliceId;
-      *counter += 1;
-
-      if (didir->atEnd(fi)) {
-        LOGP(INFO, "All input files processed");
+      // check if RuntimeLimit is reached
+      if (!watchdog->update()) {
+        LOGP(INFO, "Run time exceeds run time limit of {} seconds!", watchdog->runTimeLimit);
+        LOGP(INFO, "Stopping reader {} after time frame {}.", device.inputTimesliceId, watchdog->numberTimeFrames - 1);
         didir->closeInputFiles();
         control.endOfStream();
         control.readyToQuit(QuitRequest::Me);
         return;
       }
 
-      auto tableMaker = [&readMask, &outputs, fi, didir](auto metadata, AODTypeMask mask, char const* treeName) {
-        if (readMask & mask) {
+      // Each parallel reader device.inputTimesliceId reads the files fileCounter*device.maxInputTimeslices+device.inputTimesliceId
+      // the TF to read is numTF
+      assert(device.inputTimesliceId < device.maxInputTimeslices);
+      int fcnt = (*fileCounter * device.maxInputTimeslices) + device.inputTimesliceId;
+      int ntf = *numTF + 1;
 
-          auto dh = header::DataHeader(decltype(metadata)::description(), decltype(metadata)::origin(), 0);
-          auto reader = didir->getTreeReader(dh, fi, treeName);
+      // loop over requested tables
+      TTree* tr = nullptr;
+      bool first = true;
+      for (auto route : requestedTables) {
 
-          using table_t = typename decltype(metadata)::table_t;
-          if (!reader || (reader && reader->IsInvalid())) {
-            LOGP(ERROR, "Requested \"{}\" tree not found in input file \"{}\"", treeName, didir->getInputFilename(dh, fi));
+        // create a TreeToTable object
+        auto concrete = DataSpecUtils::asConcreteDataMatcher(route.matcher);
+        auto dh = header::DataHeader(concrete.description, concrete.origin, concrete.subSpec);
+
+        tr = didir->getDataTree(dh, fcnt, ntf);
+        if (!tr) {
+          if (first) {
+            // check if there is a next file to read
+            fcnt += device.maxInputTimeslices;
+            if (didir->atEnd(fcnt)) {
+              LOGP(INFO, "No input files left to read for reader {}!", device.inputTimesliceId);
+              didir->closeInputFiles();
+              control.endOfStream();
+              control.readyToQuit(QuitRequest::Me);
+              return;
+            }
+            // get first folder of next file
+            ntf = 0;
+            tr = didir->getDataTree(dh, fcnt, ntf);
+            if (!tr) {
+              LOGP(FATAL, "Can not retrieve tree for table {}: fileCounter {}, timeFrame {}", concrete.origin, fcnt, ntf);
+              throw std::runtime_error("Processing is stopped!");
+            }
           } else {
-            auto& builder = outputs.make<TableBuilder>(Output{decltype(metadata)::origin(), decltype(metadata)::description()});
-            RootTableBuilderHelpers::convertASoA<table_t>(builder, *reader);
+            LOGP(FATAL, "Can not retrieve tree for table {}: fileCounter {}, timeFrame {}", concrete.origin, fcnt, ntf);
+            throw std::runtime_error("Processing is stopped!");
           }
         }
-      };
-      tableMaker(o2::aod::CollisionsMetadata{}, AODTypeMask::Collision, "O2collision");
-      tableMaker(o2::aod::TracksMetadata{}, AODTypeMask::Track, "O2track");
-      tableMaker(o2::aod::TracksCovMetadata{}, AODTypeMask::TrackCov, "O2track");
-      tableMaker(o2::aod::TracksExtraMetadata{}, AODTypeMask::TrackExtra, "O2track");
-      tableMaker(o2::aod::CalosMetadata{}, AODTypeMask::Calo, "O2calo");
-      tableMaker(o2::aod::CaloTriggersMetadata{}, AODTypeMask::Calo, "O2calotrigger");
-      tableMaker(o2::aod::MuonsMetadata{}, AODTypeMask::Muon, "O2muon");
-      tableMaker(o2::aod::MuonClustersMetadata{}, AODTypeMask::Muon, "O2muoncluster");
-      tableMaker(o2::aod::ZdcsMetadata{}, AODTypeMask::Zdc, "O2zdc");
-      tableMaker(o2::aod::BCsMetadata{}, AODTypeMask::BC, "O2bc");
-      tableMaker(o2::aod::FT0sMetadata{}, AODTypeMask::FT0, "O2ft0");
-      tableMaker(o2::aod::FV0sMetadata{}, AODTypeMask::FV0, "O2fv0");
-      tableMaker(o2::aod::FDDsMetadata{}, AODTypeMask::FDD, "O2fdd");
-      tableMaker(o2::aod::UnassignedTracksMetadata{}, AODTypeMask::UnassignedTrack, "O2unassignedtrack");
-      tableMaker(o2::aod::Run2V0sMetadata{}, AODTypeMask::Run2V0, "Run2v0");
-      tableMaker(o2::aod::McCollisionsMetadata{}, AODTypeMask::McCollision, "O2mccollision");
-      tableMaker(o2::aod::McTrackLabelsMetadata{}, AODTypeMask::McTrackLabel, "O2mctracklabel");
-      tableMaker(o2::aod::McCaloLabelsMetadata{}, AODTypeMask::McCaloLabel, "O2mccalolabel");
-      tableMaker(o2::aod::McParticlesMetadata{}, AODTypeMask::McParticle, "O2mcparticle");
+        first = false;
 
-      // tables not included in the DataModel
-      if (readMask & AODTypeMask::Unknown) {
+        auto o = Output(dh);
+        auto& t2t = outputs.make<TreeToTable>(o);
 
-        // loop over unknowns
-        for (auto route : unknowns) {
-
-          // create a TreeToTable object
-          auto concrete = DataSpecUtils::asConcreteDataMatcher(route.matcher);
-          auto dh = header::DataHeader(concrete.description, concrete.origin, concrete.subSpec);
-
-          auto tr = didir->getDataTree(dh, fi);
-          if (!tr) {
-            char* table;
-            sprintf(table, "%s/%s/%" PRIu32, concrete.origin.str, concrete.description.str, concrete.subSpec);
-            LOGP(ERROR, "Error while retrieving the tree for \"{}\"!", table);
-            return;
+        // add branches to read
+        auto colnames = aod::datamodel::getColumnNames(dh);
+        if (colnames.size() == 0) {
+          t2t.addAllColumns(tr);
+        } else {
+          for (auto colname : colnames) {
+            t2t.addColumn(colname.c_str());
           }
-
-          auto o = Output(dh);
-          auto& t2t = outputs.make<TreeToTable>(o, tr);
-
-          // fill the table
-          t2t.fill();
         }
+
+        // fill the table
+        t2t.fill(tr);
       }
+
+      // save file number and time frame
+      *fileCounter = (fcnt - device.inputTimesliceId) / device.maxInputTimeslices;
+      *numTF = ntf;
     });
   })};
 

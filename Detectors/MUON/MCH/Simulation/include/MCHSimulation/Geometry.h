@@ -16,7 +16,7 @@
 
 #include <vector>
 #include <iostream>
-#include "MathUtils/Cartesian3D.h"
+#include "MathUtils/Cartesian.h"
 
 class TGeoVolume;
 class TGeoManager;
@@ -32,8 +32,11 @@ void createGeometry(TGeoVolume& topVolume);
 /// get a list of MCH sensitive volumes
 std::vector<TGeoVolume*> getSensitiveVolumes();
 
+/// Add alignable mch volumes
+void addAlignableVolumesMCH();
+
 /// get the local-to-global transformation for a given detection element
-o2::Transform3D getTransformation(int detElemId, const TGeoManager& geo);
+o2::math_utils::Transform3D getTransformation(int detElemId, const TGeoManager& geo);
 
 } // namespace mch
 } // namespace o2

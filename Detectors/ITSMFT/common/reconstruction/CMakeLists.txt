@@ -26,12 +26,15 @@ o2_add_library(ITSMFTReconstruction
 		       src/GBTLink.cxx
 		       src/RUDecodeData.cxx
 		       src/RawPixelDecoder.cxx
+                       src/CTFCoder.cxx
+                       src/DecodingStat.cxx
                PUBLIC_LINK_LIBRARIES O2::ITSMFTBase
                                      O2::CommonDataFormat
 	                             O2::DetectorsRaw
                                      O2::SimulationDataFormat 
                                      O2::DataFormatsITSMFT
 				     O2::DPLUtils
+                                     O2::rANS
                                      O2::Headers)
 
 o2_target_root_dictionary(
@@ -53,7 +56,8 @@ o2_target_root_dictionary(
           include/ITSMFTReconstruction/AlpideCoder.h
           include/ITSMFTReconstruction/GBTWord.h
           include/ITSMFTReconstruction/PayLoadCont.h
-          include/ITSMFTReconstruction/PayLoadSG.h	  
+          include/ITSMFTReconstruction/PayLoadSG.h
+          include/ITSMFTReconstruction/DecodingStat.h
           include/ITSMFTReconstruction/RUInfo.h)
 
 if (OpenMP_CXX_FOUND)

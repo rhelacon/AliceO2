@@ -18,6 +18,7 @@
 #include "Framework/RootSerializationSupport.h"
 #include "Framework/InputRecord.h"
 #include "Framework/DataRef.h"
+#include "Framework/Logger.h"
 #include <TFile.h>
 #include <TTree.h>
 #include <TBranch.h>
@@ -92,6 +93,10 @@ class RootTreeWriter
   using IndexExtractor = std::function<size_t(o2::framework::DataRef const&)>;
   // mapper between branch name and base/index
   using BranchNameMapper = std::function<std::string(std::string, size_t)>;
+  // a custom callback to close the writer
+  // writing of tree and closing of file need to be implemented, but the pointers
+  // remain owned by the tool
+  using CustomClose = std::function<void(TFile* file, TTree* tree)>;
 
   /// DefaultKeyExtractor maps a data type used as key in the branch definition
   /// to the default internal key type std::string
@@ -154,8 +159,10 @@ class RootTreeWriter
     BranchNameMapper getName = [](std::string base, size_t i) { return base + "_" + std::to_string(i); };
 
     using Fill = std::function<void(TBranch& branch, T const&)>;
+    using FillExt = std::function<void(TBranch& branch, T const&, DataRef const&)>;
     using Spectator = std::function<void(T const&)>;
-    using BranchCallback = std::variant<std::monostate, Fill, Spectator>;
+    using SpectatorExt = std::function<void(T const&, DataRef const&)>;
+    using BranchCallback = std::variant<std::monostate, Fill, FillExt, Spectator, SpectatorExt>;
     BranchCallback callback;
 
     /// simple constructor for single input and one branch
@@ -176,7 +183,7 @@ class RootTreeWriter
     ///                     Fill: fill handler
     ///                     Spectator: spectator handler
     template <typename... Args>
-    BranchDef(key_type key, std::string _branchName, size_t _nofBranches, Args&&... args) : keys({key}), branchName(_branchName), nofBranches(_nofBranches)
+    BranchDef(key_type key, std::string _branchName, Args&&... args) : keys({key}), branchName(_branchName), nofBranches(1)
     {
       init(std::forward<Args>(args)...);
     }
@@ -192,7 +199,7 @@ class RootTreeWriter
     ///                     Fill: fill handler
     ///                     Spectator: spectator handler
     template <typename... Args>
-    BranchDef(std::vector<key_type> vec, std::string _branchName, size_t _nofBranches, Args&&... args) : keys(vec), branchName(_branchName), nofBranches(_nofBranches)
+    BranchDef(std::vector<key_type> vec, std::string _branchName, Args&&... args) : keys(vec), branchName(_branchName), nofBranches(1)
     {
       init(std::forward<Args>(args)...);
     }
@@ -202,20 +209,34 @@ class RootTreeWriter
     void init(Arg&& arg, Args&&... args)
     {
       using Type = std::decay_t<Arg>;
-      if constexpr (std::is_same_v<Type, IndexExtractor>) {
+      if constexpr (can_assign<Type, IndexExtractor>::value) {
         getIndex = arg;
-      } else if constexpr (std::is_same_v<Type, BranchNameMapper>) {
+      } else if constexpr (can_assign<Type, BranchNameMapper>::value) {
         getName = arg;
-      } else if constexpr (std::is_same_v<Type, Fill>) {
+      } else if constexpr (can_assign<Type, Fill>::value) {
         callback = arg;
-      } else if constexpr (std::is_same_v<Type, Spectator>) {
+      } else if constexpr (can_assign<Type, FillExt>::value) {
         callback = arg;
+      } else if constexpr (can_assign<Type, Spectator>::value) {
+        callback = arg;
+      } else if constexpr (can_assign<Type, SpectatorExt>::value) {
+        callback = arg;
+      } else if constexpr (std::is_integral<Type>::value) {
+        nofBranches = arg;
       } else {
-        static_assert(always_static_assert_v<Type>);
+        assertNoMatchingType(std::forward<Arg>(arg));
       }
       if constexpr (sizeof...(args) > 0) {
         init(std::forward<Args>(args)...);
       }
+    }
+
+    // wrap the non matching type assert into a function to better see type of argument
+    // in the compiler error
+    template <typename Arg>
+    void assertNoMatchingType(Arg&& arg)
+    {
+      static_assert(always_static_assert_v<Arg>, "no matching function signature for passed object. Please check:\n- Is it a callable object?\n- Does it have correct parameters and return type?\n- Are all type correctly qualified");
     }
   };
 
@@ -231,7 +252,10 @@ class RootTreeWriter
                  const char* treename, // name of the tree to write to
                  Args&&... args)       // followed by branch definition
   {
-    mTreeStructure = createTreeStructure<0, TreeStructureInterface>(std::forward<Args>(args)...);
+    parseConstructorArgs(std::forward<Args>(args)...);
+    if (!mTreeStructure) {
+      std::runtime_error("Failed to create the branch configuration");
+    }
     if (filename && treename) {
       init(filename, treename);
     }
@@ -243,10 +267,10 @@ class RootTreeWriter
   ///
   /// After setting up the tree, the branches will be created according to the
   /// branch definition provided to the constructor.
-  void init(const char* filename, const char* treename)
+  void init(const char* filename, const char* treename, const char* treetitle = nullptr)
   {
     mFile = std::make_unique<TFile>(filename, "RECREATE");
-    mTree = std::make_unique<TTree>(treename, treename);
+    mTree = std::make_unique<TTree>(treename, treetitle != nullptr ? treetitle : treename);
     mTreeStructure->setup(mBranchSpecs, mTree.get());
   }
 
@@ -292,10 +316,14 @@ class RootTreeWriter
     if (!mFile) {
       return;
     }
-    // set the number of elements according to branch content and write tree
-    mTree->SetEntries();
-    mTree->Write();
-    mFile->Close();
+    if (mCustomClose) {
+      mCustomClose(mFile.get(), mTree.get());
+    } else {
+      // set the number of elements according to branch content and write tree
+      mTree->SetEntries();
+      mTree->Write();
+      mFile->Close();
+    }
     // this is a feature of ROOT, the tree belongs to the file and will be deleted
     // automatically
     mTree.release();
@@ -310,6 +338,31 @@ class RootTreeWriter
   size_t getStoreSize() const
   {
     return (mTreeStructure != nullptr ? mTreeStructure->size() : 0);
+  }
+
+  /// A static helper function to change the type of a (yet unused) branch.
+  /// Removes the old branch from the TTree system and creates a new branch.
+  /// The function is useful for situations in which we want to transform data after
+  /// the RootTreeWriter was created and change the type of the branch - such as in user callbacks.
+  /// The function needs to be used with care. The user should ensure that "branch" is no longer used
+  /// after a call to this function.
+  template <typename T>
+  static TBranch* remapBranch(TBranch& branch, T* newdata)
+  {
+    auto name = branch.GetName();
+    auto branchleaves = branch.GetListOfLeaves();
+    auto tree = branch.GetTree();
+    branch.DropBaskets("all");
+    branch.DeleteBaskets("all");
+    tree->GetListOfBranches()->Remove(&branch);
+    for (auto entry : *branchleaves) {
+      tree->GetListOfLeaves()->Remove(entry);
+    }
+    // ROOT leaves holes in the arrays so we need to compress as well
+    tree->GetListOfBranches()->Compress();
+    tree->GetListOfLeaves()->Compress();
+    // create a new branch with the same original name but attached to the new data
+    return tree->Branch(name, newdata);
   }
 
  private:
@@ -511,13 +564,20 @@ class RootTreeWriter
     /// check the alternatives for the callback and run if there are any
     /// @return true if branch has been filled, false if still to be filled
     template <typename DataType>
-    bool runCallback(TBranch* branch, DataType const& data)
+    bool runCallback(TBranch* branch, DataType const& data, DataRef const& ref)
     {
       if (std::holds_alternative<typename BranchDef<value_type>::Spectator>(mCallback)) {
         std::get<typename BranchDef<value_type>::Spectator>(mCallback)(data);
       }
+      if (std::holds_alternative<typename BranchDef<value_type>::SpectatorExt>(mCallback)) {
+        std::get<typename BranchDef<value_type>::SpectatorExt>(mCallback)(data, ref);
+      }
       if (std::holds_alternative<typename BranchDef<value_type>::Fill>(mCallback)) {
         std::get<typename BranchDef<value_type>::Fill>(mCallback)(*branch, data);
+        return true;
+      }
+      if (std::holds_alternative<typename BranchDef<value_type>::FillExt>(mCallback)) {
+        std::get<typename BranchDef<value_type>::FillExt>(mCallback)(*branch, data, ref);
         return true;
       }
       return false;
@@ -529,7 +589,7 @@ class RootTreeWriter
     void fillData(InputContext& context, DataRef const& ref, TBranch* branch, size_t branchIdx)
     {
       auto data = context.get<value_type>(ref);
-      if (!runCallback(branch, data)) {
+      if (!runCallback(branch, data, ref)) {
         mStore[branchIdx] = data;
         branch->Fill();
       }
@@ -543,7 +603,7 @@ class RootTreeWriter
     void fillData(InputContext& context, DataRef const& ref, TBranch* branch, size_t branchIdx)
     {
       auto data = context.get<typename std::add_pointer<value_type>::type>(ref);
-      if (!runCallback(branch, *data)) {
+      if (!runCallback(branch, *data, ref)) {
         // this is ugly but necessary because of the TTree API does not allow a const
         // object as input. Have to rely on that ROOT treats the object as const
         mStore[branchIdx] = const_cast<value_type*>(data.get());
@@ -568,24 +628,55 @@ class RootTreeWriter
     template <typename S, typename std::enable_if_t<std::is_same<S, MessageableVectorSpecialization>::value, int> = 0>
     void fillData(InputContext& context, DataRef const& ref, TBranch* branch, size_t branchIdx)
     {
-      using ValueType = typename value_type::value_type;
-      static_assert(is_messageable<ValueType>::value, "logical error: should be correctly selected by StructureElementTypeTrait");
+      using ElementType = typename value_type::value_type;
+      static_assert(is_messageable<ElementType>::value, "logical error: should be correctly selected by StructureElementTypeTrait");
+
+      // A helper struct mimicking data layout of std::vector containers
+      // We assume a standard layout of begin, end, end_capacity
+      struct VecBase {
+        VecBase() = default;
+        const ElementType* start = nullptr;
+        const ElementType* end = nullptr;
+        const ElementType* cap = nullptr;
+      };
+
+      // a low level hack to make a gsl::span appear as a std::vector so that ROOT serializes the correct type
+      // but without the need for an extra copy
+      auto adopt = [](auto const& data, value_type& v) {
+        static_assert(sizeof(v) == 24);
+        if (data.size() == 0) {
+          return;
+        }
+        VecBase impl;
+        impl.start = &(data[0]);
+        impl.end = &(data[data.size() - 1]) + 1; // end pointer (beyond last element)
+        impl.cap = impl.end;
+        std::memcpy(&v, &impl, sizeof(VecBase));
+      };
+
       // if the value type is messagable and has a ROOT dictionary, two serialization methods are possible
       // for the moment, the InputRecord API can not handle both with the same call
       try {
         // try extracting from message with serialization method NONE, throw runtime error
         // if message is serialized
-        auto data = context.get<gsl::span<ValueType>>(ref);
-        value_type clone(data.begin(), data.end());
-        if (!runCallback(branch, clone)) {
-          mStore[branchIdx] = &clone;
+        auto data = context.get<gsl::span<ElementType>>(ref);
+        // take an ordinary std::vector "view" on the data
+        auto* dataview = new value_type;
+        adopt(data, *dataview);
+        if (!runCallback(branch, *dataview, ref)) {
+          mStore[branchIdx] = dataview;
           branch->Fill();
         }
-      } catch (const std::runtime_error& e) {
+        // we delete JUST the view without deleting the data (which is handled by DPL)
+        auto ptr = (VecBase*)dataview;
+        if (ptr) {
+          delete ptr;
+        }
+      } catch (RuntimeErrorRef e) {
         if constexpr (has_root_dictionary<value_type>::value == true) {
           // try extracting from message with serialization method ROOT
           auto data = context.get<typename std::add_pointer<value_type>::type>(ref);
-          if (!runCallback(branch, *data)) {
+          if (!runCallback(branch, *data, ref)) {
             mStore[branchIdx] = const_cast<value_type*>(data.get());
             branch->Fill();
           }
@@ -664,6 +755,22 @@ class RootTreeWriter
     typename BranchDef<value_type>::BranchCallback mCallback;
   };
 
+  /// recursive parsing of constructor arguments, all branch definitions come at the end of the pack
+  template <typename Arg, typename... Args>
+  void parseConstructorArgs(Arg&& arg, Args&&... args)
+  {
+    using Type = std::decay_t<Arg>;
+    if constexpr (can_assign<Type, CustomClose>::value) {
+      mCustomClose = arg;
+    } else {
+      mTreeStructure = createTreeStructure<0, TreeStructureInterface>(std::forward<Arg>(arg), std::forward<Args>(args)...);
+      return;
+    }
+    if constexpr (sizeof...(Args) > 0) {
+      parseConstructorArgs(std::forward<Args>(args)...);
+    }
+  }
+
   /// recursively step through all members of the store and set up corresponding branch
   template <size_t N, typename BASE, typename T, typename... Args>
   auto createTreeStructure(T&& def, Args&&... args)
@@ -716,6 +823,7 @@ class RootTreeWriter
   template <size_t N, typename T>
   std::unique_ptr<T> createTreeStructure()
   {
+    static_assert(N > 0, "The writer does not make sense without branch definitions");
     return std::make_unique<T>();
   }
 
@@ -729,6 +837,8 @@ class RootTreeWriter
   std::unique_ptr<TreeStructureInterface> mTreeStructure;
   /// indicate that the writer has been closed
   bool mIsClosed = false;
+  /// custom close handler, optional
+  CustomClose mCustomClose;
 };
 
 } // namespace framework

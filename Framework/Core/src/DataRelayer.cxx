@@ -20,6 +20,7 @@
 #include "Framework/PartRef.h"
 #include "Framework/TimesliceIndex.h"
 #include "Framework/Signpost.h"
+#include "Framework/RoutingIndices.h"
 #include "DataProcessingStatus.h"
 #include "DataRelayerHelpers.h"
 
@@ -42,7 +43,6 @@ constexpr int INVALID_INPUT = -1;
 // The number should really be tuned at runtime for each processor.
 constexpr int DEFAULT_PIPELINE_LENGTH = 16;
 
-// FIXME: do we really need to pass the forwards?
 DataRelayer::DataRelayer(const CompletionPolicy& policy,
                          std::vector<InputRoute> const& routes,
                          monitoring::Monitoring& metrics,
@@ -53,6 +53,8 @@ DataRelayer::DataRelayer(const CompletionPolicy& policy,
     mDistinctRoutesIndex{DataRelayerHelpers::createDistinctRouteIndex(routes)},
     mInputMatchers{DataRelayerHelpers::createInputMatchers(routes)}
 {
+  std::scoped_lock<LockableBase(std::recursive_mutex)> lock(mMutex);
+
   setPipelineLength(DEFAULT_PIPELINE_LENGTH);
 
   // The queries are all the same, so we only have width 1
@@ -70,19 +72,30 @@ DataRelayer::DataRelayer(const CompletionPolicy& policy,
   }
 }
 
-bool DataRelayer::processDanglingInputs(std::vector<ExpirationHandler> const& expirationHandlers,
-                                        ServiceRegistry& services)
+TimesliceId DataRelayer::getTimesliceForSlot(TimesliceSlot slot)
 {
+  std::scoped_lock<LockableBase(std::recursive_mutex)> lock(mMutex);
+  return mTimesliceIndex.getTimesliceForSlot(slot);
+}
+
+DataRelayer::ActivityStats DataRelayer::processDanglingInputs(std::vector<ExpirationHandler> const& expirationHandlers,
+                                                              ServiceRegistry& services)
+{
+  std::scoped_lock<LockableBase(std::recursive_mutex)> lock(mMutex);
+
+  ActivityStats activity;
   /// Nothing to do if nothing can expire.
   if (expirationHandlers.empty()) {
-    return false;
+    return activity;
   }
   // Create any slot for the time based fields
   std::vector<TimesliceSlot> slotsCreatedByHandlers;
   for (auto& handler : expirationHandlers) {
     slotsCreatedByHandlers.push_back(handler.creator(mTimesliceIndex));
   }
-  bool didWork = slotsCreatedByHandlers.empty() == false;
+  if (slotsCreatedByHandlers.empty() == false) {
+    activity.newSlots++;
+  }
   // Outer loop, we process all the records because the fact that the record
   // expires is independent from having received data for it.
   for (size_t ti = 0; ti < mTimesliceIndex.size(); ++ti) {
@@ -122,13 +135,14 @@ bool DataRelayer::processDanglingInputs(std::vector<ExpirationHandler> const& ex
         part.parts.resize(1);
       }
       expirator.handler(services, part[0], timestamp.value);
-      didWork = true;
+      activity.expiredSlots++;
+
       mTimesliceIndex.markAsDirty(slot, true);
       assert(part[0].header != nullptr);
       assert(part[0].payload != nullptr);
     }
   }
-  return didWork;
+  return activity;
 }
 
 /// This does the mapping between a route and a InputSpec. The
@@ -136,10 +150,11 @@ bool DataRelayer::processDanglingInputs(std::vector<ExpirationHandler> const& ex
 /// you have one route per timeslice, even if the type is the same.
 size_t matchToContext(void* data,
                       std::vector<DataDescriptorMatcher> const& matchers,
+                      std::vector<size_t> const& index,
                       VariableContext& context)
 {
-  for (size_t ri = 0, re = matchers.size(); ri < re; ++ri) {
-    auto& matcher = matchers[ri];
+  for (size_t ri = 0, re = index.size(); ri < re; ++ri) {
+    auto& matcher = matchers[index[ri]];
 
     if (matcher.match(reinterpret_cast<char const*>(data), context)) {
       context.commit();
@@ -173,6 +188,7 @@ DataRelayer::RelayChoice
   DataRelayer::relay(std::unique_ptr<FairMQMessage>&& header,
                      std::unique_ptr<FairMQMessage>&& payload)
 {
+  std::scoped_lock<LockableBase(std::recursive_mutex)> lock(mMutex);
   // STATE HOLDING VARIABLES
   // This is the class level state of the relaying. If we start supporting
   // multithreading this will have to be made thread safe before we can invoke
@@ -190,12 +206,13 @@ DataRelayer::RelayChoice
   // function because while it's trivial now, the actual matchmaking will
   // become more complicated when we will start supporting ranges.
   auto getInputTimeslice = [& matchers = mInputMatchers,
+                            &distinctRoutes = mDistinctRoutesIndex,
                             &header,
                             &index](VariableContext& context)
     -> std::tuple<int, TimesliceId> {
     /// FIXME: for the moment we only use the first context and reset
     /// between one invokation and the other.
-    auto input = matchToContext(header->GetData(), matchers, context);
+    auto input = matchToContext(header->GetData(), matchers, distinctRoutes, context);
 
     if (input == INVALID_INPUT) {
       return {
@@ -374,11 +391,11 @@ DataRelayer::RelayChoice
   return WillRelay;
 }
 
-std::vector<DataRelayer::RecordAction> DataRelayer::getReadyToProcess()
+void DataRelayer::getReadyToProcess(std::vector<DataRelayer::RecordAction>& completed)
 {
+  std::scoped_lock<LockableBase(std::recursive_mutex)> lock(mMutex);
+
   // THE STATE
-  std::vector<RecordAction> completed;
-  completed.reserve(16);
   const auto& cache = mCache;
   const auto numInputTypes = mDistinctRoutesIndex.size();
   //
@@ -401,10 +418,6 @@ std::vector<DataRelayer::RecordAction> DataRelayer::getReadyToProcess()
     completed.emplace_back(RecordAction{li, op});
   };
 
-  auto completionResults = [&completed]() -> std::vector<RecordAction> {
-    return completed;
-  };
-
   // THE OUTER LOOP
   //
   // To determine if a line is complete, we iterate on all the arguments
@@ -417,7 +430,7 @@ std::vector<DataRelayer::RecordAction> DataRelayer::getReadyToProcess()
   // Notice that the only time numInputTypes is 0 is when we are a dummy
   // device created as a source for timers / conditions.
   if (numInputTypes == 0) {
-    return {};
+    return;
   }
   size_t cacheLines = cache.size() / numInputTypes;
   assert(cacheLines * numInputTypes == cache.size());
@@ -455,11 +468,12 @@ std::vector<DataRelayer::RecordAction> DataRelayer::getReadyToProcess()
     // a new message before we look again into the given cacheline.
     mTimesliceIndex.markAsDirty(slot, false);
   }
-  return completionResults();
 }
 
 std::vector<o2::framework::MessageSet> DataRelayer::getInputsForTimeslice(TimesliceSlot slot)
 {
+  std::scoped_lock<LockableBase(std::recursive_mutex)> lock(mMutex);
+
   const auto numInputTypes = mDistinctRoutesIndex.size();
   // State of the computation
   std::vector<MessageSet> messages(numInputTypes);
@@ -513,6 +527,8 @@ std::vector<o2::framework::MessageSet> DataRelayer::getInputsForTimeslice(Timesl
 
 void DataRelayer::clear()
 {
+  std::scoped_lock<LockableBase(std::recursive_mutex)> lock(mMutex);
+
   for (auto& cache : mCache) {
     cache.clear();
   }
@@ -533,6 +549,8 @@ size_t
 /// the time pipelining.
 void DataRelayer::setPipelineLength(size_t s)
 {
+  std::scoped_lock<LockableBase(std::recursive_mutex)> lock(mMutex);
+
   mTimesliceIndex.resize(s);
   mVariableContextes.resize(s);
   publishMetrics();
@@ -540,6 +558,8 @@ void DataRelayer::setPipelineLength(size_t s)
 
 void DataRelayer::publishMetrics()
 {
+  std::scoped_lock<LockableBase(std::recursive_mutex)> lock(mMutex);
+
   auto numInputTypes = mDistinctRoutesIndex.size();
   mCache.resize(numInputTypes * mTimesliceIndex.size());
   mMetrics.send({(int)numInputTypes, "data_relayer/h"});
@@ -577,6 +597,7 @@ DataRelayerStats const& DataRelayer::getStats() const
 
 void DataRelayer::sendContextState()
 {
+  std::scoped_lock<LockableBase(std::recursive_mutex)> lock(mMutex);
   for (size_t ci = 0; ci < mTimesliceIndex.size(); ++ci) {
     auto slot = TimesliceSlot{ci};
     sendVariableContextMetrics(mTimesliceIndex.getPublishedVariablesForSlot(slot), slot,

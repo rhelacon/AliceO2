@@ -26,10 +26,8 @@
 
 #include <vector>
 #include <array>
-#include <memory>
-#include <mutex>
 #include "DataFormatsTPC/Constants.h"
-#include "SimulationDataFormat/MCTruthContainer.h"
+#include "SimulationDataFormat/ConstMCTruthContainer.h"
 #include "SimulationDataFormat/MCCompLabel.h"
 
 namespace GPUCA_NAMESPACE
@@ -38,12 +36,11 @@ namespace gpu
 {
 
 struct GPUTPCDigitsMCInput {
-  std::array<const o2::dataformats::MCTruthContainer<o2::MCCompLabel>*, o2::tpc::Constants::MAXSECTOR> v;
+  std::array<const o2::dataformats::ConstMCTruthContainerView<o2::MCCompLabel>*, o2::tpc::constants::MAXSECTOR> v;
 };
 
 struct GPUTPCClusterMCInterim {
   std::vector<o2::MCCompLabel> labels;
-  uint offset;
 };
 
 struct GPUTPCLinearLabels {

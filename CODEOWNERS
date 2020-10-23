@@ -12,7 +12,8 @@
 
 /Algorithm  @matthiasrichter
 
-/Analysis   @jgrosseo
+/Analysis   @jgrosseo @iarsene
+/Analysis/Tasks/hf*  @ginnocen
 
 /CCDB  @costing @Barthelemy @sawenzel @AliceO2Group/framework-admins
 
@@ -40,6 +41,7 @@
 /DataFormats/Detectors/TOF                     @noferini 
 /DataFormats/Detectors/TPC                     @davidrohr @wiechula @shahor02
 /DataFormats/Detectors/TRD                     @jolopezl @bazinski @tdietel
+/DataFormats/Detectors/Upgrades                @qgp @marcovanleeuwen
 /DataFormats/Detectors/ZDC                     @coppedis
 
 #/DataFormats/Headers
@@ -66,6 +68,7 @@
 /Detectors/TOF                     @noferini 
 /Detectors/TPC                     @davidrohr @wiechula @shahor02
 /Detectors/TRD                     @jolopezl @bazinski @tdietel
+/Detectors/Upgrades                @qgp @marcovanleeuwen
 /Detectors/ZDC                     @coppedis
 
 /EventVisualisation  @jmyrcha @AliceO2Group/framework-admins
@@ -111,10 +114,10 @@
 
 /Utilities  @AliceO2Group/framework-admins
 /Utilities/Mergers @Barthelemy @knopers8
+/Utilities/DataSampling @Barthelemy @knopers8
 #/Utilities/DataCompression
 #/Utilities/DataFlow
 #/Utilities/MCStepLogger
-#/Utilities/Mergers
 #/Utilities/O2Device
 #/Utilities/O2MessageMonitor
 #/Utilities/PCG
@@ -122,3 +125,4 @@
 #/Utilities/Tools
 #/Utilities/aliceHLTwrapper
 #/Utilities/hough
+/Utilities/rANS               @shahor02 @MichaelLettrich

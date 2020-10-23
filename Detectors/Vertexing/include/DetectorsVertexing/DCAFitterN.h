@@ -30,15 +30,15 @@ namespace vertexing
 struct TrackCovI {
   float sxx, syy, syz, szz;
 
-  TrackCovI(const o2::track::TrackParCov& trc) { set(trc); }
+  TrackCovI(const o2::track::TrackParCov& trc, float xerrFactor = 1.) { set(trc, xerrFactor); }
 
   TrackCovI() = default;
 
-  void set(const o2::track::TrackParCov& trc)
+  void set(const o2::track::TrackParCov& trc, float xerrFactor = 1)
   {
     // we assign Y error to X for DCA calculation
     // (otherwise for quazi-collinear tracks the X will not be constrained)
-    float cyy = trc.getSigmaY2(), czz = trc.getSigmaZ2(), cyz = trc.getSigmaZY(), cxx = cyy;
+    float cyy = trc.getSigmaY2(), czz = trc.getSigmaZ2(), cyz = trc.getSigmaZY(), cxx = cyy * xerrFactor;
     float detYZ = cyy * czz - cyz * cyz;
     if (detYZ > 0.) {
       auto detYZI = 1. / detYZ;
@@ -75,7 +75,7 @@ class DCAFitterN
   static constexpr double NMax = 4;
   static constexpr double NInv = 1. / N;
   static constexpr int MAXHYP = 2;
-
+  static constexpr float XerrFactor = 5.; // factor for conversion of track covYY to dummy covXX
   using Track = o2::track::TrackParCov;
   using TrackAuxPar = o2::track::TrackAuxPar;
   using CrossInfo = o2::track::CrossInfo;
@@ -109,15 +109,12 @@ class DCAFitterN
   ///< return Chi2 at PCA candidate (no check for its validity)
   float getChi2AtPCACandidate(int cand = 0) const { return mChi2[mOrder[cand]]; }
 
-  ///< track param positions at V0 candidate (no check for the candidate validity)
-  const Vec3D& getTrackPos(int i, int cand = 0) const { return mTrPos[mOrder[cand]][i]; }
-
-  ///< prapare copies of tracks at the V0 candidate (no check for the candidate validity)
+  ///< prepare copies of tracks at the V0 candidate (no check for the candidate validity)
   ///  must be called before getTrack(i,cand) query
   bool propagateTracksToVertex(int cand = 0);
 
-  ///< track X-param at V0 candidate (no check for the candidate validity)
-  float getTrackX(int i, int cand = 0) const { return getTrackPos(i, cand)[0]; }
+  ///< check if propagation of tracks to candidate vertex was done
+  bool isPropagateTracksToVertexDone(int cand = 0) const { return mTrPropDone[mOrder[cand]]; }
 
   ///< track param propagated to V0 candidate (no check for the candidate validity)
   ///  propagateTracksToVertex must be called in advance
@@ -128,6 +125,11 @@ class DCAFitterN
     }
     return mCandTr[mOrder[cand]][i];
   }
+
+  ///< calculate on the fly track param (no cov mat) at candidate, check isValid to make sure propagation was successful
+  o2::track::TrackPar getTrackParamAtPCA(int i, int cand = 0) const;
+
+  MatSym3D calcPCACovMatrix(int cand = 0) const;
 
   const Track* getOrigTrackPtr(int i) const { return mOrigTrPtr[i]; }
 
@@ -180,6 +182,33 @@ class DCAFitterN
   bool closerToAlternative() const;
   static double getAbsMax(const VecND& v);
 
+  ///< track param positions at V0 candidate (no check for the candidate validity)
+  const Vec3D& getTrackPos(int i, int cand = 0) const { return mTrPos[mOrder[cand]][i]; }
+
+  ///< track X-param at V0 candidate (no check for the candidate validity)
+  float getTrackX(int i, int cand = 0) const { return getTrackPos(i, cand)[0]; }
+
+  MatStd3D getTrackRotMatrix(int i) const // generate 3D matrix for track rotation to global frame
+  {
+    MatStd3D mat;
+    mat(2, 2) = 1;
+    mat(0, 0) = mat(1, 1) = mTrAux[i].c;
+    mat(0, 1) = -mTrAux[i].s;
+    mat(1, 0) = mTrAux[i].s;
+    return std::move(mat);
+  }
+
+  MatSym3D getTrackCovMatrix(int i, int cand = 0) const // generate covariance matrix of track position, adding fake X error
+  {
+    const auto& trc = mCandTr[mOrder[cand]][i];
+    MatSym3D mat;
+    mat(0, 0) = trc.getSigmaY2() * XerrFactor;
+    mat(1, 1) = trc.getSigmaY2();
+    mat(2, 2) = trc.getSigmaZ2();
+    mat(2, 1) = trc.getSigmaZY();
+    return std::move(mat);
+  }
+
   void assign(int) {}
   template <class T, class... Tr>
   void assign(int i, const T& t, const Tr&... args)
@@ -231,16 +260,16 @@ class DCAFitterN
   int mCurHyp = 0;
   int mCrossIDCur = 0;
   int mCrossIDAlt = -1;
-  bool mAllowAltPreference = true; // if the fit converges to alternative PCA seed, abandon the current one
-  bool mUseAbsDCA = false;       // use abs. distance minimization rather than chi2
-  bool mPropagateToPCA = true;   // create tracks version propagated to PCA
-  int mMaxIter = 20;             // max number of iterations
-  float mBz = 0;                 // bz field, to be set by user
-  float mMaxR2 = 200. * 200.;    // reject PCA's above this radius
-  float mMaxDZIni = 4.;          // reject (if>0) PCA candidate if tracks DZ exceeds threshold
-  float mMinParamChange = 1e-3;  // stop iterations if largest change of any X is smaller than this
-  float mMinRelChi2Change = 0.9; // stop iterations is chi2/chi2old > this
-  float mMaxChi2 = 100;          // abs cut on chi2 or abs distance
+  bool mAllowAltPreference = true;  // if the fit converges to alternative PCA seed, abandon the current one
+  bool mUseAbsDCA = false;          // use abs. distance minimization rather than chi2
+  bool mPropagateToPCA = true;      // create tracks version propagated to PCA
+  int mMaxIter = 20;                // max number of iterations
+  float mBz = 0;                    // bz field, to be set by user
+  float mMaxR2 = 200. * 200.;       // reject PCA's above this radius
+  float mMaxDZIni = 4.;             // reject (if>0) PCA candidate if tracks DZ exceeds threshold
+  float mMinParamChange = 1e-3;     // stop iterations if largest change of any X is smaller than this
+  float mMinRelChi2Change = 0.9;    // stop iterations is chi2/chi2old > this
+  float mMaxChi2 = 100;             // abs cut on chi2 or abs distance
   float mMaxDist2ToMergeSeeds = 1.; // merge 2 seeds to their average if their distance^2 is below the threshold
 
   ClassDefNV(DCAFitterN, 1);
@@ -259,7 +288,7 @@ int DCAFitterN<N, Args...>::process(const Tr&... args)
     mTrAux[i].set(*mOrigTrPtr[i], mBz);
   }
   if (!mCrossings.set(mTrAux[0], *mOrigTrPtr[0], mTrAux[1], *mOrigTrPtr[1])) { // even for N>2 it should be enough to test just 1 loop
-    return 0;                                  // no crossing
+    return 0;                                                                  // no crossing
   }
   if (mUseAbsDCA) {
     calcRMatrices(); // needed for fast residuals derivatives calculation in case of abs. distance minimization
@@ -290,7 +319,7 @@ int DCAFitterN<N, Args...>::process(const Tr&... args)
     if (mUseAbsDCA ? minimizeChi2NoErr() : minimizeChi2()) {
       mOrder[mCurHyp] = mCurHyp;
       if (mPropagateToPCA && !propagateTracksToVertex(mCurHyp)) {
-        return false;
+        continue; // discard candidate if failed to propagate to it
       }
       mCurHyp++;
     }
@@ -554,12 +583,12 @@ void DCAFitterN<N, Args...>::calcPCANoErr()
 {
   // calculate point of closest approach for N prongs w/o errors
   auto& pca = mPCA[mCurHyp];
-  o2::utils::rotateZ(mTrPos[mCurHyp][N - 1][0], mTrPos[mCurHyp][N - 1][1], pca[0], pca[1], mTrAux[N - 1].s, mTrAux[N - 1].c);
+  o2::math_utils::rotateZd(mTrPos[mCurHyp][N - 1][0], mTrPos[mCurHyp][N - 1][1], pca[0], pca[1], mTrAux[N - 1].s, mTrAux[N - 1].c);
   //RRRR    mTrAux[N-1].loc2glo(mTrPos[mCurHyp][N-1][0], mTrPos[mCurHyp][N-1][1], pca[0], pca[1] );
   pca[2] = mTrPos[mCurHyp][N - 1][2];
   for (int i = N - 1; i--;) {
     double x, y;
-    o2::utils::rotateZ(mTrPos[mCurHyp][i][0], mTrPos[mCurHyp][i][1], x, y, mTrAux[i].s, mTrAux[i].c);
+    o2::math_utils::rotateZd(mTrPos[mCurHyp][i][0], mTrPos[mCurHyp][i][1], x, y, mTrAux[i].s, mTrAux[i].c);
     //RRRR mTrAux[i].loc2glo(mTrPos[mCurHyp][i][0], mTrPos[mCurHyp][i][1], x, y );
     pca[0] += x;
     pca[1] += y;
@@ -572,6 +601,18 @@ void DCAFitterN<N, Args...>::calcPCANoErr()
 
 //___________________________________________________________________
 template <int N, typename... Args>
+ROOT::Math::SMatrix<double, 3, 3, ROOT::Math::MatRepSym<double, 3>> DCAFitterN<N, Args...>::calcPCACovMatrix(int cand) const
+{
+  // calculate covariance matrix for the point of closest approach
+  MatSym3D covm;
+  for (int i = N; i--;) {
+    covm += ROOT::Math::Similarity(mUseAbsDCA ? getTrackRotMatrix(i) : mTrCFVT[mOrder[cand]][i], getTrackCovMatrix(i, cand));
+  }
+  return std::move(covm);
+}
+
+//___________________________________________________________________
+template <int N, typename... Args>
 void DCAFitterN<N, Args...>::calcTrackResiduals()
 {
   // calculate residuals
@@ -579,7 +620,7 @@ void DCAFitterN<N, Args...>::calcTrackResiduals()
   for (int i = N; i--;) {
     mTrRes[mCurHyp][i] = mTrPos[mCurHyp][i];
     vtxLoc = mPCA[mCurHyp];
-    o2::utils::rotateZInv(vtxLoc[0], vtxLoc[1], vtxLoc[0], vtxLoc[1], mTrAux[i].s, mTrAux[i].c); // glo->loc
+    o2::math_utils::rotateZInvd(vtxLoc[0], vtxLoc[1], vtxLoc[0], vtxLoc[1], mTrAux[i].s, mTrAux[i].c); // glo->loc
     mTrRes[mCurHyp][i] -= vtxLoc;
   }
 }
@@ -662,6 +703,22 @@ bool DCAFitterN<N, Args...>::propagateTracksToVertex(int icand)
 
 //___________________________________________________________________
 template <int N, typename... Args>
+inline o2::track::TrackPar DCAFitterN<N, Args...>::getTrackParamAtPCA(int i, int icand) const
+{
+  // propagate tracks param only to current vertex (if not already done)
+  int ord = mOrder[icand];
+  o2::track::TrackPar trc(mCandTr[ord][i]);
+  if (!mTrPropDone[ord]) {
+    auto x = mTrAux[i].c * mPCA[ord][0] + mTrAux[i].s * mPCA[ord][1]; // X of PCA in the track frame
+    if (!trc.propagateParamTo(x, mBz)) {
+      trc.invalidate();
+    }
+  }
+  return std::move(trc);
+}
+
+//___________________________________________________________________
+template <int N, typename... Args>
 inline double DCAFitterN<N, Args...>::getAbsMax(const VecND& v)
 {
   double mx = -1;
@@ -685,8 +742,8 @@ bool DCAFitterN<N, Args...>::minimizeChi2()
     if (!mCandTr[mCurHyp][i].propagateTo(x, mBz)) {
       return false;
     }
-    setTrackPos(mTrPos[mCurHyp][i], mCandTr[mCurHyp][i]); // prepare positions
-    mTrcEInv[mCurHyp][i].set(mCandTr[mCurHyp][i]);        // prepare inverse cov.matrices at starting point
+    setTrackPos(mTrPos[mCurHyp][i], mCandTr[mCurHyp][i]);      // prepare positions
+    mTrcEInv[mCurHyp][i].set(mCandTr[mCurHyp][i], XerrFactor); // prepare inverse cov.matrices at starting point
   }
 
   if (mMaxDZIni > 0 && !roughDZCut()) { // apply rough cut on tracks Z difference

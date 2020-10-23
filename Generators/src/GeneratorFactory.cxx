@@ -26,13 +26,18 @@
 #include <Generators/GeneratorPythia8Param.h>
 #endif
 #include <Generators/GeneratorTGenerator.h>
+#include <Generators/GeneratorExternalParam.h>
 #ifdef GENERATORS_WITH_HEPMC3
 #include <Generators/GeneratorHepMC.h>
+#include <Generators/GeneratorHepMCParam.h>
 #endif
 #include <Generators/BoxGunParam.h>
 #include <Generators/TriggerParticle.h>
+#include <Generators/TriggerExternalParam.h>
 #include <Generators/TriggerParticleParam.h>
 #include "Generators/ConfigurationMacroHelper.h"
+
+#include "TRandom.h"
 
 namespace o2
 {
@@ -62,12 +67,10 @@ void GeneratorFactory::setPrimaryGenerator(o2::conf::SimConfig const& conf, Fair
     auto gen = new o2::eventgen::GeneratorPythia8();
     LOG(INFO) << "Reading \'Pythia8\' base configuration: " << config << std::endl;
     gen->readFile(config);
-    auto& param = GeneratorPythia8Param::Instance();
-    LOG(INFO) << "Init \'Pythia8\' generator with following parameters";
-    LOG(INFO) << param;
-    gen->setConfig(param.config);
-    gen->setHooksFileName(param.hooksFileName);
-    gen->setHooksFuncName(param.hooksFuncName);
+    auto seed = (gRandom->GetSeed() % 900000000);
+    LOG(INFO) << "Using random seed from gRandom % 900000000: " << seed;
+    gen->readString("Random:setSeed on");
+    gen->readString("Random:seed " + std::to_string(seed));
     return gen;
   };
 #endif
@@ -136,9 +139,12 @@ void GeneratorFactory::setPrimaryGenerator(o2::conf::SimConfig const& conf, Fair
 #ifdef GENERATORS_WITH_HEPMC3
   } else if (genconfig.compare("hepmc") == 0) {
     // external HepMC file
+    auto& param = GeneratorHepMCParam::Instance();
+    LOG(INFO) << "Init \'GeneratorHepMC\' with following parameters";
+    LOG(INFO) << param;
     auto hepmcGen = new o2::eventgen::GeneratorHepMC();
-    hepmcGen->setFileName(conf.getHepMCFileName());
-    hepmcGen->setVersion(2);
+    hepmcGen->setFileName(param.fileName);
+    hepmcGen->setVersion(param.version);
     primGen->AddGenerator(hepmcGen);
 #endif
 #ifdef GENERATORS_WITH_PYTHIA6
@@ -186,13 +192,17 @@ void GeneratorFactory::setPrimaryGenerator(o2::conf::SimConfig const& conf, Fair
     auto py8 = makePythia8Gen(py8config);
     primGen->AddGenerator(py8);
 #endif
-  } else if (genconfig.compare("extgen") == 0) {
+  } else if (genconfig.compare("external") == 0 || genconfig.compare("extgen") == 0) {
     // external generator via configuration macro
-    auto extgen_filename = conf.getExtGeneratorFileName();
-    auto extgen_func = conf.getExtGeneratorFuncName();
+    auto& params = GeneratorExternalParam::Instance();
+    LOG(INFO) << "Setting up external generator with following parameters";
+    LOG(INFO) << params;
+    auto extgen_filename = params.fileName;
+    auto extgen_func = params.funcName;
     auto extgen = GetFromMacro<FairGenerator*>(extgen_filename, extgen_func, "FairGenerator*", "extgen");
-    if (!extgen)
+    if (!extgen) {
       LOG(FATAL) << "Failed to retrieve \'extgen\': problem with configuration ";
+    }
     primGen->AddGenerator(extgen);
   } else if (genconfig.compare("toftest") == 0) { // 1 muon per sector and per module
     LOG(INFO) << "Init tof test generator -> 1 muon per sector and per module";
@@ -222,15 +232,19 @@ void GeneratorFactory::setPrimaryGenerator(o2::conf::SimConfig const& conf, Fair
     trigger = TriggerParticle(TriggerParticleParam::Instance());
   } else if (trgconfig.compare("external") == 0) {
     // external trigger via configuration macro
-    auto external_trigger_filename = conf.getExtTriggerFileName();
-    auto external_trigger_func = conf.getExtTriggerFuncName();
+    auto& params = TriggerExternalParam::Instance();
+    LOG(INFO) << "Setting up external trigger with following parameters";
+    LOG(INFO) << params;
+    auto external_trigger_filename = params.fileName;
+    auto external_trigger_func = params.funcName;
     trigger = GetFromMacro<o2::eventgen::Trigger>(external_trigger_filename, external_trigger_func, "o2::eventgen::Trigger", "trigger");
     if (!trigger) {
       LOG(INFO) << "Trying to retrieve a \'o2::eventgen::DeepTrigger\' type" << std::endl;
       deeptrigger = GetFromMacro<o2::eventgen::DeepTrigger>(external_trigger_filename, external_trigger_func, "o2::eventgen::DeepTrigger", "deeptrigger");
     }
-    if (!trigger && !deeptrigger)
+    if (!trigger && !deeptrigger) {
       LOG(FATAL) << "Failed to retrieve \'external trigger\': problem with configuration ";
+    }
   } else {
     LOG(FATAL) << "Invalid trigger";
   }

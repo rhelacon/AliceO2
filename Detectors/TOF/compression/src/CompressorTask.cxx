@@ -29,8 +29,8 @@ namespace o2
 namespace tof
 {
 
-template <typename RAWDataHeader, bool verbose>
-void CompressorTask<RAWDataHeader, verbose>::init(InitContext& ic)
+template <typename RDH, bool verbose>
+void CompressorTask<RDH, verbose>::init(InitContext& ic)
 {
   LOG(INFO) << "Compressor init";
 
@@ -51,15 +51,14 @@ void CompressorTask<RAWDataHeader, verbose>::init(InitContext& ic)
   ic.services().get<CallbackService>().set(CallbackService::Id::Stop, finishFunction);
 }
 
-template <typename RAWDataHeader, bool verbose>
-void CompressorTask<RAWDataHeader, verbose>::run(ProcessingContext& pc)
+template <typename RDH, bool verbose>
+void CompressorTask<RDH, verbose>::run(ProcessingContext& pc)
 {
   LOG(DEBUG) << "Compressor run";
 
   /** set encoder output buffer **/
-  char bufferOut[1048576];
-  mCompressor.setEncoderBuffer(bufferOut);
-  mCompressor.setEncoderBufferSize(1048576);
+  mCompressor.setEncoderBuffer(mBufferOut);
+  mCompressor.setEncoderBufferSize(mBufferOutSize);
 
   auto device = pc.services().get<o2::framework::RawDeviceService>().device();
   auto outputRoutes = pc.services().get<o2::framework::RawDeviceService>().spec().outputs;
@@ -87,7 +86,7 @@ void CompressorTask<RAWDataHeader, verbose>::run(ProcessingContext& pc)
       mCompressor.run();
       auto payloadOutSize = mCompressor.getEncoderByteCounter();
       auto payloadMessage = device->NewMessage(payloadOutSize);
-      std::memcpy(payloadMessage->GetData(), bufferOut, payloadOutSize);
+      std::memcpy(payloadMessage->GetData(), mBufferOut, payloadOutSize);
 
       /** output **/
       auto headerOut = *headerIn;

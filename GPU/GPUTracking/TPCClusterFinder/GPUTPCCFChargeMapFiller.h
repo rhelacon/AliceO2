@@ -21,17 +21,12 @@
 #include "Array2D.h"
 #include "PackedCharge.h"
 
-namespace o2
-{
-namespace tpc
+namespace o2::tpc
 {
 class Digit;
-}
-} // namespace o2
+} // namespace o2::tpc
 
-namespace GPUCA_NAMESPACE
-{
-namespace gpu
+namespace GPUCA_NAMESPACE::gpu
 {
 
 struct ChargePos;
@@ -43,7 +38,6 @@ class GPUTPCCFChargeMapFiller : public GPUKernelTemplate
     fillIndexMap,
     fillFromDigits,
     findFragmentStart,
-    resetMaps,
   };
 
 #ifdef HAVE_O2HEADERS
@@ -66,10 +60,10 @@ class GPUTPCCFChargeMapFiller : public GPUKernelTemplate
 
   static GPUd() void fillFromDigitsImpl(int, int, int, int, const CfFragment&, size_t, const tpc::Digit*, ChargePos*, Array2D<PackedCharge>&);
 
-  static GPUd() void resetMapsImpl(int, int, int, int, const ChargePos*, Array2D<PackedCharge>&, Array2D<uchar>&, size_t);
+ private:
+  static GPUd() size_t findTransition(int, const tpc::Digit*, size_t, size_t);
 };
 
-} // namespace gpu
-} // namespace GPUCA_NAMESPACE
+} // namespace GPUCA_NAMESPACE::gpu
 
 #endif

@@ -19,7 +19,6 @@
 #include "Framework/RawDeviceService.h"
 #include "Framework/StringHelpers.h"
 
-#include "fairmq/FairMQDevice.h"
 #include "Headers/DataHeader.h"
 #include <algorithm>
 #include <list>
@@ -51,7 +50,7 @@ std::vector<TopoIndexInfo>
   using EdgeIndex = int;
   // Create the index which will be returned.
   std::vector<TopoIndexInfo> index(nodeCount);
-  for (int wi = 0; wi < nodeCount; ++wi) {
+  for (auto wi = 0; wi < nodeCount; ++wi) {
     index[wi] = {wi, 0};
   }
   std::vector<EdgeIndex> remainingEdgesIndex(edgesCount);
@@ -69,7 +68,7 @@ std::vector<TopoIndexInfo>
   // We start with all those which do not have any dependencies
   // They are layer 0.
   std::list<TopoIndexInfo> L;
-  for (int ii = 0; ii < index.size(); ++ii) {
+  for (auto ii = 0; ii < index.size(); ++ii) {
     if (nodeDeps[ii] == false) {
       L.push_back({ii, 0});
     }
@@ -129,8 +128,6 @@ void addMissingOutputsToReader(std::vector<OutputSpec> const& providedOutputs,
       return DataSpecUtils::match(requested, provided);
     };
   };
-  auto last = std::unique(requestedInputs.begin(), requestedInputs.end());
-  requestedInputs.erase(last, requestedInputs.end());
   for (InputSpec const& requested : requestedInputs) {
     auto provided = std::find_if(providedOutputs.begin(),
                                  providedOutputs.end(),
@@ -139,7 +136,27 @@ void addMissingOutputsToReader(std::vector<OutputSpec> const& providedOutputs,
     if (provided != providedOutputs.end()) {
       continue;
     }
+
+    auto inList = std::find_if(publisher.outputs.begin(),
+                               publisher.outputs.end(),
+                               matchingOutputFor(requested));
+    if (inList != publisher.outputs.end()) {
+      continue;
+    }
+
     auto concrete = DataSpecUtils::asConcreteDataMatcher(requested);
+    publisher.outputs.emplace_back(OutputSpec{concrete.origin, concrete.description, concrete.subSpec});
+  }
+}
+
+void addMissingOutputsToSpawner(std::vector<InputSpec>&& requestedDYNs,
+                                std::vector<InputSpec>& requestedAODs,
+                                DataProcessorSpec& publisher)
+{
+  for (auto& input : requestedDYNs) {
+    publisher.inputs.emplace_back(InputSpec{input.binding, header::DataOrigin{"AOD"}, DataSpecUtils::asConcreteDataMatcher(input).description});
+    requestedAODs.emplace_back(InputSpec{input.binding, header::DataOrigin{"AOD"}, DataSpecUtils::asConcreteDataMatcher(input).description});
+    auto concrete = DataSpecUtils::asConcreteDataMatcher(input);
     publisher.outputs.emplace_back(OutputSpec{concrete.origin, concrete.description, concrete.subSpec});
   }
 }
@@ -151,9 +168,10 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
     LOG(INFO) << "To be hidden / removed at some point.";
     // mark this dummy process as ready-to-quit
     ic.services().get<ControlService>().readyToQuit(QuitRequest::Me);
+
     return [](ProcessingContext& pc) {
       // this callback is never called since there is no expiring input
-      pc.services().get<RawDeviceService>().device()->WaitFor(std::chrono::seconds(2));
+      pc.services().get<RawDeviceService>().waitFor(2000);
     };
   }};
 
@@ -161,20 +179,19 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
     "internal-dpl-ccdb-backend",
     {},
     {},
-    fakeCallback,
-  };
+    AlgorithmSpec::dummyAlgorithm()};
   DataProcessorSpec transientStore{"internal-dpl-transient-store",
                                    {},
                                    {},
-                                   fakeCallback};
+                                   AlgorithmSpec::dummyAlgorithm()};
   DataProcessorSpec qaStore{"internal-dpl-qa-store",
                             {},
                             {},
-                            fakeCallback};
+                            AlgorithmSpec::dummyAlgorithm()};
   DataProcessorSpec timer{"internal-dpl-clock",
                           {},
                           {},
-                          fakeCallback};
+                          AlgorithmSpec::dummyAlgorithm()};
 
   // In case InputSpec of origin AOD are
   // requested but not available as part of the workflow,
@@ -191,20 +208,25 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
                static_cast<DataAllocator::SubSpecificationType>(compile_time_hash("internal-dpl-aod-reader")), Lifetime::Enumeration}},
     {},
     readers::AODReaderHelpers::rootFileReaderCallback(),
-    {ConfigParamSpec{"aod-file", VariantType::String, "aod.root", {"Input AOD file"}},
-     ConfigParamSpec{"json-file", VariantType::String, {"json configuration file"}},
+    {ConfigParamSpec{"aod-file", VariantType::String, {"Input AOD file"}},
+     ConfigParamSpec{"aod-reader-json", VariantType::String, {"json configuration file"}},
+     ConfigParamSpec{"time-limit", VariantType::Int64, 0ll, {"Maximum run time limit in seconds"}},
      ConfigParamSpec{"start-value-enumeration", VariantType::Int64, 0ll, {"initial value for the enumeration"}},
      ConfigParamSpec{"end-value-enumeration", VariantType::Int64, -1ll, {"final value for the enumeration"}},
      ConfigParamSpec{"step-value-enumeration", VariantType::Int64, 1ll, {"step between one value and the other"}}}};
 
   std::vector<InputSpec> requestedAODs;
   std::vector<OutputSpec> providedAODs;
+  std::vector<InputSpec> requestedDYNs;
+
   std::vector<InputSpec> requestedCCDBs;
   std::vector<OutputSpec> providedCCDBs;
   std::vector<OutputSpec> providedOutputObj;
+  std::vector<OutputSpec> providedHist;
 
   outputTasks outTskMap;
   outputObjects outObjMap;
+  outputObjects outHistMap;
 
   for (size_t wi = 0; wi < workflow.size(); ++wi) {
     auto& processor = workflow[wi];
@@ -225,16 +247,15 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
       switch (input.lifetime) {
         case Lifetime::Timer: {
           auto concrete = DataSpecUtils::asConcreteDataMatcher(input);
-          bool hasOption = false;
-          for (auto& option : processor.options) {
-            if (option.name == "period-" + input.binding) {
-              hasOption = true;
-            }
-          }
+          auto hasOption = std::any_of(processor.options.begin(), processor.options.end(), [&input](auto const& option) { return (option.name == "period-" + input.binding); });
           if (hasOption == false) {
             processor.options.push_back(ConfigParamSpec{"period-" + input.binding, VariantType::Int, 1000, {"period of the timer"}});
           }
           timer.outputs.emplace_back(OutputSpec{concrete.origin, concrete.description, concrete.subSpec, Lifetime::Timer});
+        } break;
+        case Lifetime::Signal: {
+          auto concrete = DataSpecUtils::asConcreteDataMatcher(input);
+          timer.outputs.emplace_back(OutputSpec{concrete.origin, concrete.description, concrete.subSpec, Lifetime::Signal});
         } break;
         case Lifetime::Enumeration: {
           auto concrete = DataSpecUtils::asConcreteDataMatcher(input);
@@ -242,7 +263,7 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
         } break;
         case Lifetime::Condition: {
           if (hasConditionOption == false) {
-            processor.options.emplace_back(ConfigParamSpec{"condition-backend", VariantType::String, "http://localhost:8080", {"Url for CCDB"}});
+            processor.options.emplace_back(ConfigParamSpec{"condition-backend", VariantType::String, "http://localhost:8080", {"URL for CCDB"}});
             processor.options.emplace_back(ConfigParamSpec{"condition-timestamp", VariantType::String, "", {"Force timestamp for CCDB lookup"}});
             hasConditionOption = true;
           }
@@ -256,6 +277,14 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
       if (DataSpecUtils::partialMatch(input, header::DataOrigin{"AOD"})) {
         requestedAODs.emplace_back(input);
       }
+      if (DataSpecUtils::partialMatch(input, header::DataOrigin{"RN2"})) {
+        requestedAODs.emplace_back(input);
+      }
+      if (DataSpecUtils::partialMatch(input, header::DataOrigin{"DYN"})) {
+        if (std::find_if(requestedDYNs.begin(), requestedDYNs.end(), [&](InputSpec const& spec) { return input.binding == spec.binding; }) == requestedDYNs.end()) {
+          requestedDYNs.emplace_back(input);
+        }
+      }
     }
     std::stable_sort(timer.outputs.begin(), timer.outputs.end(), [](OutputSpec const& a, OutputSpec const& b) { return *DataSpecUtils::getOptionalSubSpec(a) < *DataSpecUtils::getOptionalSubSpec(b); });
 
@@ -263,12 +292,21 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
       auto& output = processor.outputs[oi];
       if (DataSpecUtils::partialMatch(output, header::DataOrigin{"AOD"})) {
         providedAODs.emplace_back(output);
-
+      } else if (DataSpecUtils::partialMatch(output, header::DataOrigin{"RN2"})) {
+        providedAODs.emplace_back(output);
       } else if (DataSpecUtils::partialMatch(output, header::DataOrigin{"ATSK"})) {
         providedOutputObj.emplace_back(output);
         auto it = std::find_if(outObjMap.begin(), outObjMap.end(), [&](auto&& x) { return x.first == hash; });
         if (it == outObjMap.end()) {
           outObjMap.push_back({hash, {output.binding.value}});
+        } else {
+          it->second.push_back(output.binding.value);
+        }
+      } else if (DataSpecUtils::partialMatch(output, header::DataOrigin{"HIST"})) {
+        providedHist.emplace_back(output);
+        auto it = std::find_if(outHistMap.begin(), outHistMap.end(), [&](auto&& x) { return x.first == hash; });
+        if (it == outHistMap.end()) {
+          outHistMap.push_back({hash, {output.binding.value}});
         } else {
           it->second.push_back(output.binding.value);
         }
@@ -279,6 +317,17 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
     }
   }
 
+  auto last = std::unique(requestedDYNs.begin(), requestedDYNs.end());
+  requestedDYNs.erase(last, requestedDYNs.end());
+
+  DataProcessorSpec aodSpawner{
+    "internal-dpl-aod-spawner",
+    {},
+    {},
+    readers::AODReaderHelpers::aodSpawnerCallback(requestedDYNs),
+    {}};
+
+  addMissingOutputsToSpawner(std::move(requestedDYNs), requestedAODs, aodSpawner);
   addMissingOutputsToReader(providedAODs, requestedAODs, aodReader);
   addMissingOutputsToReader(providedCCDBs, requestedCCDBs, ccdbBackend);
 
@@ -293,6 +342,11 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
   if (qaStore.outputs.empty() == false) {
     extraSpecs.push_back(qaStore);
   }
+
+  if (aodSpawner.outputs.empty() == false) {
+    extraSpecs.push_back(aodSpawner);
+  }
+
   if (aodReader.outputs.empty() == false) {
     extraSpecs.push_back(timePipeline(aodReader, ctx.options().get<int64_t>("readers")));
     auto concrete = DataSpecUtils::asConcreteDataMatcher(aodReader.inputs[0]);
@@ -305,8 +359,14 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
 
   // This is to inject a file sink so that any dangling ATSK object is written
   // to a ROOT file.
-  if (providedOutputObj.size() != 0) {
+  if (providedOutputObj.empty() == false) {
     auto rootSink = CommonDataProcessors::getOutputObjSink(outObjMap, outTskMap);
+    extraSpecs.push_back(rootSink);
+  }
+  // This is to inject a file sink so that any dangling HIST object is written
+  // to a ROOT file.
+  if (providedHist.empty() == false) {
+    auto rootSink = CommonDataProcessors::getHistogramRegistrySink(outHistMap, outTskMap);
     extraSpecs.push_back(rootSink);
   }
 
@@ -317,29 +377,30 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
   ///   . dangling, not AOD     - getGlobalFileSink
   ///
   // First analyze all ouputs
-  //  outputtypes = isAOD*2 + isdangling*1 + 0
-  auto [OutputsInputs, outputtypes] = analyzeOutputs(workflow);
+  //  outputTypes = isAOD*2 + isdangling*1 + 0
+  auto [OutputsInputs, outputTypes] = analyzeOutputs(workflow);
+
+  // create DataOutputDescriptor
+  std::shared_ptr<DataOutputDirector> dod = getDataOutputDirector(ctx.options(), OutputsInputs, outputTypes);
 
   // file sink for any AOD output
   extraSpecs.clear();
 
-  // select outputs of type AOD
-  std::vector<InputSpec> OutputsInputsAOD;
-  std::vector<bool> isdangling;
-  for (int ii = 0; ii < OutputsInputs.size(); ii++) {
-    if ((outputtypes[ii] & 2) == 2) {
-
-      // temporarily also request to be dangling
-      if ((outputtypes[ii] & 1) == 1) {
-        OutputsInputsAOD.emplace_back(OutputsInputs[ii]);
-        isdangling.emplace_back((outputtypes[ii] & 1) == 1);
+  // select outputs of type AOD which need to be saved
+  // ATTENTION: if there are dangling outputs the getGlobalAODSink
+  // has to be created in any case!
+  std::vector<InputSpec> outputsInputsAOD;
+  for (auto ii = 0u; ii < OutputsInputs.size(); ii++) {
+    if ((outputTypes[ii] & 2) == 2) {
+      auto ds = dod->getDataOutputDescriptors(OutputsInputs[ii]);
+      if (ds.size() > 0 || (outputTypes[ii] & 1) == 1) {
+        outputsInputsAOD.emplace_back(OutputsInputs[ii]);
       }
     }
   }
 
-  if (OutputsInputsAOD.size() > 0) {
-    auto fileSink = CommonDataProcessors::getGlobalAODSink(OutputsInputsAOD,
-                                                           isdangling);
+  if (outputsInputsAOD.size() > 0) {
+    auto fileSink = CommonDataProcessors::getGlobalAODSink(dod, outputsInputsAOD);
     extraSpecs.push_back(fileSink);
   }
   workflow.insert(workflow.end(), extraSpecs.begin(), extraSpecs.end());
@@ -348,18 +409,22 @@ void WorkflowHelpers::injectServiceDevices(WorkflowSpec& workflow, ConfigContext
   extraSpecs.clear();
 
   // select dangling outputs which are not of type AOD
-  std::vector<InputSpec> OutputsInputsDangling;
-  for (int ii = 0; ii < OutputsInputs.size(); ii++) {
-    if ((outputtypes[ii] & 1) == 1 && (outputtypes[ii] & 2) == 0)
-      OutputsInputsDangling.emplace_back(OutputsInputs[ii]);
+  std::vector<InputSpec> outputsInputsDangling;
+  for (auto ii = 0u; ii < OutputsInputs.size(); ii++) {
+    if ((outputTypes[ii] & 1) == 1 && (outputTypes[ii] & 2) == 0) {
+      outputsInputsDangling.emplace_back(OutputsInputs[ii]);
+    }
   }
 
   std::vector<InputSpec> unmatched;
-  if (OutputsInputsDangling.size() > 0) {
-    auto fileSink = CommonDataProcessors::getGlobalFileSink(OutputsInputsDangling, unmatched);
-    if (unmatched.size() != OutputsInputsDangling.size()) {
+  if (outputsInputsDangling.size() > 0 && ctx.options().get<std::string>("dangling-outputs-policy") == "file") {
+    auto fileSink = CommonDataProcessors::getGlobalFileSink(outputsInputsDangling, unmatched);
+    if (unmatched.size() != outputsInputsDangling.size()) {
       extraSpecs.push_back(fileSink);
     }
+  } else if (outputsInputsDangling.size() > 0 && ctx.options().get<std::string>("dangling-outputs-policy") == "fairmq") {
+    auto fairMQSink = CommonDataProcessors::getGlobalFairMQSink(outputsInputsDangling);
+    extraSpecs.push_back(fairMQSink);
   }
   if (unmatched.size() > 0) {
     extraSpecs.push_back(CommonDataProcessors::getDummySink(unmatched));
@@ -636,8 +701,9 @@ void WorkflowHelpers::verifyWorkflow(const o2::framework::WorkflowSpec& workflow
   std::ostringstream ss;
 
   for (auto& spec : workflow) {
-    if (spec.name.empty())
+    if (spec.name.empty()) {
       throw std::runtime_error("Invalid DataProcessorSpec name");
+    }
     if (validNames.find(spec.name) != validNames.end()) {
       throw std::runtime_error("Name " + spec.name + " is used twice.");
     }
@@ -669,6 +735,84 @@ struct DataMatcherId {
   size_t id;
 };
 
+std::shared_ptr<DataOutputDirector> WorkflowHelpers::getDataOutputDirector(ConfigParamRegistry const& options, std::vector<InputSpec> const& OutputsInputs, std::vector<unsigned char> const& outputTypes)
+{
+  std::shared_ptr<DataOutputDirector> dod = std::make_shared<DataOutputDirector>();
+
+  // analyze options and take actions accordingly
+  // default values
+  std::string fnb, fnbase("AnalysisResults_trees");
+  std::string fmo, filemode("RECREATE");
+  int ntfm, ntfmerge = 1;
+
+  // values from json
+  if (options.isSet("aod-writer-json")) {
+    auto fnjson = options.get<std::string>("aod-writer-json");
+    if (!fnjson.empty()) {
+      std::tie(fnb, fmo, ntfm) = dod->readJson(fnjson);
+      if (!fnb.empty()) {
+        fnbase = fnb;
+      }
+      if (!fmo.empty()) {
+        filemode = fmo;
+      }
+      if (ntfm > 0) {
+        ntfmerge = ntfm;
+      }
+    }
+  }
+
+  // values from command line options, information from json is overwritten
+  if (options.isSet("aod-writer-resfile")) {
+    fnb = options.get<std::string>("aod-writer-resfile");
+    if (!fnb.empty()) {
+      fnbase = fnb;
+    }
+  }
+  if (options.isSet("aod-writer-resmode")) {
+    fmo = options.get<std::string>("aod-writer-resmode");
+    if (!fmo.empty()) {
+      filemode = fmo;
+    }
+  }
+  if (options.isSet("aod-writer-ntfmerge")) {
+    ntfm = options.get<int>("aod-writer-ntfmerge");
+    if (ntfm > 0) {
+      ntfmerge = ntfm;
+    }
+  }
+  // parse the keepString
+  if (options.isSet("aod-writer-keep")) {
+    auto keepString = options.get<std::string>("aod-writer-keep");
+    if (!keepString.empty()) {
+
+      dod->reset();
+      std::string d("dangling");
+      if (d.find(keepString) == 0) {
+
+        // use the dangling outputs
+        std::vector<InputSpec> danglingOutputs;
+        for (auto ii = 0; ii < OutputsInputs.size(); ii++) {
+          if ((outputTypes[ii] & 2) == 2 && (outputTypes[ii] & 1) == 1) {
+            danglingOutputs.emplace_back(OutputsInputs[ii]);
+          }
+        }
+        dod->readSpecs(danglingOutputs);
+
+      } else {
+
+        // use the keep string
+        dod->readString(keepString);
+      }
+    }
+  }
+  dod->setFilenameBase(fnbase);
+  dod->setFileMode(filemode);
+  dod->setNumberTimeFramesToMerge(ntfmerge);
+
+  return dod;
+}
+
 std::tuple<std::vector<InputSpec>, std::vector<unsigned char>> WorkflowHelpers::analyzeOutputs(WorkflowSpec const& workflow)
 {
   // compute total number of input/output
@@ -685,9 +829,9 @@ std::tuple<std::vector<InputSpec>, std::vector<unsigned char>> WorkflowHelpers::
   outputs.reserve(totalOutputs);
 
   std::vector<InputSpec> results;
-  std::vector<unsigned char> outputtypes;
+  std::vector<unsigned char> outputTypes;
   results.reserve(totalOutputs);
-  outputtypes.reserve(totalOutputs);
+  outputTypes.reserve(totalOutputs);
 
   /// Prepare an index to do the iterations quickly.
   for (size_t wi = 0, we = workflow.size(); wi != we; ++wi) {
@@ -705,11 +849,15 @@ std::tuple<std::vector<InputSpec>, std::vector<unsigned char>> WorkflowHelpers::
     auto& outputSpec = workflow[output.workflowId].outputs[output.id];
 
     // compute output type
-    unsigned char outputtype = 0;
+    unsigned char outputType = 0;
 
     // is AOD?
     if (DataSpecUtils::partialMatch(outputSpec, header::DataOrigin("AOD"))) {
-      outputtype += 2;
+      outputType += 2;
+    }
+    // is RN2?
+    if (DataSpecUtils::partialMatch(outputSpec, header::DataOrigin("RN2"))) {
+      outputType += 2;
     }
 
     // is dangling output?
@@ -727,10 +875,10 @@ std::tuple<std::vector<InputSpec>, std::vector<unsigned char>> WorkflowHelpers::
       }
     }
     if (!matched) {
-      outputtype += 1;
+      outputType += 1;
     }
 
-    // update results and outputtypes
+    // update results and outputTypes
     auto input = DataSpecUtils::matchingInput(outputSpec);
     char buf[64];
     input.binding = (snprintf(buf, 63, "output_%zu_%zu", output.workflowId, output.id), buf);
@@ -738,23 +886,23 @@ std::tuple<std::vector<InputSpec>, std::vector<unsigned char>> WorkflowHelpers::
     // make sure that entries are unique
     if (std::find(results.begin(), results.end(), input) == results.end()) {
       results.emplace_back(input);
-      outputtypes.emplace_back(outputtype);
+      outputTypes.emplace_back(outputType);
     }
   }
 
   // make sure that results is unique
 
-  return std::make_tuple(results, outputtypes);
+  return std::make_tuple(results, outputTypes);
 }
 
 std::vector<InputSpec> WorkflowHelpers::computeDanglingOutputs(WorkflowSpec const& workflow)
 {
 
-  auto [OutputsInputs, outputtypes] = analyzeOutputs(workflow);
+  auto [OutputsInputs, outputTypes] = analyzeOutputs(workflow);
 
   std::vector<InputSpec> results;
-  for (int ii = 0; ii < OutputsInputs.size(); ii++) {
-    if ((outputtypes[ii] & 1) == 1) {
+  for (auto ii = 0u; ii < OutputsInputs.size(); ii++) {
+    if ((outputTypes[ii] & 1) == 1) {
       results.emplace_back(OutputsInputs[ii]);
     }
   }

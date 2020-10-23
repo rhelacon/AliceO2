@@ -27,6 +27,8 @@
 #include "TPCBase/PartitionInfo.h"
 #include "TPCBase/Sector.h"
 
+#include "MathUtils/Cartesian.h"
+
 // using o2::tpc::PadRegionInfo;
 // using o2::tpc::PartitionInfo;
 
@@ -254,6 +256,21 @@ class Mapper
     return pos;
   }
 
+  /// sampa on FEC and channel on SAMPA from the cru and the raw FEC channel (0-79) in the half FEC
+  /// this is required for the link-based zero suppression
+  static constexpr void getSampaAndChannelOnFEC(const int cruID, const size_t rawFECChannel, int& sampaOnFEC, int& channelOnSAMPA)
+  {
+    constexpr int sampaMapping[10] = {0, 0, 1, 1, 2, 3, 3, 4, 4, 2};
+    constexpr int channelOffset[10] = {0, 16, 0, 16, 0, 0, 16, 0, 16, 16};
+
+    const int regionIter = cruID % 2;
+    const int istreamm = ((rawFECChannel % 10) / 2);
+    const int partitionStream = istreamm + regionIter * 5;
+    sampaOnFEC = sampaMapping[partitionStream];
+    const int channel = (rawFECChannel % 2) + 2 * (rawFECChannel / 10);
+    channelOnSAMPA = channel + channelOffset[partitionStream];
+  }
+
   const PadCentre& padCentre(const int partition, const int fecInPartition, const int sampaOnFEC,
                              const int channelOnSAMPA) const
   {
@@ -300,6 +317,7 @@ class Mapper
   }
 
   int getNumberOfPadsInRowSector(int row) const { return mMapNumberOfPadsPerRow[row]; }
+  int getPadOffsetInRowSector(int row) const { return mMapPadOffsetPerRow[row]; }
   int getNumberOfPadsInRowROC(int roc, int row) const
   {
     return mMapNumberOfPadsPerRow[row + (roc % 72 >= getNumberOfIROCs()) * mNumberOfPadRowsIROC];
@@ -577,7 +595,7 @@ inline const DigitPos Mapper::findDigitPosFromGlobalPosition(const GlobalPositio
   if (phi < 0.)
     phi += TWOPI;
   const unsigned char secNum = std::floor(phi / SECPHIWIDTH);
-  const float secPhi = secNum * SECPHIWIDTH + SECPHIWIDTH / 2.;
+  // const float secPhi = secNum * SECPHIWIDTH + SECPHIWIDTH / 2.;
   Sector sec(secNum + (pos.Z() < 0) * SECTORSPERSIDE);
 
   // ===| rotated position |====================================================

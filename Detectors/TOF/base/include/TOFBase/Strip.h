@@ -22,7 +22,7 @@
 #include <map>
 #include <sstream>
 #include <vector>
-#include "MathUtils/Cartesian3D.h"
+#include "MathUtils/Cartesian.h"
 
 namespace o2
 {
@@ -62,7 +62,7 @@ class Strip
   /// @param index New chip index
   void setStripIndex(Int_t index) { mStripIndex = index; }
   void init(Int_t index)
-  //, const o2::Transform3D* mat)
+  //, const o2::math_utils::Transform3D* mat)
   {
     mStripIndex = index;
     //mMat = mat;
@@ -79,7 +79,7 @@ class Strip
   /// reset points container
   o2::tof::Digit* findDigit(ULong64_t key);
 
-  Int_t addDigit(Int_t channel, Int_t tdc, Int_t tot, Int_t bc, Int_t lbl = 0, int triggerorbit = 0, int triggerbunch = 0); // returns the MC label
+  Int_t addDigit(Int_t channel, Int_t tdc, Int_t tot, uint64_t bc, Int_t lbl = 0, uint32_t triggerorbit = 0, uint16_t triggerbunch = 0); // returns the MC label
 
   void fillOutputContainer(std::vector<o2::tof::Digit>& digits);
 

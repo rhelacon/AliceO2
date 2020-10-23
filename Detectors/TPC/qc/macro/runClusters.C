@@ -29,7 +29,7 @@ void runClusters(std::string_view outputFile = "ClusterQC.root", std::string_vie
   ClusterNativeAccess clusterIndex;
   std::unique_ptr<ClusterNative[]> clusterBuffer;
   memset(&clusterIndex, 0, sizeof(clusterIndex));
-  MCLabelContainer clusterMCBuffer;
+  o2::tpc::ClusterNativeHelper::ConstMCLabelContainerViewWithBuffer clusterMCBuffer;
 
   qc::Clusters clusters;
 
@@ -38,8 +38,8 @@ void runClusters(std::string_view outputFile = "ClusterQC.root", std::string_vie
     tpcClusterReader.read(i);
     tpcClusterReader.fillIndex(clusterIndex, clusterBuffer, clusterMCBuffer);
     size_t iClusters = 0;
-    for (int isector = 0; isector < Constants::MAXSECTOR; ++isector) {
-      for (int irow = 0; irow < Constants::MAXGLOBALPADROW; ++irow) {
+    for (int isector = 0; isector < constants::MAXSECTOR; ++isector) {
+      for (int irow = 0; irow < constants::MAXGLOBALPADROW; ++irow) {
         const int nClusters = clusterIndex.nClusters[isector][irow];
         if (!nClusters) {
           continue;

@@ -79,6 +79,9 @@ namespace GPUCA_NAMESPACE
 {
 namespace gpu
 {
+class TPCCFCalibration
+{
+};
 class TPCdEdxCalibrationSplines
 {
 };
@@ -98,6 +101,8 @@ class GPUTPCCompression
 };
 class GPUTPCClusterFinder
 {
+};
+struct GPUTPCCFChainContext {
 };
 #ifndef __OPENCL__
 struct GPUParam;

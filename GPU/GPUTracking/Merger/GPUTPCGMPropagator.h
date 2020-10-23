@@ -19,7 +19,6 @@
 #include "GPUTPCGMPhysicalTrackModel.h"
 #include "GPUTPCGMPolynomialField.h"
 #include "GPUCommonMath.h"
-#include "GPUTPCGMMergerTypes.h"
 
 namespace o2
 {
@@ -36,6 +35,10 @@ namespace gpu
 {
 class GPUTPCGMTrackParam;
 struct GPUParam;
+namespace gputpcgmmergertypes
+{
+struct InterpolationErrorHit;
+}
 
 /**
  * @class GPUTPCGMPropagator
@@ -65,6 +68,7 @@ class GPUTPCGMPropagator
   GPUd() void SetMaterial(float radLen, float rho);
   GPUd() void SetMaterialTPC() { SetMaterial(28811.7f, 1.025e-3f); }
 
+  GPUd() void UpdateMaterial(const GPUTPCGMPhysicalTrackModel& GPUrestrict() t0e);
   GPUd() o2::base::MatBudget getMatBudget(const float* p1, const float* p2);
 
   GPUd() void SetPolynomialField(const GPUTPCGMPolynomialField* field) { mField = field; }
@@ -94,9 +98,9 @@ class GPUTPCGMPropagator
 
   GPUd() int PropagateToXAlphaBz(float posX, float posAlpha, bool inFlyDirection);
 
-  GPUd() int Update(float posY, float posZ, int iRow, const GPUParam& param, short clusterState, char rejectChi2, GPUTPCGMMergerTypes::InterpolationErrorHit* inter, bool refit);
+  GPUd() int Update(float posY, float posZ, int iRow, const GPUParam& param, short clusterState, char rejectChi2, gputpcgmmergertypes::InterpolationErrorHit* inter, bool refit);
   GPUd() int Update(float posY, float posZ, short clusterState, bool rejectChi2, float err2Y, float err2Z);
-  GPUd() int InterpolateReject(float posY, float posZ, short clusterState, char rejectChi2, GPUTPCGMMergerTypes::InterpolationErrorHit* inter, float err2Y, float err2Z);
+  GPUd() int InterpolateReject(float posY, float posZ, short clusterState, char rejectChi2, gputpcgmmergertypes::InterpolationErrorHit* inter, float err2Y, float err2Z);
   GPUd() float PredictChi2(float posY, float posZ, int iRow, const GPUParam& param, short clusterState) const;
   GPUd() float PredictChi2(float posY, float posZ, float err2Y, float err2Z) const;
   GPUd() int RejectCluster(float chiY, float chiZ, unsigned char clusterState)

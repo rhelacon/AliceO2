@@ -12,8 +12,10 @@
 
 #include "Framework/DispatchControl.h"
 #include "Framework/FairMQDeviceProxy.h"
+#include "Framework/RuntimeError.h"
 #include "Framework/TMessageSerializer.h"
 #include "Framework/TypeTraits.h"
+
 #include "Headers/DataHeader.h"
 #include "MemoryResources/MemoryResources.h"
 
@@ -22,7 +24,6 @@
 
 #include <cassert>
 #include <functional>
-#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -34,6 +35,7 @@ namespace o2
 {
 namespace framework
 {
+class Output;
 
 class MessageContext
 {
@@ -144,6 +146,65 @@ class MessageContext
     }
   };
 
+  // A memory resource which can force a minimum alignment, so that
+  // the whole polymorphic allocator business is happy...
+  class AlignedMemoryResource : public pmr::FairMQMemoryResource
+  {
+   public:
+    AlignedMemoryResource(fair::mq::FairMQMemoryResource* other)
+      : mUpstream(other)
+    {
+    }
+
+    AlignedMemoryResource(AlignedMemoryResource const& other)
+      : mUpstream(other.mUpstream)
+    {
+    }
+
+    bool isValid()
+    {
+      return mUpstream != nullptr;
+    }
+    FairMQMessagePtr getMessage(void* p) override
+    {
+      return mUpstream->getMessage(p);
+    }
+
+    void* setMessage(FairMQMessagePtr fmm) override
+    {
+      return mUpstream->setMessage(std::move(fmm));
+    }
+
+    FairMQTransportFactory* getTransportFactory() noexcept override
+    {
+      return mUpstream->getTransportFactory();
+    }
+
+    size_t getNumberOfMessages() const noexcept override
+    {
+      return mUpstream->getNumberOfMessages();
+    }
+
+   protected:
+    void* do_allocate(size_t bytes, size_t alignment) override
+    {
+      return mUpstream->allocate(bytes, alignment < 64 ? 64 : alignment);
+    }
+
+    void do_deallocate(void* p, size_t bytes, size_t alignment) override
+    {
+      return mUpstream->deallocate(p, bytes, alignment < 64 ? 64 : alignment);
+    }
+
+    bool do_is_equal(const pmr::memory_resource& other) const noexcept override
+    {
+      return this == &other;
+    }
+
+   private:
+    fair::mq::FairMQMemoryResource* mUpstream = nullptr;
+  };
+
   /// ContainerRefObject handles a message object holding an instance of type T
   /// The allocator type is required to be o2::pmr::polymorphic_allocator
   /// can not adopt an existing message, because the polymorphic_allocator will call type constructor,
@@ -166,17 +227,17 @@ class MessageContext
         // the transport factory
         mFactory{context->proxy().getTransport(bindingChannel, index)},
         // the memory resource takes ownership of the message
-        mResource{mFactory ? mFactory->GetMemoryResource() : nullptr},
+        mResource{mFactory ? AlignedMemoryResource(mFactory->GetMemoryResource()) : AlignedMemoryResource(nullptr)},
         // create the vector with apropriate underlying memory resource for the message
-        mData{std::forward<Args>(args)..., pmr::polymorphic_allocator<value_type>(mResource)}
+        mData{std::forward<Args>(args)..., pmr::polymorphic_allocator<value_type>(&mResource)}
     {
       // FIXME: drop this repeated check and make sure at initial setup of devices that everything is fine
       // introduce error policy
       if (mFactory == nullptr) {
-        throw std::runtime_error(std::string("failed to get transport factory for channel ") + bindingChannel);
+        throw runtime_error_f("failed to get transport factory for channel %s", bindingChannel.c_str());
       }
-      if (mResource == nullptr) {
-        throw std::runtime_error(std::string("no memory resource for channel ") + bindingChannel);
+      if (mResource.isValid() == false) {
+        throw runtime_error_f("no memory resource for channel %s", bindingChannel.c_str());
       }
     }
     ~ContainerRefObject() override = default;
@@ -211,7 +272,7 @@ class MessageContext
 
    private:
     FairMQTransportFactory* mFactory = nullptr;     /// pointer to transport factory
-    pmr::FairMQMemoryResource* mResource = nullptr; /// message resource
+    AlignedMemoryResource mResource;                /// message resource
     buffer_type mData;                              /// the data buffer
   };
 
@@ -346,7 +407,7 @@ class MessageContext
         // TODO: decide whether this is an error or not
         // can also check if the standard constructor can be dropped to make sure that
         // the ScopeHook is always set up with a context
-        throw std::runtime_error("No context available to schedule the context object");
+        throw runtime_error("No context available to schedule the context object");
         return base::operator()(ptr);
       }
       // keep the object alive and add to message list of the context
@@ -477,6 +538,10 @@ class MessageContext
   // FIXME: can that be const?
   FairMQMessagePtr createMessage(const std::string& channel, int index, size_t size);
   FairMQMessagePtr createMessage(const std::string& channel, int index, void* data, size_t size, fairmq_free_fn* ffn, void* hint);
+
+  /// return the header of the 1st (from the end) matching message checking first in
+  /// mMessages then in mScheduledMessages
+  o2::header::DataHeader* findMessageHeader(const Output& spec);
 
  private:
   FairMQDeviceProxy mProxy;

@@ -10,6 +10,8 @@
 
 set(MODULE GPUTracking)
 
+#set(CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE} "${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}} -O0") # to uncomment if needed, tired of typing this...
+
 if(ALIGPU_BUILD_TYPE STREQUAL "ALIROOT")
   if(ENABLE_CUDA OR ENABLE_OPENCL1 OR ENABLE_OPENCL2 OR ENABLE_HIP)
     cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
@@ -19,7 +21,7 @@ if(ALIGPU_BUILD_TYPE STREQUAL "ALIROOT")
 else()
   if(OPENGL_FOUND
      AND GLFW_FOUND
-     AND (ALIGPU_BUILD_TYPE STREQUAL "O2" OR GLEW_FOUND)
+     AND ((ALIGPU_BUILD_TYPE STREQUAL "O2" AND TARGET AliceO2::DebugGUI) OR GLEW_FOUND)
      AND OPENGL_GLU_FOUND
      AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(GPUCA_EVENT_DISPLAY ON)
@@ -53,7 +55,6 @@ set(SRCS
     Merger/GPUTPCGMPhysicalTrackModel.cxx
     Merger/GPUTPCGMPolynomialField.cxx
     Merger/GPUTPCGMPolynomialFieldManager.cxx
-    Merger/GPUTPCGMMergerGPU.cxx
     TRDTracking/GPUTRDTrack.cxx
     TRDTracking/GPUTRDTracker.cxx
     TRDTracking/GPUTRDTrackletWord.cxx
@@ -74,6 +75,8 @@ set(SRCS_NO_CINT
     Global/GPUChain.cxx
     Global/GPUChainTracking.cxx
     Global/GPUTrackingInputProvider.cxx
+    Global/GPUErrors.cxx
+    Merger/GPUTPCGMMergerGPU.cxx
     Standalone/utils/timer.cxx)
 
 set(SRCS_NO_H SliceTracker/GPUTPCTrackerDump.cxx
@@ -125,12 +128,16 @@ set(HDRS_INSTALL
     Base/GPUO2FakeClasses.h
     Base/GPUParam.inc
     Merger/GPUTPCGMMergerTypes.h
+    Global/GPUErrorCodes.h
+    Standalone/qconfigoptions.h
+    Base/GPUSettingsList.h
 )
 
 # Sources only for O2
 if(ALIGPU_BUILD_TYPE STREQUAL "O2")
-  set(SRCS ${SRCS} Interface/GPUO2Interface.cxx)
-  set(HDRS_CINT_O2 ${HDRS_CINT_O2} Interface/GPUO2Interface.h dEdx/TPCdEdxCalibrationSplines.h)
+  set(SRCS ${SRCS} Interface/GPUO2Interface.cxx Interface/GPUO2InterfaceConfigurableParam.cxx)
+  set(HDRS_CINT_O2 ${HDRS_CINT_O2} Interface/GPUO2Interface.h Interface/GPUO2InterfaceConfigurableParam.h dEdx/TPCdEdxCalibrationSplines.h)
+  set(HDRS_CINT_O2_ADDITIONAL Base/GPUSettings.h Base/GPUSettingsList.h) # Manual depencies for ROOT dictionary generation
 endif()
 
 # Sources for O2 and for Standalone if requested in config file
@@ -164,6 +171,7 @@ if(ALIGPU_BUILD_TYPE STREQUAL "O2" OR CONFIG_O2_EXTENSIONS)
         TPCClusterFinder/GPUTPCCFMCLabelFlattener.cxx
         TPCClusterFinder/GPUTPCCFDecodeZS.cxx
         TPCClusterFinder/GPUTPCCFGather.cxx
+        TPCClusterFinder/TPCCFCalibration.cxx
         dEdx/TPCdEdxCalibrationSplines.cxx)
 
     set(SRCS_NO_H ${SRCS_NO_H}
@@ -179,7 +187,8 @@ if(ALIGPU_BUILD_TYPE STREQUAL "O2" OR CONFIG_O2_EXTENSIONS)
                      TPCClusterFinder/ChargePos.h
                      TPCClusterFinder/clusterFinderDefs.h
                      TPCClusterFinder/GPUTPCClusterFinderKernels.h
-                     TPCClusterFinder/PackedCharge.h)
+                     TPCClusterFinder/PackedCharge.h
+                     TPCClusterFinder/GPUTPCCFChainContext.h)
 endif()
 
 # Sources only for AliRoot
@@ -222,10 +231,6 @@ if(GPUCA_QA)
   set(SRCS_NO_CINT ${SRCS_NO_CINT} Standalone/qa/GPUQA.cxx)
 else()
   set(HDRS_INSTALL ${HDRS_INSTALL} Standalone/qa/GPUQA.h)
-endif()
-
-if(GPUCA_EVENT_DISPLAY OR GPUCA_QA)
-  set(HDRS_INSTALL ${HDRS_INSTALL} Standalone/qconfigoptions.h)
 endif()
 
 # Update HDR variables with files derrived from SRC variables
@@ -275,14 +280,8 @@ if(ALIGPU_BUILD_TYPE STREQUAL "O2")
     PRIVATE $<TARGET_PROPERTY:O2::Framework,INTERFACE_INCLUDE_DIRECTORIES>)
 
   o2_target_root_dictionary(${MODULE}
-                            HEADERS ${HDRS_CINT_O2}
+                            HEADERS ${HDRS_CINT_O2} ${HDRS_CINT_O2_ADDITIONAL}
                             LINKDEF GPUTrackingLinkDef_O2.h)
-
-  o2_add_test(${MODULE}
-              PUBLIC_LINK_LIBRARIES O2::${MODULE}
-              SOURCES ctest/testGPUTracking.cxx
-              COMPONENT_NAME GPU
-              LABELS gpu)
 
   target_compile_definitions(${targetName} PRIVATE GPUCA_O2_LIB
                              GPUCA_TPC_GEOMETRY_O2 HAVE_O2HEADERS)
@@ -325,6 +324,7 @@ if(ALIGPU_BUILD_TYPE STREQUAL "ALIROOT")
                       ${CMAKE_SOURCE_DIR}/GPU/Common
                       ${CMAKE_SOURCE_DIR}/GPU/Utils
                       ${CMAKE_SOURCE_DIR}/GPU/GPUTracking
+                      ${CMAKE_SOURCE_DIR}/GPU/GPUTracking/Standalone
                       ${CMAKE_SOURCE_DIR}/GPU/GPUTracking/Base
                       ${CMAKE_SOURCE_DIR}/GPU/GPUTracking/SliceTracker
                       ${CMAKE_SOURCE_DIR}/GPU/GPUTracking/Merger
@@ -419,8 +419,8 @@ endif()
 
 if(OpenMP_CXX_FOUND)
   message(STATUS "GPU: Using OpenMP: ${OpenMP_CXX_SPEC_DATE}")
-  target_compile_definitions(${targetName} PRIVATE WITH_OPENMP)
   # Must be private, depending libraries might be compiled by compiler not understanding -fopenmp
+  target_compile_definitions(${targetName} PRIVATE WITH_OPENMP)
   target_link_libraries(${targetName} PRIVATE OpenMP::OpenMP_CXX)
 endif()
 

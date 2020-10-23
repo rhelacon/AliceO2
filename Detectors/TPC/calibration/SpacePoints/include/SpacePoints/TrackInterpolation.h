@@ -29,6 +29,7 @@
 #include "DataFormatsTOF/Cluster.h"
 #include "SpacePoints/SpacePointsCalibParam.h"
 #include "TPCReconstruction/TPCFastTransformHelperO2.h"
+#include "DetectorsBase/Propagator.h"
 
 class TTree;
 
@@ -81,6 +82,8 @@ struct TrackData {
 class TrackInterpolation
 {
  public:
+  using MatCorrType = o2::base::Propagator::MatCorrType;
+
   /// Default constructor
   TrackInterpolation() = default;
 
@@ -145,7 +148,7 @@ class TrackInterpolation
   /// Sets the maximum step length for track extrapolation
   void setMaxStep(float step) { mMaxStep = step; }
   /// Sets the flag if material correction should be applied when extrapolating the tracks
-  void setMatCorr(int matCorr) { mMatCorr = matCorr; }
+  void setMatCorr(MatCorrType matCorr) { mMatCorr = matCorr; }
   /// Sets whether ITS tracks without match in TRD or TOF should be processed as well
   void setDoITSOnlyTracks(bool flag) { mDoITSOnlyTracks = flag; }
 
@@ -176,7 +179,7 @@ class TrackInterpolation
   float mSigYZ2TOF{.75f};    ///< for now assume cluster error for TOF equal for all clusters in both Y and Z
   float mMaxSnp{.85f};          ///< max snp when propagating ITS tracks
   float mMaxStep{2.f};          ///< maximum step for propagation
-  int mMatCorr{0};              ///< if material correction should be done
+  MatCorrType mMatCorr{MatCorrType::USEMatCorrNONE}; ///< if material correction should be done
   bool mDoITSOnlyTracks{false}; ///< if ITS only tracks should be processed or not
 
   // input
@@ -194,7 +197,7 @@ class TrackInterpolation
   std::vector<TPCClusterResiduals> mClRes{};            ///< residuals for each available TPC cluster of all tracks
 
   // cache
-  std::array<CacheStruct, Constants::MAXGLOBALPADROW> mCache{{}}; ///< caching positions, covariances and angles for track extrapolations and interpolation
+  std::array<CacheStruct, constants::MAXGLOBALPADROW> mCache{{}}; ///< caching positions, covariances and angles for track extrapolations and interpolation
 
   // helpers
   std::unique_ptr<TPCFastTransform> mFastTransform{}; ///< TPC cluster transformation

@@ -15,16 +15,16 @@
 #include "GPUTPCClusterData.h"
 #include "GPUTPCHit.h"
 #include "GPUTPCSliceData.h"
-#include "GPUReconstruction.h"
 #include "GPUProcessor.h"
 #include "GPUO2DataTypes.h"
 #include "GPUTPCConvertImpl.h"
 #include "GPUCommonMath.h"
 
-#ifndef __OPENCL__
+#ifndef GPUCA_GPUCODE_DEVICE
 #include "utils/vecpod.h"
 #include <iostream>
 #include <cstring>
+#include "GPUReconstruction.h"
 #endif
 
 using namespace GPUCA_NAMESPACE::gpu;
@@ -154,14 +154,10 @@ GPUdi() static void UpdateMinMaxYZ(float& yMin, float& yMax, float& zMin, float&
   }
 }
 
-GPUd() int GPUTPCSliceData::InitFromClusterData(int nBlocks, int nThreads, int iBlock, int iThread, GPUconstantref() const MEM_CONSTANT(GPUConstantMem) * GPUrestrict() mem, int iSlice, float* tmpMinMax)
+GPUdii() int GPUTPCSliceData::InitFromClusterData(int nBlocks, int nThreads, int iBlock, int iThread, GPUconstantref() const MEM_CONSTANT(GPUConstantMem) * GPUrestrict() mem, int iSlice, float* tmpMinMax)
 {
 #ifdef GPUCA_GPUCODE
   constexpr bool EarlyTransformWithoutClusterNative = false;
-  if (mem->ioPtrs.clustersNative == nullptr) {
-    GPUError("Cluster Native Access Structure missing");
-    return 1;
-  }
 #else
   bool EarlyTransformWithoutClusterNative = mem->param.earlyTpcTransform && mem->ioPtrs.clustersNative == nullptr;
 #endif
@@ -219,20 +215,19 @@ GPUd() int GPUTPCSliceData::InitFromClusterData(int nBlocks, int nThreads, int i
 
     const unsigned int NumberOfClusters = EarlyTransformWithoutClusterNative ? NumberOfClustersInRow[rowIndex] : mem->ioPtrs.clustersNative->nClusters[iSlice][rowIndex];
     const unsigned int RowOffset = EarlyTransformWithoutClusterNative ? RowOffsets[rowIndex] : (mem->ioPtrs.clustersNative->clusterOffset[iSlice][rowIndex] - mem->ioPtrs.clustersNative->clusterOffset[iSlice][0]);
-    if ((long long int)NumberOfClusters >= ((long long int)1 << (sizeof(calink) * 8))) {
-      GPUError("Too many clusters in row %d for row indexing (%d >= %lld), indexing insufficient", rowIndex, NumberOfClusters, ((long long int)1 << (sizeof(calink) * 8)));
-      return 1;
-    }
-    if (NumberOfClusters >= (1 << 24)) {
-      GPUError("Too many clusters in row %d for hit id indexing (%d >= %d), indexing insufficient", rowIndex, NumberOfClusters, 1 << 24);
+    CONSTEXPR unsigned int maxN = 1u << (sizeof(calink) < 3 ? (sizeof(calink) * 8) : 24);
+    if (NumberOfClusters >= maxN) {
+      if (iThread == 0) {
+        mem->errorCodes.raiseError(GPUErrors::ERROR_SLICEDATA_HITINROW_OVERFLOW, rowIndex, NumberOfClusters, maxN);
+      }
       return 1;
     }
 
     GPUTPCRow& row = mRows[rowIndex];
     if (iThread == 0) {
-      tmpMinMax[0] = -yMin;
+      tmpMinMax[0] = yMin;
       tmpMinMax[1] = yMax;
-      tmpMinMax[2] = -zMin;
+      tmpMinMax[2] = zMin;
       tmpMinMax[3] = zMax;
       row.mFirstHitInBinOffset = CAMath::nextMultipleOf<GPUCA_ROWALIGNMENT / sizeof(calink)>(GetGridSize(RowOffset, rowIndex) + rowIndex * GPUCA_ROWALIGNMENT / sizeof(int));
     }
@@ -284,41 +279,50 @@ GPUd() int GPUTPCSliceData::InitFromClusterData(int nBlocks, int nThreads, int i
       row.mHitNumberOffset = CAMath::nextMultipleOf<GPUCA_ROWALIGNMENT / sizeof(calink)>(RowOffset + rowIndex * GPUCA_ROWALIGNMENT / sizeof(calink));
     }
 
-    /* CAMath::AtomicMaxShared(&tmpMinMax[0], -yMin); // Atomic max not supported for float
+#ifdef GPUCA_HAVE_ATOMIC_MINMAX_FLOAT
+    CAMath::AtomicMinShared(&tmpMinMax[0], yMin);
     CAMath::AtomicMaxShared(&tmpMinMax[1], yMax);
-    CAMath::AtomicMaxShared(&tmpMinMax[2], -zMin);
-    CAMath::AtomicMaxShared(&tmpMinMax[3], zMax); */
-    for (int i = 0; i < nThreads; i++) { // Todo: Implement a better version of this stupid atomic max replacement
+    CAMath::AtomicMinShared(&tmpMinMax[2], zMin);
+    CAMath::AtomicMaxShared(&tmpMinMax[3], zMax);
+#else
+    for (int i = 0; i < nThreads; i++) {
       GPUbarrier();
       if (iThread == i) {
-        if (tmpMinMax[0] < -yMin) {
-          tmpMinMax[0] = -yMin;
+        if (tmpMinMax[0] > yMin) {
+          tmpMinMax[0] = yMin;
         }
         if (tmpMinMax[1] < yMax) {
           tmpMinMax[1] = yMax;
         }
-        if (tmpMinMax[2] < -zMin) {
-          tmpMinMax[2] = -zMin;
+        if (tmpMinMax[2] > zMin) {
+          tmpMinMax[2] = zMin;
         }
         if (tmpMinMax[3] < zMax) {
           tmpMinMax[3] = zMax;
         }
       }
     }
+#endif
     GPUbarrier();
     if (iThread == 0) {
-      CreateGrid(mem, &row, -tmpMinMax[0], tmpMinMax[1], -tmpMinMax[2], tmpMinMax[3]);
+      CreateGrid(mem, &row, tmpMinMax[0], tmpMinMax[1], tmpMinMax[2], tmpMinMax[3]);
     }
     GPUbarrier();
     const GPUTPCGrid& grid = row.mGrid;
     const int numberOfBins = grid.N();
-    if ((long long int)numberOfBins >= ((long long int)1 << (sizeof(calink) * 8))) {
-      GPUError("Too many bins in row %d for grid (%d >= %lld), indexing insufficient", rowIndex, numberOfBins, ((long long int)1 << (sizeof(calink) * 8)));
+    CONSTEXPR int maxBins = sizeof(calink) < 4 ? (1 << (sizeof(calink) * 8)) : 0x7FFFFFFF; // NOLINT: false warning
+    if (sizeof(calink) < 4 && numberOfBins >= maxBins) {
+      if (iThread == 0) {
+        mem->errorCodes.raiseError(GPUErrors::ERROR_SLICEDATA_BIN_OVERFLOW, rowIndex, numberOfBins, maxBins);
+      }
       return 1;
     }
     const unsigned int nn = numberOfBins + grid.Ny() + 3;
-    if (nn >= GetGridSize(NumberOfClusters, 1)) {
-      GPUError("firstHitInBin overflow"); // TODO: Proper overflow handling
+    const unsigned int maxnn = GetGridSize(NumberOfClusters, 1);
+    if (nn >= maxnn) {
+      if (iThread == 0) {
+        mem->errorCodes.raiseError(GPUErrors::ERROR_SLICEDATA_FIRSTHITINBIN_OVERFLOW, nn, maxnn);
+      }
       return 1;
     }
 
@@ -349,7 +353,7 @@ GPUd() int GPUTPCSliceData::InitFromClusterData(int nBlocks, int nThreads, int i
     }
     GPUbarrier();
 
-    constexpr float maxVal = (((long long int)1 << (sizeof(cahit) < 3 ? sizeof(cahit) * 8 : 24)) - 1); // Stay within float precision in any case!
+    constexpr float maxVal = (((long int)1 << (sizeof(cahit) < 3 ? sizeof(cahit) * 8 : 24)) - 1); // Stay within float precision in any case!
     constexpr float packingConstant = 1.f / (maxVal - 2.);
     const float y0 = row.mGrid.YMin();
     const float z0 = row.mGrid.ZMin();
@@ -390,7 +394,7 @@ GPUd() int GPUTPCSliceData::InitFromClusterData(int nBlocks, int nThreads, int i
     if (iThread == 0) {
       const float maxAbsZ = CAMath::Max(CAMath::Abs(tmpMinMax[2]), CAMath::Abs(tmpMinMax[3]));
       if (maxAbsZ > 300 && !mem->param.ContinuousTracking) {
-        GPUError("Need to set continuous tracking mode for data outside of the TPC volume!"); // TODO: Set GPU error code
+        mem->errorCodes.raiseError(GPUErrors::ERROR_SLICEDATA_Z_OVERFLOW, (unsigned int)maxAbsZ);
         return 1;
       }
     }

@@ -49,12 +49,16 @@ class CalibTOFapi
   }
   void readLHCphase();
   void readTimeSlewingParam();
-  void writeLHCphase(LhcPhase* phase, std::map<std::string, std::string> metadataLHCphase, unsigned long minTimeSTamp, unsigned long maxTimeStamp);
-  void writeTimeSlewingParam(SlewParam* param, std::map<std::string, std::string> metadataChannelCalib, unsigned long minTimeSTamp, unsigned long maxTimeStamp = 0);
+  void writeLHCphase(LhcPhase* phase, std::map<std::string, std::string> metadataLHCphase, uint64_t minTimeSTamp, uint64_t maxTimeStamp);
+  void writeTimeSlewingParam(SlewParam* param, std::map<std::string, std::string> metadataChannelCalib, uint64_t minTimeSTamp, uint64_t maxTimeStamp = 0);
   float getTimeCalibration(int ich, float tot);
   float getTimeDecalibration(int ich, float tot);
   bool isProblematic(int ich);
   float getFractionUnderPeak(int ich) const { return mSlewParam->getFractionUnderPeak(ich); }
+
+  SlewParam* getSlewParam() { return mSlewParam; }
+  SlewParam& getSlewParamObj() { return *mSlewParam; }
+  LhcPhase* getLhcPhase() { return mLHCphase; }
 
  private:
   long mTimeStamp;                 ///< timeStamp for queries

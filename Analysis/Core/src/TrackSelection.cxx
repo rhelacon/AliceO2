@@ -13,14 +13,6 @@
 //
 
 #include "Analysis/TrackSelection.h"
-#include <TH1F.h>
-
-ClassImp(TrackSelection)
-
-  TrackSelection::TrackSelection()
-  : TObject(), mMinPt{0.}, mMaxPt{1e10}, mMinEta{0.}, mMaxEta{1e10}, mMinNClustersTPC{0}, mMinNCrossedRowsTPC{0}, mMinNClustersITS{0}, mMaxChi2PerClusterTPC{1e10}, mMaxChi2PerClusterITS{1e10}, mMinNCrossedRowsOverFindableClustersTPC{1e10}, mMaxDcaXY{1e10}, mMaxDcaZ{1e10}, mRequireITSRefit{false}, mRequireTPCRefit{false}
-{
-}
 
 bool TrackSelection::FulfillsITSHitRequirements(uint8_t itsClusterMap)
 {
@@ -34,4 +26,6 @@ bool TrackSelection::FulfillsITSHitRequirements(uint8_t itsClusterMap)
     }
   }
   return true;
-};
+}
+
+const std::string TrackSelection::mCutNames[static_cast<int>(TrackSelection::TrackCuts::kNCuts)] = {"TrackType", "PtRange", "EtaRange", "TPCNCls", "TPCCrossedRows", "TPCCrossedRowsOverNCls", "TPCChi2NDF", "TPCRefit", "ITSNCls", "ITSChi2NDF", "ITSRefit", "ITSHits", "GoldenChi2", "DCAxy", "DCAz"};

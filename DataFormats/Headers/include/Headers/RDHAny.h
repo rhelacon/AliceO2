@@ -15,8 +15,10 @@
 #define ALICEO2_HEADER_RDHANY_H
 #include "GPUCommonDef.h"
 #include "Headers/RAWDataHeader.h"
+#ifndef GPUCA_GPUCODE_DEVICE
 #include <type_traits>
 #include <stdexcept>
+#endif
 
 namespace o2
 {
@@ -48,9 +50,9 @@ struct RDHAny {
 
   /// make sure we RDH is a legitimate RAWDataHeader
   template <typename RDH>
-  GPUhdi() static void sanityCheckStrict()
+  GPUhdi() static constexpr void sanityCheckStrict()
   {
-#ifndef __OPENCL__
+#ifndef GPUCA_GPUCODE_DEVICE
     static_assert(std::is_same<RDH, RDHv4>::value || std::is_same<RDH, RDHv5>::value ||
                     std::is_same<RDH, RDHv6>::value,
                   "not an RDH");
@@ -59,9 +61,9 @@ struct RDHAny {
 
   /// make sure we RDH is a legitimate RAWDataHeader or generic RDHAny placeholder
   template <typename RDH>
-  GPUhdi() static void sanityCheckLoose()
+  GPUhdi() static constexpr void sanityCheckLoose()
   {
-#ifndef __OPENCL__
+#ifndef GPUCA_GPUCODE_DEVICE
     static_assert(std::is_same<RDH, RDHv4>::value || std::is_same<RDH, RDHv5>::value ||
                     std::is_same<RDH, RDHv6>::value || std::is_same<RDHAny, RDH>::value,
                   "not an RDH or RDHAny");
